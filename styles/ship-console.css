@@ -1,0 +1,180 @@
+.vira-shipcombat.ship-console {
+  min-width: 320px;
+}
+
+.ship-console-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  padding: 0.75rem;
+  overflow: hidden;
+}
+
+.ship-console-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.ship-console-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.ship-console-header [data-native-vehicle-sheet] {
+  flex: 0 0 auto;
+}
+
+
+.ship-console-header img {
+  flex: 0 0 auto;
+  object-fit: cover;
+  border: 1px solid var(--color-border-dark, #555);
+}
+
+.ship-console-header h1,
+.ship-console-header p,
+.ship-console-panel h2,
+.ship-console-panel h3 {
+  margin: 0.2rem 0;
+}
+
+.ship-console-notice,
+.ship-console-reason {
+  border-left: 4px solid #8b5a00;
+  padding: 0.5rem;
+  background: rgb(139 90 0 / 12%);
+}
+.ship-console-specifications {
+  padding: 0.5rem;
+  border: 1px solid var(--color-border-light-tertiary, #888);
+}
+
+.ship-console-specifications > h2,
+.ship-console-specifications h3 {
+  margin: 0 0 0.35rem;
+}
+
+.ship-console-specification-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+
+.ship-console-specification-groups section {
+  min-width: 0;
+}
+
+.ship-console-specification-groups dl {
+  margin: 0;
+}
+
+.ship-console-specification-groups dl > div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.4rem;
+}
+
+.ship-console-specification-groups dt {
+  font-weight: bold;
+}
+
+.ship-console-specification-groups dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+
+.ship-console-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--color-border-light-tertiary, #888);
+  padding-bottom: 0.35rem;
+}
+
+.ship-console-tabs button[aria-selected="true"] {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+.ship-console-panel {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.ship-console-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.6rem;
+  align-items: start;
+}
+
+.ship-operation fieldset {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  border: 1px solid var(--color-border-light-tertiary, #888);
+}
+
+.ship-operation label,
+.ship-console-config label {
+  display: grid;
+  gap: 0.2rem;
+  font-weight: bold;
+}
+
+.ship-operation textarea,
+.ship-console-config textarea,
+.ship-operation input {
+  box-sizing: border-box;
+  width: 100%;
+  font-family: monospace;
+  font-size: 0.86rem;
+}
+
+.ship-console-help,
+.ship-console-reason {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+
+.ship-console-state,
+.ship-operation pre,
+.ship-console-log pre {
+  max-width: 100%;
+  padding: 0.5rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: rgb(0 0 0 / 8%);
+  border: 1px solid var(--color-border-light-tertiary, #888);
+}
+
+.ship-operation pre[data-error="true"] {
+  border-color: #9b1c1c;
+}
+
+.ship-console-log {
+  padding-left: 1.5rem;
+}
+
+.ship-console-log li {
+  margin-bottom: 0.75rem;
+}
+
+.ship-console-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 560px) {
+  .ship-console-layout { padding: 0.4rem; }
+  .ship-console-actions { grid-template-columns: 1fr; }
+  .ship-console-tabs button { flex: 1 1 45%; }
+}

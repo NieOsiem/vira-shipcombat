@@ -1,0 +1,69 @@
+<section class="ship-console-layout" aria-label="Vira ship console">
+  <header class="ship-console-header">
+    <img src="{{actor.img}}" alt="" width="52" height="52">
+    <div class="ship-console-heading"><h1>{{actor.name}}</h1><p>Phase: <strong>{{phase}}</strong> · Turn: {{turnKey}} · Revision: {{revision}}</p></div>
+    <button type="button" data-native-vehicle-sheet>Open D&amp;D5e vehicle fields</button>
+  </header>
+
+  {{#if unavailableReason}}<p class="ship-console-notice" role="status">{{unavailableReason}} Combat actions below are disabled; configuration remains available to the GM.</p>{{/if}}
+  <section class="ship-console-specifications" aria-label="Installed ship configuration">
+    <h2>Installed configuration</h2>
+    <p class="ship-console-help">The Actor name above identifies this individual ship. “Class” below is the installed configuration label.</p>
+    <div class="ship-console-specification-groups">
+      {{#each specGroups}}
+      <section>
+        <h3>{{label}}</h3>
+        <dl>
+          {{#each entries}}<div><dt>{{label}}</dt><dd>{{value}}</dd></div>{{/each}}
+        </dl>
+      </section>
+      {{/each}}
+    </div>
+  </section>
+
+
+  <nav class="ship-console-tabs" role="tablist" aria-label="Console sections">
+    {{#each tabs}}<button type="button" role="tab" data-tab-button="{{id}}" aria-selected="{{active}}" aria-controls="panel-{{id}}">{{label}}</button>{{/each}}
+  </nav>
+
+  {{#each tabs}}
+  <section id="panel-{{id}}" class="ship-console-panel" role="tabpanel" data-tab-panel="{{id}}" {{#unless active}}hidden{{/unless}}>
+    <h2>{{label}}</h2>
+    {{#if (lookup ../actions label)}}
+      <div class="ship-console-actions">
+      {{#each (lookup ../actions label)}}
+        <form class="ship-operation" data-operation="{{type}}">
+          <fieldset {{#if disabled}}disabled{{/if}}>
+            <legend>{{type}}</legend>
+            {{#if targeted}}<label>Target Token UUID(s)<input name="targets" type="text" placeholder="Scene.…Token.…" aria-describedby="help-{{type}}"></label>{{/if}}
+            <label>Payload JSON<textarea name="payload" rows="4" spellcheck="false" aria-describedby="help-{{type}}">{}</textarea></label>
+            <p id="help-{{type}}" class="ship-console-help">{{help}}</p>
+            <details><summary>Local preview</summary><pre data-preview aria-live="polite"></pre></details>
+            <button type="submit">Commit {{type}}</button>
+            {{#if reason}}<p class="ship-console-reason">Disabled: {{reason}}</p>{{/if}}
+          </fieldset>
+        </form>
+      {{/each}}
+      </div>
+    {{/if}}
+
+    {{#if active}}
+      <h3>Complete visible ship state</h3>
+      <p class="ship-console-help">Secret and undetected information is shown as Unknown unless you are the GM.</p>
+      <pre class="ship-console-state">{{../stateJson}}</pre>
+    {{/if}}
+
+    {{#if @last}}
+      {{#if ../isGM}}
+        <section class="ship-console-config">
+          <h3>GM operation log</h3>
+          {{#if ../log}}<ol class="ship-console-log">{{#each ../log}}<li><pre>{{json}}</pre>{{#if rollback}}<button type="button" data-rollback="{{id}}">Roll back whole operation</button>{{/if}}</li>{{/each}}</ol>{{else}}<p>No logged operations.</p>{{/if}}
+          <h3>Ship configuration</h3>
+          <p>Saving configuration never changes combat state.</p>
+          <form data-config><label>Validated configuration JSON<textarea name="config" rows="20" spellcheck="false">{{../configJson}}</textarea></label><div class="ship-console-row"><button type="submit">Validate and save config</button><button type="button" data-canadensis>Reset to exact Canadensis config…</button></div></form>
+        </section>
+      {{else}}<p>Configuration and the whole-operation log are available only to the GM.</p>{{/if}}
+    {{/if}}
+  </section>
+  {{/each}}
+</section>

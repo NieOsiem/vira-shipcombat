@@ -1,0 +1,43 @@
+{
+  "id": "vira-shipcombat",
+  "title": "Vira Ship Combat",
+  "description": "Ship combat module for Foundry Virtual Tabletop.",
+  "version": "0.0.1",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "authors": [
+    {
+      "name": "NieOsiem"
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system",
+        "compatibility": {
+          "minimum": "5.3.3",
+          "verified": "5.3.3"
+        }
+      }
+    ]
+  },
+  "documentTypes": {
+    "Actor": {
+      "ship": {}
+    }
+  },
+  "esmodules": [
+    "scripts/vira-shipcombat.js"
+  ],
+  "styles": [
+    {
+      "src": "styles/ship-console.css"
+    }
+  ],
+  "url": "https://github.com/NieOsiem/vira-shipcombat",
+  "manifest": "https://github.com/NieOsiem/vira-shipcombat/releases/latest/download/module.json",
+  "readme": "https://github.com/NieOsiem/vira-shipcombat/blob/main/README.md"
+}

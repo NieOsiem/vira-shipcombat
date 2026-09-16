@@ -1,0 +1,970 @@
+import { RuleViolation } from "../constants.js";
+import {
+  beginWeaponReload,
+  cancelWeaponReload,
+  commitAttack,
+  contributeWeaponReload,
+} from "./combat.js";
+import { applyConditionTiers, getFaultEffects, selectCondition } from "./conditions.js";
+import { resolveShipFate } from "./damage.js";
+import {
+  enterCombat,
+  leaveCombat,
+  assertActivePhase,
+  runStartPhase,
+  runEndActiveCoast,
+  runEndPhase,
+} from "./lifecycle.js";
+import {
+  applyManeuver,
+  applyRotation,
+  armEvasion,
+  disarmEvasion,
+  getCollisionSeverity,
+} from "./movement.js";
+import {
+  contributeWork,
+  refreshResources,
+  spendOperationResource,
+  takeControl,
+  validateRoster,
+} from "./operators.js";
+import { commitPowerRoute, toggleWeapon } from "./power.js";
+import {
+  activeCooling,
+  contributeRecoveryWork,
+  emergencyVent,
+  repairHull,
+  standardRepair,
+} from "./repairs.js";
+import {
+  acquireTarget,
+  addPhysicalContact,
+  activePing,
+  analyzeDefenses,
+  breakLock,
+  burnThrough,
+  calculateFiringSolution,
+  deepScan,
+  fadeTrack,
+  jamTarget,
+} from "./sensors.js";
+import { commitDefenseRoute, resolveShieldDamage } from "./shields.js";
+
+export const OPERATION_TYPES = Object.freeze({
+  ENTER_COMBAT: "enterCombat",
+  START_PHASE: "startPhase",
+  COAST: "coast",
+  END_PHASE: "endPhase",
+  LEAVE_COMBAT: "leaveCombat",
+  SET_ROSTER: "setRoster",
+  REFRESH_RESOURCES: "refreshResources",
+  SPEND_RESOURCE: "spendResource",
+  TAKE_CONTROL: "takeControl",
+  CONTRIBUTE_WORK: "contributeWork",
+  MANEUVER: "maneuver",
+  ROTATE: "rotate",
+  ARM_EVASION: "armEvasion",
+  DISARM_EVASION: "disarmEvasion",
+  ROUTE_POWER: "routePower",
+  TOGGLE_WEAPON: "toggleWeapon",
+  ROUTE_DEFENSE: "routeDefense",
+  PING: "ping",
+  ACQUIRE: "acquire",
+  ANALYZE: "analyze",
+  DEEP_SCAN: "deepScan",
+  FIRING_SOLUTION: "firingSolution",
+  FADE: "fade",
+  JAM: "jam",
+  BREAK_LOCK: "breakLock",
+  BURN_THROUGH: "burnThrough",
+  ATTACK: "attack",
+  BEGIN_RELOAD: "beginReload",
+  RELOAD: "reload",
+  CANCEL_RELOAD: "cancelReload",
+  REPAIR: "repair",
+  RECOVERY_WORK: "recoveryWork",
+  HULL_REPAIR: "hullRepair",
+  COOLING: "cooling",
+  VENT: "vent",
+  REPOSITION: "reposition",
+  RESOLVE_FATE: "resolveFate",
+});
+
+const TYPE_ALIASES = Object.freeze({
+  "combat.enter": OPERATION_TYPES.ENTER_COMBAT,
+  "phase.start": OPERATION_TYPES.START_PHASE,
+  "phase.coast": OPERATION_TYPES.COAST,
+  "phase.end": OPERATION_TYPES.END_PHASE,
+  "combat.leave": OPERATION_TYPES.LEAVE_COMBAT,
+  "admin.reposition": OPERATION_TYPES.REPOSITION,
+  "fate.resolve": OPERATION_TYPES.RESOLVE_FATE,
+  enter: OPERATION_TYPES.ENTER_COMBAT,
+  "enter-combat": OPERATION_TYPES.ENTER_COMBAT,
+  start: OPERATION_TYPES.START_PHASE,
+  "start-phase": OPERATION_TYPES.START_PHASE,
+  "end-active-coast": OPERATION_TYPES.COAST,
+  end: OPERATION_TYPES.END_PHASE,
+  "end-phase": OPERATION_TYPES.END_PHASE,
+  leave: OPERATION_TYPES.LEAVE_COMBAT,
+  "leave-combat": OPERATION_TYPES.LEAVE_COMBAT,
+  roster: OPERATION_TYPES.SET_ROSTER,
+  resource: OPERATION_TYPES.SPEND_RESOURCE,
+  control: OPERATION_TYPES.TAKE_CONTROL,
+  work: OPERATION_TYPES.CONTRIBUTE_WORK,
+  rotation: OPERATION_TYPES.ROTATE,
+  evasion: OPERATION_TYPES.ARM_EVASION,
+  "disarm-evasion": OPERATION_TYPES.DISARM_EVASION,
+  power: OPERATION_TYPES.ROUTE_POWER,
+  weapon: OPERATION_TYPES.TOGGLE_WEAPON,
+  defense: OPERATION_TYPES.ROUTE_DEFENSE,
+  acquireTarget: OPERATION_TYPES.ACQUIRE,
+  analyzeDefenses: OPERATION_TYPES.ANALYZE,
+  "deep-scan": OPERATION_TYPES.DEEP_SCAN,
+  "firing-solution": OPERATION_TYPES.FIRING_SOLUTION,
+  fadeTrack: OPERATION_TYPES.FADE,
+  jamTarget: OPERATION_TYPES.JAM,
+  "break-lock": OPERATION_TYPES.BREAK_LOCK,
+  "burn-through": OPERATION_TYPES.BURN_THROUGH,
+  "begin-reload": OPERATION_TYPES.BEGIN_RELOAD,
+  contributeReload: OPERATION_TYPES.RELOAD,
+  "cancel-reload": OPERATION_TYPES.CANCEL_RELOAD,
+  standardRepair: OPERATION_TYPES.REPAIR,
+  recovery: OPERATION_TYPES.RECOVERY_WORK,
+  "recovery-work": OPERATION_TYPES.RECOVERY_WORK,
+  "hull-repair": OPERATION_TYPES.HULL_REPAIR,
+  activeCooling: OPERATION_TYPES.COOLING,
+  emergencyVent: OPERATION_TYPES.VENT,
+  "gm-reposition": OPERATION_TYPES.REPOSITION,
+  fate: OPERATION_TYPES.RESOLVE_FATE,
+  "resolve-fate": OPERATION_TYPES.RESOLVE_FATE,
+});
+
+const KNOWN_TYPES = new Set(Object.values(OPERATION_TYPES));
+const GM_TYPES = new Set([
+  OPERATION_TYPES.ENTER_COMBAT,
+  OPERATION_TYPES.START_PHASE,
+  OPERATION_TYPES.COAST,
+  OPERATION_TYPES.END_PHASE,
+  OPERATION_TYPES.LEAVE_COMBAT,
+  OPERATION_TYPES.SET_ROSTER,
+  OPERATION_TYPES.REFRESH_RESOURCES,
+  OPERATION_TYPES.REPOSITION,
+  OPERATION_TYPES.RESOLVE_FATE,
+]);
+const ACTIVE_TYPES = new Set([
+  OPERATION_TYPES.SPEND_RESOURCE,
+  OPERATION_TYPES.TAKE_CONTROL,
+  OPERATION_TYPES.CONTRIBUTE_WORK,
+  OPERATION_TYPES.MANEUVER,
+  OPERATION_TYPES.ROTATE,
+  OPERATION_TYPES.ARM_EVASION,
+  OPERATION_TYPES.DISARM_EVASION,
+  OPERATION_TYPES.ROUTE_POWER,
+  OPERATION_TYPES.TOGGLE_WEAPON,
+  OPERATION_TYPES.ROUTE_DEFENSE,
+  OPERATION_TYPES.PING,
+  OPERATION_TYPES.ACQUIRE,
+  OPERATION_TYPES.ANALYZE,
+  OPERATION_TYPES.DEEP_SCAN,
+  OPERATION_TYPES.FIRING_SOLUTION,
+  OPERATION_TYPES.FADE,
+  OPERATION_TYPES.JAM,
+  OPERATION_TYPES.BREAK_LOCK,
+  OPERATION_TYPES.BURN_THROUGH,
+  OPERATION_TYPES.ATTACK,
+  OPERATION_TYPES.BEGIN_RELOAD,
+  OPERATION_TYPES.RELOAD,
+  OPERATION_TYPES.CANCEL_RELOAD,
+  OPERATION_TYPES.REPAIR,
+  OPERATION_TYPES.RECOVERY_WORK,
+  OPERATION_TYPES.HULL_REPAIR,
+  OPERATION_TYPES.COOLING,
+  OPERATION_TYPES.VENT,
+]);
+const SENSOR_TYPES = new Set([
+  OPERATION_TYPES.PING,
+  OPERATION_TYPES.ACQUIRE,
+  OPERATION_TYPES.ANALYZE,
+  OPERATION_TYPES.DEEP_SCAN,
+  OPERATION_TYPES.FIRING_SOLUTION,
+  OPERATION_TYPES.FADE,
+  OPERATION_TYPES.JAM,
+  OPERATION_TYPES.BREAK_LOCK,
+  OPERATION_TYPES.BURN_THROUGH,
+]);
+const GM_EVENT_ONLY_TYPES = new Set([
+  ...GM_TYPES,
+  ...SENSOR_TYPES,
+  OPERATION_TYPES.MANEUVER,
+  OPERATION_TYPES.ROTATE,
+  OPERATION_TYPES.ROUTE_POWER,
+  OPERATION_TYPES.TOGGLE_WEAPON,
+  OPERATION_TYPES.ROUTE_DEFENSE,
+]);
+
+function clone(value) {
+  if (value === undefined) return undefined;
+  return structuredClone(value);
+}
+
+function violation(code, message, details) {
+  throw new RuleViolation(code, message, details);
+}
+
+function recordState(record) {
+  return record?.state ?? record?.shipCombat?.state ?? record?.system?.shipCombat?.state;
+}
+
+function recordConfig(record) {
+  return record?.config ?? record?.shipCombat?.config ?? record?.system?.shipCombat?.config;
+}
+
+function recordToken(record) {
+  return record?.token ?? record?.tokenData ?? record?.transform ?? {};
+}
+
+function normalizeOperation(operation) {
+  if (!operation || typeof operation !== "object" || Array.isArray(operation)) {
+    violation("INVALID_OPERATION", "A ship operation must be an object.");
+  }
+  const suppliedType = operation.type;
+  if (typeof suppliedType !== "string" || !suppliedType) {
+    violation("INVALID_OPERATION_TYPE", "A ship operation requires a stable type string.");
+  }
+  const type = TYPE_ALIASES[suppliedType] ?? suppliedType;
+  if (!KNOWN_TYPES.has(type)) {
+    violation("UNKNOWN_OPERATION", "The requested ship operation is not supported.", { type: suppliedType });
+  }
+  if (typeof operation.sourceUuid !== "string" || !operation.sourceUuid) {
+    violation("OPERATION_SOURCE_REQUIRED", "A ship operation requires a source token UUID.");
+  }
+  if (operation.targetUuids != null && !Array.isArray(operation.targetUuids)) {
+    violation("INVALID_OPERATION_TARGETS", "Operation targetUuids must be an array.");
+  }
+  if (operation.payload != null && (typeof operation.payload !== "object" || Array.isArray(operation.payload))) {
+    violation("INVALID_OPERATION_PAYLOAD", "An operation payload must be an object.");
+  }
+  return {
+    ...operation,
+    type,
+    targetUuids: Array.from(operation.targetUuids ?? [], String),
+    payload: clone(operation.payload ?? {}),
+  };
+}
+
+function buildDrafts(context) {
+  if (!context?.ships || typeof context.ships !== "object") {
+    violation("OPERATION_SHIPS_REQUIRED", "Operation context requires ship snapshots keyed by token UUID.");
+  }
+  const drafts = new Map();
+  for (const [uuid, record] of Object.entries(context.ships)) {
+    const state = recordState(record);
+    const config = recordConfig(record);
+    if (!state || typeof state !== "object" || !config || typeof config !== "object") {
+      violation("INVALID_SHIP_SNAPSHOT", "Every ship snapshot requires config and state objects.", { uuid });
+    }
+    drafts.set(uuid, {
+      uuid,
+      source: record,
+      config,
+      state: clone(state),
+      token: clone(recordToken(record)),
+    });
+  }
+  return drafts;
+}
+
+function requireShip(drafts, uuid, role = "ship") {
+  const ship = drafts.get(uuid);
+  if (!ship) violation("SHIP_NOT_FOUND", `The ${role} token UUID is not present in the operation snapshot.`, { uuid, role });
+  return ship;
+}
+
+function assignmentId(entry) {
+  return typeof entry === "string" ? entry : entry?.operatorId ?? entry?.id;
+}
+
+function operatorFor(ship, operation, context) {
+  const operatorId = operation.payload.operatorId;
+  const override = context?.isGM === true && operation.payload.gmOverride === true;
+  if (typeof operatorId !== "string" || !operatorId) {
+    if (override) return null;
+    violation("OPERATOR_REQUIRED", "This operation requires a ship-local operatorId.", { type: operation.type });
+  }
+  const profile = (ship.config?.operators ?? []).find((candidate) => candidate?.id === operatorId);
+  const assignment = ["command", "crew"]
+    .flatMap((slot) => (ship.state?.roster?.[slot] ?? []).map((entry) => ({ slot, entry })))
+    .find(({ entry }) => assignmentId(entry) === operatorId);
+  if (!profile || !assignment) {
+    if (override) return profile ?? null;
+    violation("OPERATOR_NOT_ASSIGNED", "The operator is not currently assigned to this ship.", { operatorId });
+  }
+  if (profile.active === false || profile.incapacitated === true || profile.disconnected === true
+    || assignment.entry?.active === false || assignment.entry?.incapacitated === true || assignment.entry?.disconnected === true) {
+    if (!override) violation("OPERATOR_INACTIVE", "The assigned operator is not currently active.", { operatorId });
+  }
+  const assignedUserId = (typeof assignment.entry === "object" ? assignment.entry.userId : null) ?? profile.userId;
+  if (assignedUserId !== context?.userId) {
+    if (!override) {
+      violation("OPERATOR_PERMISSION_DENIED", "The submitting user does not own this ship-local operator assignment.", {
+        operatorId,
+        userId: context?.userId ?? null,
+      });
+    }
+  }
+  return profile;
+}
+
+function requireGM(operation, context) {
+  if (context?.isGM !== true) {
+    violation("GM_REQUIRED", "Only the active GM may perform this ship operation.", { type: operation.type });
+  }
+}
+
+function requireRoll(context) {
+  if (typeof context?.rollD20 !== "function") {
+    violation("MISSING_ROLL_SOURCE", "This operation requires an injected d20 roll source.");
+  }
+  const roll = context.rollD20();
+  if (!Number.isInteger(roll) || roll < 1 || roll > 20) {
+    violation("INVALID_D20", "Injected d20 roll must return an integer from 1 through 20.", { roll });
+  }
+  return roll;
+}
+
+function randomSource(context) {
+  if (context?.random !== undefined) return context.random;
+  return undefined;
+}
+
+function positionOf(ship, context) {
+  const adapter = context?.geometry?.positionOf ?? context?.geometry?.getPosition;
+  if (typeof adapter === "function") return clone(adapter(ship.source, ship.state, ship.token));
+  return clone(ship.state?.position ?? ship.token?.position ?? { x: ship.token?.x ?? 0, y: ship.token?.y ?? 0 });
+}
+
+function facingOf(ship, context) {
+  const adapter = context?.geometry?.facingOf ?? context?.geometry?.getFacing;
+  if (typeof adapter === "function") return Number(adapter(ship.source, ship.state, ship.token));
+  return Number(ship.state?.facing ?? ship.token?.rotation ?? 0);
+}
+
+function distanceBetween(source, target, context) {
+  const adapter = context?.geometry?.distanceBetween ?? context?.geometry?.distance;
+  if (typeof adapter === "function") return Number(adapter(source.source, target.source, source.state, target.state));
+  const first = positionOf(source, context);
+  const second = positionOf(target, context);
+  return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+function lineOfSight(kind, source, target, operation, context) {
+  const geometry = context?.geometry ?? {};
+  const adapter = kind === "weapon"
+    ? geometry.weaponLineOfSight ?? geometry.lineOfSight
+    : geometry.sensorLineOfSight ?? geometry.lineOfSight;
+  if (typeof adapter === "function") {
+    return adapter(source.source, target.source, { kind, operation, sourceState: source.state, targetState: target.state }) === true;
+  }
+  const payloadKey = kind === "weapon" ? "lineOfSight" : "sensorLineOfSight";
+  return operation.payload[payloadKey] ?? operation.payload.lineOfSight ?? true;
+}
+
+function collisionRadius(ship, context) {
+  const adapter = context?.geometry?.collisionRadius;
+  if (typeof adapter === "function") return Number(adapter(ship.source, ship.state, ship.token));
+  const tokenRadius = Number.isFinite(ship.token?.width) ? ship.token.width / 2 : 0;
+  return Number(ship.source?.collisionRadius ?? ship.token?.collisionRadius ?? ship.config?.collisionRadius ?? tokenRadius);
+}
+
+function tokenTransform(ship, position, facing, context) {
+  ship.state.position = clone(position);
+  ship.state.facing = Number(facing);
+  const adapter = context?.geometry?.tokenUpdate ?? context?.geometry?.toTokenUpdate;
+  const update = typeof adapter === "function"
+    ? adapter({ uuid: ship.uuid, ship: ship.source, token: clone(ship.token), position: clone(position), facing: Number(facing) })
+    : { x: position.x, y: position.y, rotation: Number(facing) };
+  if (!update || typeof update !== "object") {
+    violation("INVALID_TOKEN_TRANSFORM", "The geometry adapter must return a token update object.", { uuid: ship.uuid });
+  }
+  ship.token = { ...ship.token, ...clone(update) };
+}
+
+function tierAt(component, power) {
+  const tiers = Array.from(component?.tiers ?? []).filter((tier) => Number(tier?.power) <= power);
+  tiers.sort((left, right) => Number(left.power) - Number(right.power));
+  return tiers.at(-1) ?? { multiplier: 0, online: false };
+}
+
+function driveCapabilities(ship) {
+  const drive = ship.config?.components?.drive ?? {};
+  const tier = tierAt(drive, Number(ship.state?.power?.engines ?? 0));
+  const driveFault = getFaultEffects(ship.config, ship.state, { componentId: drive.id, channel: "driveFailure" });
+  const thrusterFault = getFaultEffects(ship.config, ship.state, { componentId: drive.id, channel: "maneuveringThrusterFailure" });
+  const base = drive.base ?? {};
+  const multiplier = Number(tier.multiplier ?? 0);
+  return {
+    forward: Number(base.forward ?? 0) * multiplier * Number(driveFault.forwardMultiplier ?? driveFault.capabilityMultiplier ?? 1),
+    retro: Number(base.retro ?? 0) * multiplier * Number(driveFault.retroMultiplier ?? driveFault.capabilityMultiplier ?? 1),
+    port: Number(base.port ?? 0) * multiplier * Number(thrusterFault.lateralMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
+    starboard: Number(base.starboard ?? 0) * multiplier * Number(thrusterFault.lateralMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
+    rotation: Number(base.rotation ?? 0) * multiplier * Number(thrusterFault.rotationMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
+  };
+}
+
+function obstacleSnapshots(source, drafts, context) {
+  const obstacles = [];
+  for (const ship of drafts.values()) {
+    if (ship.uuid === source.uuid) continue;
+    obstacles.push({
+      id: ship.uuid,
+      position: positionOf(ship, context),
+      velocity: clone(ship.state?.velocity ?? { x: 0, y: 0 }),
+      facing: facingOf(ship, context),
+      radius: collisionRadius(ship, context),
+      size: ship.config?.size ?? "medium",
+      maxHull: ship.config?.maxHull,
+      armor: 0,
+    });
+  }
+  const wallProvider = context?.geometry?.walls ?? context?.walls;
+  const walls = typeof wallProvider === "function" ? wallProvider(source.source) : wallProvider;
+  for (const wall of walls ?? []) obstacles.push({ ...clone(wall), type: "wall" });
+  return obstacles;
+}
+
+function movementInput(source, drafts, operation, context) {
+  return {
+    ...operation.payload,
+    id: source.uuid,
+    position: positionOf(source, context),
+    facing: facingOf(source, context),
+    capabilities: driveCapabilities(source),
+    collisionRadius: collisionRadius(source, context),
+    ship: {
+      id: source.uuid,
+      size: source.config?.size ?? "medium",
+      radius: collisionRadius(source, context),
+      maxHull: source.config?.maxHull,
+      armor: 0,
+    },
+    obstacles: obstacleSnapshots(source, drafts, context),
+  };
+}
+
+function targetObservation(source, target, operation, context) {
+  const position = positionOf(target, context);
+  return {
+    targetUuid: target.uuid,
+    uuid: target.uuid,
+    targetConfig: target.config,
+    targetState: target.state,
+    distance: distanceBetween(source, target, context),
+    sensorLineOfSight: lineOfSight("sensor", source, target, operation, context),
+    position,
+    velocity: clone(target.state?.velocity ?? { x: 0, y: 0 }),
+    facing: facingOf(target, context),
+    label: target.source?.label ?? target.token?.name ?? target.config?.label,
+    size: target.config?.size,
+    shipClass: target.config?.shipClass ?? target.config?.label,
+  };
+}
+
+function sensorInput(source, target, operation, context, operator) {
+  const observation = target ? targetObservation(source, target, operation, context) : {};
+  return {
+    ...operation.payload,
+    ...observation,
+    operatorId: operation.payload.operatorId,
+    operatorUuid: operation.payload.operatorId,
+    operatorSensors: Number(operator?.ratings?.sensors ?? operator?.sensors ?? 0),
+    observerUuid: source.uuid,
+    sourceUuid: source.uuid,
+    actingUuid: source.uuid,
+    config: source.config,
+    observerConfig: source.config,
+    actingConfig: source.config,
+    actingState: source.state,
+    state: source.state,
+    d20: undefined,
+  };
+}
+
+function requireSingleTarget(operation, drafts) {
+  if (operation.targetUuids.length !== 1) {
+    violation("SINGLE_TARGET_REQUIRED", "This operation requires exactly one target token UUID.", {
+      targetUuids: operation.targetUuids,
+    });
+  }
+  if (operation.targetUuids[0] === operation.sourceUuid) {
+    violation("SELF_TARGET_FORBIDDEN", "This operation cannot target its own source ship.");
+  }
+  return requireShip(drafts, operation.targetUuids[0], "target");
+}
+
+function requireTargets(operation, drafts) {
+  if (operation.targetUuids.length === 0) {
+    violation("TARGET_REQUIRED", "This operation requires at least one target token UUID.");
+  }
+  const unique = new Set(operation.targetUuids);
+  if (unique.size !== operation.targetUuids.length) {
+    violation("DUPLICATE_OPERATION_TARGET", "An operation cannot target the same ship more than once.");
+  }
+  if (unique.has(operation.sourceUuid)) {
+    violation("SELF_TARGET_FORBIDDEN", "This operation cannot target its own source ship.");
+  }
+  return operation.targetUuids.map((uuid) => requireShip(drafts, uuid, "target"));
+}
+
+function validateExpectedRevisions(operation, drafts, uuids) {
+  const expected = operation.expectedRevisions;
+  if (!expected || typeof expected !== "object" || Array.isArray(expected)) {
+    violation("EXPECTED_REVISIONS_REQUIRED", "An operation requires expected revisions keyed by token UUID.");
+  }
+  for (const uuid of uuids) {
+    if (!Object.hasOwn(expected, uuid) || !Number.isInteger(expected[uuid]) || expected[uuid] < 0) {
+      violation("EXPECTED_REVISION_REQUIRED", "Every affected ship requires a nonnegative expected revision.", { uuid });
+    }
+    const actual = recordState(requireShip(drafts, uuid))?.revision;
+    if (expected[uuid] !== actual) {
+      violation("STALE_SHIP_REVISION", "A ship changed after this operation was prepared.", {
+        uuid,
+        expected: expected[uuid],
+        actual,
+      });
+    }
+  }
+}
+
+function requireControl(source, control, operatorId) {
+  const holder = source.state?.controls?.[control];
+  const holderId = typeof holder === "string" ? holder : holder?.operatorId;
+  if (holderId !== operatorId) {
+    violation("CONTROL_REQUIRED", `This operation requires held ${control} control.`, { control, operatorId, holderId: holderId ?? null });
+  }
+}
+
+function operationMetadata(operation) {
+  return { id: operation.type, ...(operation.payload.operation ?? {}) };
+}
+
+function spend(source, operation) {
+  return spendOperationResource(source.config, source.state, {
+    operatorId: operation.payload.operatorId,
+    operation: operationMetadata(operation),
+    cost: operation.payload.cost ?? 1,
+    free: operation.payload.free === true,
+  });
+}
+
+function addEvent(collections, type, result, options = {}) {
+  const base = { type, sourceUuid: options.sourceUuid, targetUuids: options.targetUuids ?? [] };
+  if (result && (Object.hasOwn(result, "public") || Object.hasOwn(result, "gm"))) {
+    if (result.public != null) collections.publicEvents.push({ ...base, detail: clone(result.public) });
+    if (result.gm != null) collections.gmEvents.push({ ...base, detail: clone(result.gm) });
+    return;
+  }
+  collections.gmEvents.push({ ...base, detail: clone(result) });
+  if (!options.gmOnly) collections.publicEvents.push({ ...base, detail: clone(result) });
+}
+
+function collisionSector(impact, uuid) {
+  return impact?.conditionEvents?.find((event) => String(event.shipId) === uuid)?.sector;
+}
+
+function applyCollisionDamage(ship, impact, participant, context) {
+  const damage = participant?.damage;
+  if (!damage?.applied || damage.calculatedRawDamage <= 0) return null;
+  const sector = collisionSector(impact, ship.uuid) ?? "fore";
+  const result = resolveShieldDamage(ship.config, ship.state, {
+    sector,
+    shieldDamage: 0,
+    hullDamage: damage.calculatedRawDamage,
+    heatDamage: 0,
+    bypass: { hull: true },
+  });
+  const severity = getCollisionSeverity(result.hullDamageTaken, Number(ship.config?.maxHull));
+  let condition = null;
+  if (severity) {
+    const tiers = { minor: 1, major: 2, critical: 3 }[severity];
+    const conditionId = selectCondition(ship.config, ship.state, { sector, random: randomSource(context) });
+    if (conditionId) condition = applyConditionTiers(ship.config, ship.state, {
+      conditionId,
+      tiers,
+      sector,
+      random: randomSource(context),
+    });
+  }
+  return { sector, damage: result, severity, condition };
+}
+
+function applyMovementResult(source, result, drafts, context, changed, tokenChanged) {
+  const finalPosition = result.position ?? result.coast?.position;
+  const finalFacing = result.facing ?? result.coast?.facing ?? facingOf(source, context);
+  changed.add(source.uuid);
+  const collisionResults = [];
+  for (const collision of result.collisionEvents ?? result.coast?.collisionEvents ?? []) {
+    const impact = collision?.impact;
+    if (!impact) continue;
+    if (impact.type === "wall") {
+      const damage = applyCollisionDamage(source, impact, impact.ship, context);
+      collisionResults.push({ obstacleId: collision.obstacleId, sourceUuid: source.uuid, damage });
+      continue;
+    }
+    const target = drafts.get(String(collision.obstacleId));
+    if (!target) violation("COLLISION_SHIP_NOT_FOUND", "A collision participant is missing from the atomic snapshot.", { uuid: collision.obstacleId });
+    target.state.velocity = clone(impact.shipB.velocity);
+    tokenTransform(target, impact.shipB.position, facingOf(target, context), context);
+    const sourceDamage = applyCollisionDamage(source, impact, impact.shipA, context);
+    addPhysicalContact(source.state, {
+      targetUuid: target.uuid,
+      physicalUntilTurnKey: true,
+      observation: {
+        position: clone(impact.shipB.position),
+        velocity: clone(impact.shipB.velocity),
+        facing: facingOf(target, context),
+      },
+    });
+    addPhysicalContact(target.state, {
+      targetUuid: source.uuid,
+      physicalUntilTurnKey: true,
+      observation: {
+        position: clone(impact.shipA.position),
+        velocity: clone(impact.shipA.velocity),
+        facing: facingOf(source, context),
+      },
+    });
+    const targetDamage = applyCollisionDamage(target, impact, impact.shipB, context);
+    changed.add(target.uuid);
+    tokenChanged.add(target.uuid);
+    collisionResults.push({ obstacleId: target.uuid, sourceUuid: source.uuid, sourceDamage, targetDamage });
+  }
+  if (finalPosition) {
+    tokenTransform(source, finalPosition, finalFacing, context);
+    tokenChanged.add(source.uuid);
+  }
+  return collisionResults;
+}
+
+/**
+ * Execute one authoritative operation exclusively against cloned ship and token snapshots.
+ * @param {object} operation canonical operation request
+ * @param {object} context pure authority context
+ * @returns {{shipStates:object,tokenUpdates:object,publicEvents:object[],gmEvents:object[],changedUuids:string[]}}
+ */
+export function executeShipOperation(operation, context) {
+  const request = normalizeOperation(operation);
+  const drafts = buildDrafts(context);
+  const source = requireShip(drafts, request.sourceUuid, "source");
+  const changed = new Set();
+  const tokenChanged = new Set();
+  const events = { publicEvents: [], gmEvents: [] };
+
+  if (GM_TYPES.has(request.type)) requireGM(request, context);
+  let operator = null;
+  if (!GM_TYPES.has(request.type)) operator = operatorFor(source, request, context);
+  if (ACTIVE_TYPES.has(request.type)) assertActivePhase(source.state);
+  validateExpectedRevisions(request, drafts, [request.sourceUuid, ...request.targetUuids]);
+
+  let result;
+  switch (request.type) {
+    case OPERATION_TYPES.ENTER_COMBAT:
+      result = enterCombat(source.config, source.state, { turnKey: request.payload.turnKey });
+      break;
+    case OPERATION_TYPES.START_PHASE: {
+      const targets = Array.from(drafts.values())
+        .filter((ship) => ship.uuid !== source.uuid)
+        .map((ship) => targetObservation(source, ship, request, context));
+      result = runStartPhase(source.config, source.state, {
+        ...request.payload,
+        targets,
+        random: randomSource(context),
+      });
+      break;
+    }
+    case OPERATION_TYPES.COAST: {
+      result = runEndActiveCoast(source.config, source.state, movementInput(source, drafts, request, context));
+      const collisions = applyMovementResult(source, result, drafts, context, changed, tokenChanged);
+      result = { ...result, collisions };
+      break;
+    }
+    case OPERATION_TYPES.END_PHASE:
+      result = runEndPhase(source.config, source.state, { ...request.payload, random: randomSource(context) });
+      break;
+    case OPERATION_TYPES.LEAVE_COMBAT:
+      result = leaveCombat(source.config, source.state);
+      break;
+    case OPERATION_TYPES.SET_ROSTER: {
+      const roster = request.payload.roster ?? request.payload;
+      const validated = validateRoster(source.config, roster, { occupiedIdentities: request.payload.occupiedIdentities ?? [] });
+      source.state.roster = { ...(source.state.roster ?? {}), command: validated.command, crew: validated.crew };
+      result = validated;
+      break;
+    }
+    case OPERATION_TYPES.REFRESH_RESOURCES:
+      result = refreshResources(source.config, source.state, request.payload);
+      break;
+    case OPERATION_TYPES.SPEND_RESOURCE:
+      result = spend(source, request);
+      break;
+    case OPERATION_TYPES.TAKE_CONTROL:
+      result = takeControl(source.config, source.state, {
+        operatorId: request.payload.operatorId,
+        control: request.payload.control,
+        operation: operationMetadata(request),
+      });
+      break;
+    case OPERATION_TYPES.CONTRIBUTE_WORK:
+      result = contributeWork(source.config, source.state, {
+        ...request.payload,
+        operatorId: request.payload.operatorId,
+        operation: operationMetadata(request),
+      });
+      break;
+    case OPERATION_TYPES.MANEUVER: {
+      requireControl(source, "helm", request.payload.operatorId);
+      result = applyManeuver(source.state, movementInput(source, drafts, request, context));
+      const collisions = applyMovementResult(source, result, drafts, context, changed, tokenChanged);
+      result = { ...result, collisions };
+      break;
+    }
+    case OPERATION_TYPES.ROTATE: {
+      requireControl(source, "helm", request.payload.operatorId);
+      result = applyRotation(source.state, movementInput(source, drafts, request, context));
+      applyMovementResult(source, result, drafts, context, changed, tokenChanged);
+      break;
+    }
+    case OPERATION_TYPES.ARM_EVASION: {
+      requireControl(source, "helm", request.payload.operatorId);
+      const capabilities = driveCapabilities(source);
+      const reserve = Number(source.config?.evasionReserve ?? 0);
+      result = armEvasion(source.state, {
+        phase: source.state.phase,
+        hasHelm: true,
+        enginesPower: Number(source.state?.power?.engines ?? 0),
+        hardwareOperational: capabilities.rotation > 0 && Math.max(capabilities.port, capabilities.starboard) > 0,
+        maneuverCapability: Math.max(capabilities.forward, capabilities.retro, capabilities.port, capabilities.starboard),
+        evasionReserve: reserve > 1 ? reserve / 100 : reserve,
+        evasionAcBonus: source.config?.evasionAcBonus,
+      });
+      break;
+    }
+    case OPERATION_TYPES.DISARM_EVASION:
+      requireControl(source, "helm", request.payload.operatorId);
+      result = disarmEvasion(source.state);
+      break;
+    case OPERATION_TYPES.ROUTE_POWER:
+      requireControl(source, "power", request.payload.operatorId);
+      result = commitPowerRoute(source.config, source.state, request.payload.staged ?? request.payload);
+      break;
+    case OPERATION_TYPES.TOGGLE_WEAPON:
+      requireControl(source, "power", request.payload.operatorId);
+      result = toggleWeapon(source.config, source.state, request.payload);
+      break;
+    case OPERATION_TYPES.ROUTE_DEFENSE:
+      requireControl(source, "defense", request.payload.operatorId);
+      result = commitDefenseRoute(source.config, source.state, request.payload.staged ?? request.payload);
+      break;
+    case OPERATION_TYPES.PING: {
+      const targets = request.targetUuids.length
+        ? request.targetUuids.map((uuid) => targetObservation(source, requireShip(drafts, uuid, "target"), request, context))
+        : Array.from(drafts.values()).filter((ship) => ship.uuid !== source.uuid).map((ship) => targetObservation(source, ship, request, context));
+      spend(source, request);
+      result = activePing(source.state, {
+        ...sensorInput(source, null, request, context, operator),
+        d20: requireRoll(context),
+        targets,
+      });
+      break;
+    }
+    case OPERATION_TYPES.ACQUIRE:
+    case OPERATION_TYPES.ANALYZE:
+    case OPERATION_TYPES.DEEP_SCAN:
+    case OPERATION_TYPES.FIRING_SOLUTION: {
+      const target = requireSingleTarget(request, drafts);
+      spend(source, request);
+      const input = sensorInput(source, target, request, context, operator);
+      if (request.type === OPERATION_TYPES.ACQUIRE) {
+        if (request.payload.dc != null) input.d20 = requireRoll(context);
+        result = acquireTarget(source.state, input);
+      } else if (request.type === OPERATION_TYPES.ANALYZE) {
+        result = analyzeDefenses(source.state, { ...input, telemetry: targetObservation(source, target, request, context) });
+      } else if (request.type === OPERATION_TYPES.DEEP_SCAN) {
+        result = deepScan(source.state, {
+          ...input,
+          identifiedSubsystems: [
+            target.config?.components?.reactor,
+            target.config?.components?.drive,
+            target.config?.components?.shield,
+            target.config?.components?.sensor,
+            target.config?.components?.cooling,
+            ...(target.config?.components?.weapons ?? []),
+          ].filter(Boolean).map(({ id, label, class: componentClass, regions }) => ({ id, label, class: componentClass, regions })),
+          telemetry: targetObservation(source, target, request, context),
+        });
+      } else result = calculateFiringSolution(source.state, input);
+      break;
+    }
+    case OPERATION_TYPES.FADE: {
+      spend(source, request);
+      const observers = Array.from(drafts.values()).filter((ship) => ship.uuid !== source.uuid).map((observer) => ({
+        observerUuid: observer.uuid,
+        observerConfig: observer.config,
+        observerState: observer.state,
+        distance: distanceBetween(observer, source, context),
+        sensorLineOfSight: lineOfSight("sensor", observer, source, request, context),
+      }));
+      result = fadeTrack({ ...sensorInput(source, null, request, context, operator), observers });
+      for (const observerUuid of result.lostBy) changed.add(observerUuid);
+      break;
+    }
+    case OPERATION_TYPES.JAM:
+    case OPERATION_TYPES.BREAK_LOCK:
+    case OPERATION_TYPES.BURN_THROUGH: {
+      const target = requireSingleTarget(request, drafts);
+      spend(source, request);
+      const input = {
+        ...sensorInput(source, target, request, context, operator),
+        targetUuid: target.uuid,
+        targetConfig: target.config,
+        targetState: target.state,
+        jammerUuid: target.uuid,
+        jammerConfig: target.config,
+        jammerState: target.state,
+        recipientDistance: distanceBetween(target, source, context),
+        recipientSensorLineOfSight: lineOfSight("sensor", target, source, request, context),
+        d20: requireRoll(context),
+      };
+      if (request.type === OPERATION_TYPES.JAM) {
+        result = jamTarget(input);
+        if (result.success) changed.add(target.uuid);
+      } else if (request.type === OPERATION_TYPES.BREAK_LOCK) {
+        result = breakLock(input);
+        if (result.broken) changed.add(target.uuid);
+      } else result = burnThrough(input);
+      break;
+    }
+    case OPERATION_TYPES.ATTACK: {
+      const targets = requireTargets(request, drafts);
+      const attacks = targets.map((target) => {
+        const targetPayload = request.payload.targets?.[target.uuid] ?? {};
+        const declaration = {
+          ...request.payload,
+          ...targetPayload,
+          targetUuid: target.uuid,
+          attackerPosition: positionOf(source, context),
+          targetPosition: positionOf(target, context),
+          attackerVelocity: clone(source.state.velocity),
+          targetVelocity: clone(target.state.velocity),
+          attackerFacing: facingOf(source, context),
+          targetFacing: facingOf(target, context),
+          lineOfSight: lineOfSight("weapon", source, target, request, context),
+          gunneryModifier: Number(operator?.ratings?.gunnery ?? operator?.gunnery ?? 0),
+        };
+        const attack = commitAttack({
+          attackerConfig: source.config,
+          attackerDraft: source.state,
+          targetConfig: target.config,
+          targetDraft: target.state,
+          declaration,
+          rollD20: () => requireRoll(context),
+          random: randomSource(context),
+          helpers: { spendOperationResource, applyConditionTiers, selectCondition, getFaultEffects },
+        });
+        changed.add(target.uuid);
+        return { targetUuid: target.uuid, ...attack };
+      });
+      result = attacks.length === 1
+        ? { public: attacks[0].public, gm: attacks[0].gm }
+        : {
+            public: { attacks: attacks.map(({ targetUuid, public: detail }) => ({ targetUuid, detail })) },
+            gm: { attacks: attacks.map(({ targetUuid, gm: detail }) => ({ targetUuid, detail })) },
+          };
+      break;
+    }
+    case OPERATION_TYPES.BEGIN_RELOAD:
+      result = beginWeaponReload(source.config, source.state, { weaponId: request.payload.weaponId }, { getFaultEffects });
+      break;
+    case OPERATION_TYPES.RELOAD: {
+      const weaponId = request.payload.weaponId;
+      const reload = source.state?.weapons?.[weaponId]?.reloadWork;
+      if (!reload) violation("WEAPON_NOT_RELOADING", "No manual reload Work is in progress.", { weaponId });
+      const work = contributeWork(source.config, source.state, {
+        operatorId: request.payload.operatorId,
+        jobId: `reload:${weaponId}`,
+        required: reload.required,
+        operation: { ...operationMetadata(request), allowWork: true },
+      });
+      const contribution = contributeWeaponReload(source.config, source.state, { weaponId, amount: 1 }, { getFaultEffects });
+      result = { work, contribution };
+      break;
+    }
+    case OPERATION_TYPES.CANCEL_RELOAD:
+      result = cancelWeaponReload(source.config, source.state, { weaponId: request.payload.weaponId });
+      break;
+    case OPERATION_TYPES.REPAIR:
+      result = standardRepair(source.config, source.state, {
+        ...request.payload,
+        total: undefined,
+        roll: requireRoll(context),
+        operation: operationMetadata(request),
+      });
+      break;
+    case OPERATION_TYPES.RECOVERY_WORK:
+      result = contributeRecoveryWork(source.config, source.state, {
+        ...request.payload,
+        operation: operationMetadata(request),
+      });
+      break;
+    case OPERATION_TYPES.HULL_REPAIR:
+      result = repairHull(source.config, source.state, {
+        ...request.payload,
+        total: undefined,
+        roll: requireRoll(context),
+        operation: operationMetadata(request),
+      });
+      break;
+    case OPERATION_TYPES.COOLING:
+      result = activeCooling(source.config, source.state, { ...request.payload, operation: operationMetadata(request) });
+      break;
+    case OPERATION_TYPES.VENT:
+      result = emergencyVent(source.config, source.state, { ...request.payload, operation: operationMetadata(request) });
+      break;
+    case OPERATION_TYPES.REPOSITION: {
+      const position = request.payload.position;
+      if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
+        violation("INVALID_REPOSITION", "GM reposition requires finite position coordinates.", { position });
+      }
+      const facing = request.payload.facing == null ? facingOf(source, context) : Number(request.payload.facing);
+      if (!Number.isFinite(facing)) violation("INVALID_REPOSITION", "GM reposition facing must be finite.", { facing });
+      tokenTransform(source, position, facing, context);
+      if (request.payload.resetVelocity === true) source.state.velocity = { x: 0, y: 0 };
+      tokenChanged.add(source.uuid);
+      result = { position: clone(position), facing, velocityReset: request.payload.resetVelocity === true };
+      break;
+    }
+    case OPERATION_TYPES.RESOLVE_FATE:
+      result = resolveShipFate(source.config, source.state, { nonLethal: request.payload.nonLethal === true });
+      break;
+    default:
+      violation("UNKNOWN_OPERATION", "The requested ship operation is not supported.", { type: request.type });
+  }
+
+  changed.add(source.uuid);
+  for (const ship of drafts.values()) {
+    ship.state.revision = recordState(ship.source).revision;
+  }
+  addEvent(events, request.type, result, {
+    sourceUuid: source.uuid,
+    targetUuids: request.targetUuids,
+    gmOnly: GM_EVENT_ONLY_TYPES.has(request.type),
+  });
+
+  return {
+    shipStates: Object.fromEntries(Array.from(drafts, ([uuid, ship]) => [uuid, ship.state])),
+    tokenUpdates: Object.fromEntries(Array.from(tokenChanged, (uuid) => [uuid, drafts.get(uuid).token])),
+    publicEvents: events.publicEvents,
+    gmEvents: events.gmEvents,
+    changedUuids: Array.from(changed).sort(),
+  };
+}
