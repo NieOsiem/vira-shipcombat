@@ -11,10 +11,8 @@ let overlayGraphics = null;
 let lastKnownMarkers = [];
 
 const COLORS = Object.freeze({
-  powered: 0x4aa8ff,
-  poweredCore: 0xd9f3ff,
-  coast: 0x64e6ff,
-  coastCore: 0xd6fbff,
+  powered: 0xb9d8d5,
+  coast: 0x8fa6b5,
   pathShadow: 0x071521,
   facing: 0xffffff,
   arc: 0x84d681,
@@ -22,11 +20,11 @@ const COLORS = Object.freeze({
   overspeed: 0xffbd45,
   wall: 0xff5c72,
   marker: 0xffd166,
-  shield: 0x35f2d0,
-  shieldLow: 0xffc857,
-  shieldCritical: 0xff5267,
-  shieldBroken: 0x05090b,
-  shieldEdge: 0x051015,
+  shield: 0x91c7c4,
+  shieldLow: 0xe3b56c,
+  shieldCritical: 0xe78383,
+  shieldEmpty: 0xa0aab1,
+  shieldEdge: 0x10191f,
 });
 
 function finitePoint(value) {
@@ -74,7 +72,7 @@ function useModernGraphics(graphics) {
   return typeof graphics?.stroke === "function";
 }
 
-function strokePath(graphics, points, { color, width = 3, alpha = 1, dashed = false }) {
+function strokePath(graphics, points, { color, width = 3, alpha = 1, dashed = false, cap = "round", join = "round" } = {}) {
   if (points.length < 2) return;
   if (!useModernGraphics(graphics)) graphics.lineStyle(width, color, alpha);
   if (!dashed) {
@@ -97,7 +95,7 @@ function strokePath(graphics, points, { color, width = 3, alpha = 1, dashed = fa
       }
     }
   }
-  if (useModernGraphics(graphics)) graphics.stroke({ color, width, alpha, cap: "round", join: "round" });
+  if (useModernGraphics(graphics)) graphics.stroke({ color, width, alpha, cap, join });
 }
 
 function drawCircle(graphics, point, radius, { color, alpha = 1, width = 2, fillAlpha = 0 }) {
@@ -123,17 +121,6 @@ function fillCircle(graphics, point, radius, color, alpha = 1) {
   graphics.endFill();
 }
 
-function fillPolygon(graphics, points, color, alpha = 1) {
-  const coordinates = points.flatMap((point) => [point.x, point.y]);
-  if (useModernGraphics(graphics)) {
-    graphics.poly(coordinates);
-    graphics.fill({ color, alpha });
-    return;
-  }
-  graphics.beginFill(color, alpha);
-  graphics.drawPolygon(coordinates);
-  graphics.endFill();
-}
 
 function tokenShieldCenter(token) {
   return {
@@ -146,7 +133,7 @@ function tokenShieldRadius(token) {
   const document = token?.document ?? token;
   const width = Number(token?.w ?? (Number(document?.width ?? 1) * gridSize()));
   const height = Number(token?.h ?? (Number(document?.height ?? document?.width ?? 1) * gridSize()));
-  return (Math.max(width, height) / 2) + Math.max(13, gridSize() * 0.13);
+  return (Math.max(width, height) / 2) + Math.max(10, gridSize() * 0.1);
 }
 
 function shieldSectorCapacity(shield, sector) {
@@ -156,11 +143,12 @@ function shieldSectorCapacity(shield, sector) {
 }
 
 function shieldAppearance(charge, capacity, collapsed) {
-  const ratio = capacity > 0 ? charge / capacity : 0;
-  if (collapsed || charge <= 0) return { color: COLORS.shieldBroken, alpha: 0.24, labelAlpha: 0.38 };
-  if (ratio <= 0.25) return { color: COLORS.shieldCritical, alpha: 0.82, labelAlpha: 0.9 };
-  if (ratio <= 0.5) return { color: COLORS.shieldLow, alpha: 0.9, labelAlpha: 0.95 };
-  return { color: COLORS.shield, alpha: 0.98, labelAlpha: 1 };
+  const ratio = capacity > 0 ? Math.min(1, Math.max(0, charge / capacity)) : 0;
+  if (collapsed) return { color: COLORS.shieldCritical, ratio: 0 };
+  if (charge <= 0) return { color: COLORS.shieldEmpty, ratio: 0 };
+  if (ratio <= 0.25) return { color: COLORS.shieldCritical, ratio };
+  if (ratio <= 0.5) return { color: COLORS.shieldLow, ratio };
+  return { color: COLORS.shield, ratio };
 }
 
 function strokeArc(graphics, center, radius, start, end, { color, width, alpha }) {
@@ -171,7 +159,7 @@ function strokeArc(graphics, center, radius, start, end, { color, width, alpha }
   if (useModernGraphics(graphics)) {
     graphics.moveTo(startPoint.x, startPoint.y);
     graphics.arc(center.x, center.y, radius, start, end);
-    graphics.stroke({ color, width, alpha, cap: "round" });
+    graphics.stroke({ color, width, alpha, cap: "butt" });
     return;
   }
   graphics.lineStyle(width, color, alpha);
@@ -179,33 +167,15 @@ function strokeArc(graphics, center, radius, start, end, { color, width, alpha }
   graphics.arc(center.x, center.y, radius, start, end);
 }
 
-
-function drawShieldArc(graphics, center, radius, start, end, color, alpha, width) {
-  strokeArc(graphics, center, radius, start, end, {
-    color: COLORS.shieldEdge,
-    width: width + 6,
-    alpha: Math.max(0.18, alpha * 0.9),
+function drawShieldArc(graphics, center, radius, start, end, appearance) {
+  strokeArc(graphics, center, radius, start, end, { color: COLORS.shieldEdge, width: 3.5, alpha: 0.45 });
+  strokeArc(graphics, center, radius, start, end, { color: COLORS.shieldEmpty, width: 2, alpha: 0.3 });
+  if (appearance.ratio <= 0) return;
+  const middle = (start + end) / 2;
+  const half = (end - start) * appearance.ratio / 2;
+  strokeArc(graphics, center, radius, middle - half, middle + half, {
+    color: appearance.color, width: 2.5, alpha: 0.95,
   });
-  strokeArc(graphics, center, radius, start, end, { color, width, alpha });
-  const capRadius = width / 2;
-  fillCircle(graphics, {
-    x: center.x + (Math.cos(start) * radius),
-    y: center.y + (Math.sin(start) * radius),
-  }, capRadius, color, alpha);
-  fillCircle(graphics, {
-    x: center.x + (Math.cos(end) * radius),
-    y: center.y + (Math.sin(end) * radius),
-  }, capRadius, color, alpha);
-}
-
-function drawSectorPip(graphics, center, radius, heading, color, width) {
-  const tip = headingPoint(center, heading, radius + width * 1.7);
-  const base = headingPoint(center, heading, radius + width * 0.55);
-  const left = headingPoint(base, heading - 90, width * 0.72);
-  const right = headingPoint(base, heading + 90, width * 0.72);
-  fillPolygon(graphics, [tip, left, right], COLORS.shieldEdge, 0.95);
-  const insetTip = headingPoint(center, heading, radius + width * 1.4);
-  fillPolygon(graphics, [insetTip, left, right], color, 0.95);
 }
 
 function hasVisibleShields(token) {
@@ -216,13 +186,19 @@ function hasVisibleShields(token) {
   return Boolean(actor?.system?.shipCombat?.config?.components?.shield && actor?.system?.shipCombat?.state?.shields);
 }
 
-function shieldLabel(text, appearance, heading, radius) {
-  const label = makeText(text, appearance.color, {
-    fontSize: Math.max(12, gridSize() * 0.14),
-    strokeWidth: 5,
-  });
-  label.anchor?.set?.(0.5);
-  label.alpha = appearance.labelAlpha;
+function shieldLabel(text, color, heading, radius) {
+  const style = {
+    fontFamily: "Arial, sans-serif",
+    fontSize: 12,
+    fontWeight: "600",
+    fill: color,
+  };
+  const label = Number.parseInt(globalThis.PIXI?.VERSION, 10) >= 8
+    ? new PIXI.Text({ text, style: { ...style, stroke: { color: COLORS.shieldEdge, width: 2, join: "round" } } })
+    : new PIXI.Text(text, { ...style, stroke: COLORS.shieldEdge, strokeThickness: 2, lineJoin: "round" });
+  label.anchor.set(0.5);
+  label.resolution = Math.max(2, globalThis.devicePixelRatio ?? 1);
+  label.eventMode = "none";
   label._viraHeading = heading;
   label._viraRadius = radius;
   return label;
@@ -234,33 +210,21 @@ function drawTokenShields(entry, token) {
   const state = actor.system.shipCombat.state.shields;
   const center = tokenShieldCenter(token);
   const radius = tokenShieldRadius(token);
-  const width = Math.max(6, gridSize() * 0.07);
+  const bubble = shield.topology === "bubble";
+  const sectors = bubble ? [shield.sectors?.[0] ?? "bubble"] : ["fore", "starboard", "aft", "port"];
+  const headings = { fore: 0, starboard: 90, aft: 180, port: 270 };
+  const halfArc = degreesToRadians(bubble ? 170 : 32);
+
   entry.graphics.clear();
-  entry.labels.removeChildren().forEach((child) => child.destroy?.());
-
-  if (shield.topology === "bubble") {
-    const sector = shield.sectors?.[0] ?? "bubble";
+  entry.labels.removeChildren().forEach((child) => child.destroy?.({ children: true }));
+  for (const sector of sectors) {
     const charge = Number(state.charge?.[sector] ?? 0);
-    const capacity = shieldSectorCapacity(shield, sector);
     const collapsed = Number(state.collapse?.[sector] ?? 0) > 0;
-    const appearance = shieldAppearance(charge, capacity, collapsed);
-    drawShieldArc(entry.graphics, center, radius, -Math.PI / 2, (Math.PI * 3) / 2, appearance.color, appearance.alpha, width);
-    entry.labels.addChild(shieldLabel(String(charge), appearance, 0, radius));
-    return;
-  }
-
-  const centers = { fore: 0, starboard: 90, aft: 180, port: 270 };
-  for (const sector of ["fore", "starboard", "aft", "port"]) {
-    const charge = Number(state.charge?.[sector] ?? 0);
-    const capacity = shieldSectorCapacity(shield, sector);
-    const collapsed = Number(state.collapse?.[sector] ?? 0) > 0;
-    const heading = centers[sector];
-    const centerAngle = degreesToRadians(heading - 90);
-    const halfArc = degreesToRadians(36);
-    const appearance = shieldAppearance(charge, capacity, collapsed);
-    drawShieldArc(entry.graphics, center, radius, centerAngle - halfArc, centerAngle + halfArc, appearance.color, appearance.alpha, width);
-    if (sector === "fore") drawSectorPip(entry.graphics, center, radius, heading, appearance.color, width);
-    entry.labels.addChild(shieldLabel(String(charge), appearance, heading, radius));
+    const appearance = shieldAppearance(charge, shieldSectorCapacity(shield, sector), collapsed);
+    const heading = bubble ? 0 : headings[sector];
+    const middle = degreesToRadians(bubble ? 90 : heading - 90);
+    drawShieldArc(entry.graphics, center, radius, middle - halfArc, middle + halfArc, appearance);
+    entry.labels.addChild(shieldLabel(collapsed ? "×" : String(charge), appearance.color, heading, radius + 12));
   }
 }
 
@@ -352,7 +316,6 @@ function destroyTokenShields() {
   for (const key of Array.from(shieldGraphics.keys())) removeTokenShield(key);
 }
 
-
 function drawFacing(graphics, origin, facing, length = gridSize() * 0.55, color = COLORS.facing) {
   if (!origin || !Number.isFinite(Number(facing))) return;
   const tip = headingPoint(origin, Number(facing), length);
@@ -364,48 +327,10 @@ function drawFacing(graphics, origin, facing, length = gridSize() * 0.55, color 
   strokePath(graphics, [left, tip, right], { color, width: 3, alpha: 1 });
 }
 
-function drawFlowMarkers(graphics, points, color) {
+function drawTrajectory(graphics, points, { color, dashed = false }) {
   if (points.length < 2) return;
-  const spacing = Math.max(44, gridSize() * 0.55);
-  const size = Math.max(5, gridSize() * 0.065);
-  let next = spacing;
-  let traversed = 0;
-  let drawn = 0;
-  for (let index = 1; index < points.length && drawn < 12; index += 1) {
-    const start = points[index - 1];
-    const end = points[index];
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const length = Math.hypot(dx, dy);
-    if (length <= 0) continue;
-    const ux = dx / length;
-    const uy = dy / length;
-    while (next <= traversed + length && drawn < 12) {
-      const distance = next - traversed;
-      const center = { x: start.x + (ux * distance), y: start.y + (uy * distance) };
-      const tip = { x: center.x + (ux * size), y: center.y + (uy * size) };
-      const tail = { x: center.x - (ux * size * 0.7), y: center.y - (uy * size * 0.7) };
-      const left = { x: tail.x - (uy * size * 0.65), y: tail.y + (ux * size * 0.65) };
-      const right = { x: tail.x + (uy * size * 0.65), y: tail.y - (ux * size * 0.65) };
-      fillPolygon(graphics, [tip, left, right], COLORS.pathShadow, 0.8);
-      fillPolygon(graphics, [
-        tip,
-        { x: center.x - (uy * size * 0.42), y: center.y + (ux * size * 0.42) },
-        { x: center.x + (uy * size * 0.42), y: center.y - (ux * size * 0.42) },
-      ], color, 1);
-      next += spacing;
-      drawn += 1;
-    }
-    traversed += length;
-  }
-}
-
-function drawTrajectory(graphics, points, { color, core, dashed = false }) {
-  if (points.length < 2) return;
-  strokePath(graphics, points, { color: COLORS.pathShadow, width: dashed ? 9 : 11, alpha: 0.78, dashed });
-  strokePath(graphics, points, { color, width: dashed ? 5 : 7, alpha: 0.98, dashed });
-  strokePath(graphics, points, { color: core, width: dashed ? 1 : 2, alpha: dashed ? 0.8 : 0.9, dashed });
-  if (!dashed) drawFlowMarkers(graphics, points, core);
+  strokePath(graphics, points, { color: COLORS.pathShadow, width: 3.5, alpha: 0.45, dashed });
+  strokePath(graphics, points, { color, width: 1.5, alpha: dashed ? 0.65 : 0.9, dashed });
 }
 
 function sourceToken(preview) {
@@ -443,9 +368,7 @@ function addDestinationGhost(preview, point, facing, size) {
   ghost.width = size.width;
   ghost.height = size.height;
   ghost.angle = Number(facing) || 0;
-  ghost.alpha = 0.42;
-  ghost.tint = COLORS.coast;
-  ghost.blendMode = PIXI.BLEND_MODES?.ADD ?? ghost.blendMode;
+  ghost.alpha = 0.24;
   ghost.eventMode = "none";
   ghost.zIndex = 5;
   overlayContainer.addChild(ghost);
@@ -453,18 +376,14 @@ function addDestinationGhost(preview, point, facing, size) {
 
 function drawDestinationFacing(graphics, point, facing, shipHeight) {
   if (!Number.isFinite(Number(facing))) return;
-  const size = Math.max(7, gridSize() * 0.075);
-  const baseDistance = (shipHeight / 2) + Math.max(5, gridSize() * 0.05);
+  const size = Math.max(5, gridSize() * 0.05);
+  const baseDistance = (shipHeight / 2) + Math.max(6, gridSize() * 0.06);
+  const tip = headingPoint(point, facing, baseDistance + size);
   const base = headingPoint(point, facing, baseDistance);
-  const tip = headingPoint(point, facing, baseDistance + (size * 1.5));
   const left = headingPoint(base, Number(facing) - 90, size);
   const right = headingPoint(base, Number(facing) + 90, size);
-  fillPolygon(graphics, [tip, left, right], COLORS.pathShadow, 0.9);
-  const insetBase = headingPoint(point, facing, baseDistance + 2);
-  const insetTip = headingPoint(point, facing, baseDistance + (size * 1.2));
-  const insetLeft = headingPoint(insetBase, Number(facing) - 90, size * 0.62);
-  const insetRight = headingPoint(insetBase, Number(facing) + 90, size * 0.62);
-  fillPolygon(graphics, [insetTip, insetLeft, insetRight], COLORS.coastCore, 1);
+  strokePath(graphics, [left, tip, right], { color: COLORS.pathShadow, width: 3.5, alpha: 0.5 });
+  strokePath(graphics, [left, tip, right], { color: COLORS.powered, width: 1.5, alpha: 0.9 });
 }
 
 function drawArc(graphics, arc, fallbackOrigin, fallbackFacing) {
@@ -587,8 +506,8 @@ function drawPreview(graphics, preview) {
   }
 
   const { powered, coast } = trajectoryPaths(preview);
-  drawTrajectory(graphics, powered, { color: COLORS.powered, core: COLORS.poweredCore });
-  drawTrajectory(graphics, coast, { color: COLORS.coast, core: COLORS.coastCore, dashed: true });
+  drawTrajectory(graphics, powered, { color: COLORS.powered });
+  drawTrajectory(graphics, coast, { color: COLORS.coast, dashed: true });
 
   const finalPoint = finitePoint(preview?.coastEnd)
     ?? coast.at(-1)
@@ -599,23 +518,18 @@ function drawPreview(graphics, preview) {
   const facing = preview?.finalFacing ?? preview?.facing ?? preview?.coastEnd?.facing ?? preview?.poweredEnd?.facing ?? preview?.heading;
   const startPoint = powered[0] ?? coast[0];
   if (startPoint) {
-    drawCircle(graphics, startPoint, Math.max(4, gridSize() * 0.045), {
-      color: COLORS.poweredCore,
-      width: 2,
-      alpha: 0.95,
-      fillAlpha: 0.28,
-    });
+    fillCircle(graphics, startPoint, 3, COLORS.pathShadow, 0.7);
+    fillCircle(graphics, startPoint, 1.5, COLORS.powered);
   }
   const phasePoint = powered.at(-1);
   if (phasePoint && coast.length > 1) {
-    drawCircle(graphics, phasePoint, Math.max(6, gridSize() * 0.065), {
-      color: COLORS.coastCore,
-      width: 3,
-      alpha: 1,
-      fillAlpha: 0.28,
-    });
+    fillCircle(graphics, phasePoint, 3, COLORS.pathShadow, 0.7);
+    fillCircle(graphics, phasePoint, 1.5, COLORS.powered);
   }
   if (finalPoint) {
+    drawCircle(graphics, finalPoint, 4, { color: COLORS.pathShadow, width: 3.5, alpha: 0.5 });
+    drawCircle(graphics, finalPoint, 4, { color: COLORS.powered, width: 1.5, alpha: 0.9 });
+
     const size = destinationSize(preview);
     addDestinationGhost(preview, finalPoint, facing, size);
     drawDestinationFacing(graphics, finalPoint, facing, size.height);
