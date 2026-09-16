@@ -8,6 +8,7 @@ const shieldGraphics = new Map();
 let shieldTicker = null;
 let overlayContainer = null;
 let overlayGraphics = null;
+let trajectoryGraphics = null;
 let lastKnownMarkers = [];
 
 const COLORS = Object.freeze({
@@ -133,7 +134,7 @@ function tokenShieldRadius(token) {
   const document = token?.document ?? token;
   const width = Number(token?.w ?? (Number(document?.width ?? 1) * gridSize()));
   const height = Number(token?.h ?? (Number(document?.height ?? document?.width ?? 1) * gridSize()));
-  return (Math.max(width, height) / 2) + Math.max(10, gridSize() * 0.1);
+  return Math.hypot(width, height) / 2 + Math.max(6, gridSize() * 0.06);
 }
 
 function shieldSectorCapacity(shield, sector) {
@@ -168,13 +169,13 @@ function strokeArc(graphics, center, radius, start, end, { color, width, alpha }
 }
 
 function drawShieldArc(graphics, center, radius, start, end, appearance) {
-  strokeArc(graphics, center, radius, start, end, { color: COLORS.shieldEdge, width: 3.5, alpha: 0.45 });
-  strokeArc(graphics, center, radius, start, end, { color: COLORS.shieldEmpty, width: 2, alpha: 0.3 });
+  strokeArc(graphics, center, radius, start, end, { color: COLORS.shieldEdge, width: 4, alpha: 0.25 });
+  strokeArc(graphics, center, radius, start, end, { color: COLORS.shieldEmpty, width: 3, alpha: 0.3 });
   if (appearance.ratio <= 0) return;
   const middle = (start + end) / 2;
   const half = (end - start) * appearance.ratio / 2;
   strokeArc(graphics, center, radius, middle - half, middle + half, {
-    color: appearance.color, width: 2.5, alpha: 0.95,
+    color: appearance.color, width: 3, alpha: 0.95,
   });
 }
 
@@ -194,8 +195,8 @@ function shieldLabel(text, color, heading, radius) {
     fill: color,
   };
   const label = Number.parseInt(globalThis.PIXI?.VERSION, 10) >= 8
-    ? new PIXI.Text({ text, style: { ...style, stroke: { color: COLORS.shieldEdge, width: 2, join: "round" } } })
-    : new PIXI.Text(text, { ...style, stroke: COLORS.shieldEdge, strokeThickness: 2, lineJoin: "round" });
+    ? new PIXI.Text({ text, style: { ...style, stroke: { color: COLORS.shieldEdge, width: 0.75, join: "round" } } })
+    : new PIXI.Text(text, { ...style, stroke: COLORS.shieldEdge, strokeThickness: 0.75, lineJoin: "round" });
   label.anchor.set(0.5);
   label.resolution = Math.max(2, globalThis.devicePixelRatio ?? 1);
   label.eventMode = "none";
@@ -216,6 +217,7 @@ function drawTokenShields(entry, token) {
   const halfArc = degreesToRadians(bubble ? 170 : 32);
 
   entry.graphics.clear();
+  drawDestinationFacing(entry.graphics, center, 0, Number(token.h ?? token.w));
   entry.labels.removeChildren().forEach((child) => child.destroy?.({ children: true }));
   for (const sector of sectors) {
     const charge = Number(state.charge?.[sector] ?? 0);
@@ -329,8 +331,8 @@ function drawFacing(graphics, origin, facing, length = gridSize() * 0.55, color 
 
 function drawTrajectory(graphics, points, { color, dashed = false }) {
   if (points.length < 2) return;
-  strokePath(graphics, points, { color: COLORS.pathShadow, width: 3.5, alpha: 0.45, dashed });
-  strokePath(graphics, points, { color, width: 1.5, alpha: dashed ? 0.65 : 0.9, dashed });
+  strokePath(graphics, points, { color: COLORS.pathShadow, width: 3.5, alpha: 0.2, dashed });
+  strokePath(graphics, points, { color, width: 1.5, alpha: dashed ? 0.4 : 0.55, dashed });
 }
 
 function sourceToken(preview) {
@@ -368,7 +370,7 @@ function addDestinationGhost(preview, point, facing, size) {
   ghost.width = size.width;
   ghost.height = size.height;
   ghost.angle = Number(facing) || 0;
-  ghost.alpha = 0.24;
+  ghost.alpha = 0.36;
   ghost.eventMode = "none";
   ghost.zIndex = 5;
   overlayContainer.addChild(ghost);
@@ -500,14 +502,14 @@ function warningEntries(preview, anchor, collisions) {
 function drawPreview(graphics, preview) {
   for (const projection of preview?.targetedCoasts ?? []) {
     const points = pointsFrom(projection.path ?? []);
-    strokePath(graphics, points, { color: COLORS.pathShadow, width: 7, alpha: 0.65, dashed: true });
-    strokePath(graphics, points, { color: COLORS.marker, width: 3, alpha: 0.68, dashed: true });
+    strokePath(trajectoryGraphics, points, { color: COLORS.pathShadow, width: 7, alpha: 0.3, dashed: true });
+    strokePath(trajectoryGraphics, points, { color: COLORS.marker, width: 3, alpha: 0.45, dashed: true });
     if (points.length) addLabel(`${projection.label ?? "Target"} · COAST`, points.at(-1), COLORS.marker, { x: 10, y: 10 });
   }
 
   const { powered, coast } = trajectoryPaths(preview);
-  drawTrajectory(graphics, powered, { color: COLORS.powered });
-  drawTrajectory(graphics, coast, { color: COLORS.coast, dashed: true });
+  drawTrajectory(trajectoryGraphics, powered, { color: COLORS.powered });
+  drawTrajectory(trajectoryGraphics, coast, { color: COLORS.coast, dashed: true });
 
   const finalPoint = finitePoint(preview?.coastEnd)
     ?? coast.at(-1)
@@ -518,17 +520,17 @@ function drawPreview(graphics, preview) {
   const facing = preview?.finalFacing ?? preview?.facing ?? preview?.coastEnd?.facing ?? preview?.poweredEnd?.facing ?? preview?.heading;
   const startPoint = powered[0] ?? coast[0];
   if (startPoint) {
-    fillCircle(graphics, startPoint, 3, COLORS.pathShadow, 0.7);
-    fillCircle(graphics, startPoint, 1.5, COLORS.powered);
+    fillCircle(trajectoryGraphics, startPoint, 3, COLORS.pathShadow, 0.4);
+    fillCircle(trajectoryGraphics, startPoint, 1.5, COLORS.powered);
   }
   const phasePoint = powered.at(-1);
   if (phasePoint && coast.length > 1) {
-    fillCircle(graphics, phasePoint, 3, COLORS.pathShadow, 0.7);
-    fillCircle(graphics, phasePoint, 1.5, COLORS.powered);
+    fillCircle(trajectoryGraphics, phasePoint, 3, COLORS.pathShadow, 0.4);
+    fillCircle(trajectoryGraphics, phasePoint, 1.5, COLORS.powered);
   }
   if (finalPoint) {
-    drawCircle(graphics, finalPoint, 4, { color: COLORS.pathShadow, width: 3.5, alpha: 0.5 });
-    drawCircle(graphics, finalPoint, 4, { color: COLORS.powered, width: 1.5, alpha: 0.9 });
+    drawCircle(trajectoryGraphics, finalPoint, 4, { color: COLORS.pathShadow, width: 3.5, alpha: 0.3 });
+    drawCircle(trajectoryGraphics, finalPoint, 4, { color: COLORS.powered, width: 1.5, alpha: 0.55 });
 
     const size = destinationSize(preview);
     addDestinationGhost(preview, finalPoint, facing, size);
@@ -576,8 +578,11 @@ function clearLabels() {
 }
 
 function redraw() {
-  if (!overlayContainer || !overlayGraphics || !globalThis.canvas?.ready) return;
+  if (!overlayContainer || !overlayGraphics || !trajectoryGraphics || !globalThis.canvas?.ready) return;
   overlayGraphics.clear();
+  trajectoryGraphics.clear();
+  trajectoryGraphics.elevation = Number(canvas.level?.elevation?.base ?? 0);
+  canvas.primary.sortDirty = true;
   clearLabels();
   refreshTokenShields();
   for (const preview of previews.values()) drawPreview(overlayGraphics, preview);
@@ -586,7 +591,7 @@ function redraw() {
 
 function createContainer() {
   destroyContainer();
-  if (!globalThis.canvas?.stage || !globalThis.PIXI) return;
+  if (!globalThis.canvas?.stage || !globalThis.canvas?.primary || !globalThis.PIXI) return;
   overlayContainer = new PIXI.Container();
   overlayContainer.name = `${MODULE_ID}.overlays`;
   overlayContainer.eventMode = "none";
@@ -598,12 +603,23 @@ function createContainer() {
   overlayGraphics.zIndex = 20;
   overlayContainer.addChild(overlayGraphics);
   canvas.stage.addChild(overlayContainer);
+  trajectoryGraphics = new PIXI.Graphics();
+  trajectoryGraphics.name = `${MODULE_ID}.trajectories`;
+  trajectoryGraphics.eventMode = "none";
+  // Primary rendering puts paths above level scenery but below token meshes.
+  trajectoryGraphics.sortLayer = foundry.canvas.groups.PrimaryCanvasGroup.SORT_LAYERS.TOKENS - 1;
+  canvas.primary.addChild(trajectoryGraphics);
   installShieldTicker();
   refreshTokenShields();
   redraw();
 }
 
 function destroyContainer() {
+  if (trajectoryGraphics && !trajectoryGraphics.destroyed) {
+    trajectoryGraphics.parent?.removeChild(trajectoryGraphics);
+    trajectoryGraphics.destroy();
+  }
+  trajectoryGraphics = null;
   if (overlayContainer) {
     overlayContainer.parent?.removeChild(overlayContainer);
     overlayContainer.destroy({ children: true });
