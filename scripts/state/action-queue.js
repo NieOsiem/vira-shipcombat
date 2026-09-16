@@ -1,5 +1,6 @@
 import { RuleViolation, SHIP_TYPE } from "../constants.js";
 import { executeShipOperation } from "../rules/operations.js";
+import { sceneGridGeometry } from "../foundry/scene-geometry.js";
 import {
   cloneDocumentData,
   loadShipRecords,
@@ -247,18 +248,10 @@ function sceneForRecord(records, source) {
   return records.get(source?.uuid)?.tokenDocument?.parent ?? null;
 }
 
-function sceneMetrics(scene) {
-  const configuredSize = finiteNumber(scene?.grid?.size, NaN);
-  const dimensionSize = finiteNumber(scene?.dimensions?.size, NaN);
-  const gridSize = configuredSize > 0 ? configuredSize : (dimensionSize > 0 ? dimensionSize : 100);
-  const configuredDistance = finiteNumber(scene?.grid?.distance, 1);
-  const gridDistance = configuredDistance > 0 ? configuredDistance : 1;
-  return { gridSize, gridDistance, unitsPerPixel: gridDistance / gridSize };
-}
 
 function tokenCenter(source, token, records) {
   const scene = sceneForRecord(records, source);
-  const { gridSize, unitsPerPixel } = sceneMetrics(scene);
+  const { gridSize, unitsPerPixel } = sceneGridGeometry(scene);
   const width = Math.max(0, finiteNumber(token?.width, 1));
   const height = Math.max(0, finiteNumber(token?.height, 1));
   const centerX = finiteNumber(token?.x, 0) + ((width * gridSize) / 2);
@@ -293,7 +286,7 @@ function sightWall(wall) {
 function wallSegment(wall, scene) {
   const coordinates = wallCoordinates(wall);
   if (!coordinates) return null;
-  const { unitsPerPixel } = sceneMetrics(scene);
+  const { unitsPerPixel } = sceneGridGeometry(scene);
   return {
     id: String(wall?.id ?? wall?._id ?? wall?.document?.id ?? `${coordinates.join(":")}`),
     a: { x: coordinates[0] * unitsPerPixel, y: coordinates[1] * unitsPerPixel },
@@ -350,10 +343,9 @@ function geometryAdapter(records) {
   return {
     positionOf,
     facingOf: (source, state, token) => finiteNumber(token?.rotation, finiteNumber(state?.facing, 0)),
-    collisionRadius: (source, state, token) => {
-      const { gridDistance } = sceneMetrics(sceneForRecord(records, source));
-      return Math.max(0, finiteNumber(token?.width, 1)) * gridDistance / 2;
-    },
+    collisionRadius: (source, state, token) => (
+      Math.max(0, finiteNumber(token?.width, 1)) / 2
+    ),
     distanceBetween: (source, target) => {
       const first = tokenCenter(source, source?.token, records);
       const second = tokenCenter(target, target?.token, records);
@@ -361,8 +353,7 @@ function geometryAdapter(records) {
     },
     tokenUpdate: ({ uuid, token, position, facing }) => {
       const scene = records.get(uuid)?.tokenDocument?.parent ?? null;
-      const { gridSize, gridDistance } = sceneMetrics(scene);
-      const pixelsPerUnit = gridSize / gridDistance;
+      const { gridSize, pixelsPerUnit } = sceneGridGeometry(scene);
       const width = Math.max(0, finiteNumber(token?.width, 1));
       const height = Math.max(0, finiteNumber(token?.height, 1));
       return {

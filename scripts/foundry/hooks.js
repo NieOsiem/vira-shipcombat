@@ -5,6 +5,7 @@ import { nativeVehicleFieldChanges } from "../model/native-vehicle.js";
 import { submitShipOperation } from "../state/action-queue.js";
 import { isActiveGM } from "../socket.js";
 import { createGmEventMessages, publishOperationEvents } from "./chat.js";
+import { sceneGridGeometry } from "./scene-geometry.js";
 
 const INTERNAL_UPDATE = "viraShipCombatInternal";
 const POSITION_FIELDS = Object.freeze(["x", "y", "rotation"]);
@@ -236,17 +237,9 @@ function finiteNumber(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function sceneMetrics(scene) {
-  const configuredSize = finiteNumber(scene?.grid?.size, NaN);
-  const dimensionSize = finiteNumber(scene?.dimensions?.size, NaN);
-  const gridSize = configuredSize > 0 ? configuredSize : (dimensionSize > 0 ? dimensionSize : 100);
-  const configuredDistance = finiteNumber(scene?.grid?.distance, 1);
-  const gridDistance = configuredDistance > 0 ? configuredDistance : 1;
-  return { gridSize, unitsPerPixel: gridDistance / gridSize };
-}
 
 function proposedCenterPosition(token, proposed) {
-  const { gridSize, unitsPerPixel } = sceneMetrics(token.parent);
+  const { gridSize, unitsPerPixel } = sceneGridGeometry(token.parent);
   const width = Math.max(0, finiteNumber(token.width, 1));
   const height = Math.max(0, finiteNumber(token.height, 1));
   const topLeftX = finiteNumber(proposed.x, finiteNumber(token.x, 0));

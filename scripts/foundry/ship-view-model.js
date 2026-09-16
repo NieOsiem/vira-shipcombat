@@ -1,6 +1,7 @@
 import { getPowerState } from "../rules/power.js";
 import { getCurrentSignature, getSensorStats, sanitizeTrack, TRACK_STATUS } from "../rules/sensors.js";
 import { previewDefenseRoute } from "../rules/shields.js";
+import { sceneGridGeometry } from "./scene-geometry.js";
 
 const POWER_SYSTEMS = Object.freeze([
   ["engines", "Engines"],
@@ -288,12 +289,10 @@ function conditionViews(state) {
 
 function tokenPosition(token) {
   if (!token) return null;
-  const scene = token.parent;
-  const gridSize = finite(globalThis.canvas?.dimensions?.size ?? scene?.grid?.size, 100) || 100;
-  const gridDistance = finite(globalThis.canvas?.dimensions?.distance ?? scene?.grid?.distance, 1) || 1;
+  const { gridSize, unitsPerPixel } = sceneGridGeometry(token.parent);
   return {
-    x: (finite(token.x) + (finite(token.width, 1) * gridSize / 2)) * gridDistance / gridSize,
-    y: (finite(token.y) + (finite(token.height, token.width ?? 1) * gridSize / 2)) * gridDistance / gridSize,
+    x: (finite(token.x) + (finite(token.width, 1) * gridSize / 2)) * unitsPerPixel,
+    y: (finite(token.y) + (finite(token.height, token.width ?? 1) * gridSize / 2)) * unitsPerPixel,
   };
 }
 

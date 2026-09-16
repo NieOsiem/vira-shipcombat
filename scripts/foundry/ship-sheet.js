@@ -3,6 +3,7 @@ import { validateShipConfig } from "../model/validation.js";
 import { CANADENSIS_CONFIG } from "../data/canadensis.js";
 import { nativeVehicleFieldValues } from "../model/native-vehicle.js";
 import { buildShipConsoleView } from "./ship-view-model.js";
+import { sceneGridGeometry } from "./scene-geometry.js";
 
 import { previewPowerRoute } from "../rules/power.js";
 import { previewDefenseRoute } from "../rules/shields.js";
@@ -352,9 +353,7 @@ function configurationSummary(config, state) {
 
 function sceneGeometry(token) {
   const scene = globalThis.canvas?.scene ?? token?.parent;
-  const gridSize = Number(globalThis.canvas?.dimensions?.size ?? scene?.grid?.size ?? globalThis.canvas?.grid?.size ?? 100) || 100;
-  const gridDistance = Number(globalThis.canvas?.dimensions?.distance ?? scene?.grid?.distance ?? 1) || 1;
-  return { scene, gridSize, gridDistance, unitsPerPixel: gridDistance / gridSize, pixelsPerUnit: gridSize / gridDistance };
+  return { scene, ...sceneGridGeometry(scene) };
 }
 
 function tokenCenter(token, geometry) {
@@ -368,8 +367,8 @@ function tokenCenter(token, geometry) {
   };
 }
 
-function tokenRadius(token, geometry) {
-  return (Number(token?.width ?? 0) * geometry.gridDistance) / 2;
+function tokenRadius(token) {
+  return Number(token?.width ?? 0) / 2;
 }
 
 function driveCapabilities(config, state) {
@@ -563,7 +562,7 @@ function canvasMovementPreview(preview, geometry) {
 
 function movementPreviewInput(payload, token, config, state) {
   const geometry = sceneGeometry(token);
-  const radius = tokenRadius(token, geometry);
+  const radius = tokenRadius(token);
   return {
     input: {
       ...payload,
