@@ -4,6 +4,8 @@ import { registerShipVisibility } from "./visibility.js";
 const MODULE_ID = "vira-shipcombat";
 const previews = new Map();
 const hookIds = new Map();
+const shieldGraphics = new Map();
+let shieldTicker = null;
 let overlayContainer = null;
 let overlayGraphics = null;
 let lastKnownMarkers = [];
@@ -17,6 +19,9 @@ const COLORS = Object.freeze({
   overspeed: 0xffbd45,
   wall: 0xff5c72,
   marker: 0xffd166,
+  shield: 0x3ee8d0,
+  shieldLow: 0xffbd45,
+  shieldDown: 0xff5267,
 });
 
 function finitePoint(value) {
@@ -102,6 +107,162 @@ function drawCircle(graphics, point, radius, { color, alpha = 1, width = 2, fill
   graphics.drawCircle(point.x, point.y, radius);
   if (fillAlpha > 0) graphics.endFill();
 }
+function tokenShieldCenter(token) {
+  return {
+    x: Number(token?.w ?? 0) / 2,
+    y: Number(token?.h ?? token?.w ?? 0) / 2,
+  };
+}
+
+function tokenShieldRadius(token) {
+  const document = token?.document ?? token;
+  const width = Number(token?.w ?? (Number(document?.width ?? 1) * gridSize()));
+  const height = Number(token?.h ?? (Number(document?.height ?? document?.width ?? 1) * gridSize()));
+  return (Math.max(width, height) / 2) + Math.max(8, gridSize() * 0.08);
+}
+
+function shieldSectorCapacity(shield, sector) {
+  const configured = shield?.sectorCap;
+  if (typeof configured === "object") return Number(configured?.[sector] ?? 0);
+  return Number(configured ?? shield?.totalBudget ?? 0);
+}
+
+function shieldColor(charge, capacity, collapsed) {
+  if (collapsed) return COLORS.shieldDown;
+  const ratio = capacity > 0 ? charge / capacity : 0;
+  if (ratio <= 0.25) return COLORS.shieldLow;
+  return COLORS.shield;
+}
+
+function strokeArc(graphics, center, radius, start, end, { color, width, alpha }) {
+  const startPoint = {
+    x: center.x + (Math.cos(start) * radius),
+    y: center.y + (Math.sin(start) * radius),
+  };
+  graphics.moveTo(startPoint.x, startPoint.y);
+  if (useModernGraphics(graphics)) {
+    graphics.arc(center.x, center.y, radius, start, end);
+    graphics.stroke({ color, width, alpha, cap: "round" });
+    return;
+  }
+  graphics.lineStyle(width, color, alpha);
+  graphics.arc(center.x, center.y, radius, start, end);
+}
+
+function hasVisibleShields(token) {
+  const actor = token?.actor ?? token?.document?.actor;
+  const document = token?.document ?? token;
+  if (actor?.type !== SHIP_TYPE || document?.hidden || token?.visible === false) return false;
+  if (!globalThis.game?.user?.isGM && !actor?.isOwner) return false;
+  return Boolean(actor?.system?.shipCombat?.config?.components?.shield && actor?.system?.shipCombat?.state?.shields);
+}
+
+function drawTokenShields(graphics, token) {
+  const actor = token.actor ?? token.document?.actor;
+  const shield = actor.system.shipCombat.config.components.shield;
+  const state = actor.system.shipCombat.state.shields;
+  const center = tokenShieldCenter(token);
+  const radius = tokenShieldRadius(token);
+  const width = Math.max(4, gridSize() * 0.055);
+  if (shield.topology === "bubble") {
+    const sector = shield.sectors?.[0] ?? "bubble";
+    const charge = Number(state.charge?.[sector] ?? 0);
+    const capacity = shieldSectorCapacity(shield, sector);
+    const collapsed = Number(state.collapse?.[sector] ?? 0) > 0;
+    drawCircle(graphics, center, radius, {
+      color: shieldColor(charge, capacity, collapsed),
+      width,
+      alpha: 0.4 + (0.55 * Math.min(1, capacity > 0 ? charge / capacity : 0)),
+      fillAlpha: 0,
+    });
+    return;
+  }
+  const centers = { fore: 0, starboard: 90, aft: 180, port: 270 };
+  for (const sector of ["fore", "starboard", "aft", "port"]) {
+    const charge = Number(state.charge?.[sector] ?? 0);
+    const capacity = shieldSectorCapacity(shield, sector);
+    const collapsed = Number(state.collapse?.[sector] ?? 0) > 0;
+    const angle = degreesToRadians(centers[sector] - 90);
+    const halfArc = degreesToRadians(37);
+    strokeArc(graphics, center, radius, angle - halfArc, angle + halfArc, {
+      color: shieldColor(charge, capacity, collapsed),
+      width,
+      alpha: 0.35 + (0.6 * Math.min(1, capacity > 0 ? charge / capacity : 0)),
+    });
+  }
+}
+
+function removeTokenShield(tokenId) {
+  const key = String(tokenId ?? "");
+  const graphics = shieldGraphics.get(key);
+  if (!graphics) return;
+  shieldGraphics.delete(key);
+  graphics.parent?.removeChild(graphics);
+  if (!graphics.destroyed) graphics.destroy();
+}
+
+function renderTokenShield(token) {
+  const key = String(token?.id ?? token?.document?.id ?? "");
+  if (!key) return;
+  if (!hasVisibleShields(token)) {
+    removeTokenShield(key);
+    return;
+  }
+  let graphics = shieldGraphics.get(key);
+  if (!graphics || graphics.destroyed || graphics.parent !== token) {
+    removeTokenShield(key);
+    graphics = new PIXI.Graphics();
+    graphics.name = `${MODULE_ID}.shield`;
+    graphics.eventMode = "none";
+    graphics.zIndex = 1_000;
+    token.addChild(graphics);
+    shieldGraphics.set(key, graphics);
+  }
+  const center = tokenShieldCenter(token);
+  graphics.clear();
+  graphics.position.set(center.x, center.y);
+  graphics.pivot.set(center.x, center.y);
+  drawTokenShields(graphics, token);
+}
+
+function refreshTokenShields() {
+  const visibleIds = new Set();
+  for (const token of globalThis.canvas?.tokens?.placeables ?? []) {
+    const key = String(token?.id ?? token?.document?.id ?? "");
+    if (key) visibleIds.add(key);
+    renderTokenShield(token);
+  }
+  for (const key of shieldGraphics.keys()) {
+    if (!visibleIds.has(key)) removeTokenShield(key);
+  }
+  syncTokenShieldTransforms();
+}
+
+function syncTokenShieldTransforms() {
+  for (const [key, graphics] of shieldGraphics) {
+    const token = globalThis.canvas?.tokens?.get?.(key);
+    if (!token || graphics.destroyed || graphics.parent !== token) {
+      removeTokenShield(key);
+      continue;
+    }
+    graphics.angle = Number(token.mesh?.angle ?? token.document?.rotation ?? 0);
+  }
+}
+
+function installShieldTicker() {
+  const ticker = globalThis.canvas?.app?.ticker;
+  if (!ticker || shieldTicker === ticker) return;
+  if (shieldTicker) shieldTicker.remove(syncTokenShieldTransforms);
+  shieldTicker = ticker;
+  shieldTicker.add(syncTokenShieldTransforms);
+}
+
+function destroyTokenShields() {
+  if (shieldTicker) shieldTicker.remove(syncTokenShieldTransforms);
+  shieldTicker = null;
+  for (const key of Array.from(shieldGraphics.keys())) removeTokenShield(key);
+}
+
 
 function drawFacing(graphics, origin, facing, length = gridSize() * 0.55, color = COLORS.facing) {
   if (!origin || !Number.isFinite(Number(facing))) return;
@@ -127,16 +288,19 @@ function drawArc(graphics, arc, fallbackOrigin, fallbackFacing) {
 
   if (!useModernGraphics(graphics)) {
     graphics.lineStyle(2, Number(arc.color ?? COLORS.arc), 0.7);
+    graphics.beginFill(Number(arc.color ?? COLORS.arc), 0.07);
     graphics.moveTo(origin.x, origin.y);
     graphics.lineTo(start.x, start.y);
     graphics.arc(origin.x, origin.y, radius, degreesToRadians(startHeading - 90), degreesToRadians(endHeading - 90));
     graphics.lineTo(origin.x, origin.y);
+    graphics.endFill();
     return;
   }
   graphics.moveTo(origin.x, origin.y);
   graphics.lineTo(start.x, start.y);
   graphics.arc(origin.x, origin.y, radius, degreesToRadians(startHeading - 90), degreesToRadians(endHeading - 90));
   graphics.lineTo(origin.x, origin.y);
+  graphics.fill({ color: Number(arc.color ?? COLORS.arc), alpha: 0.07 });
   graphics.stroke({ color: Number(arc.color ?? COLORS.arc), width: 2, alpha: 0.7 });
 }
 
@@ -264,6 +428,7 @@ function redraw() {
   if (!overlayContainer || !overlayGraphics || !globalThis.canvas?.ready) return;
   overlayGraphics.clear();
   clearLabels();
+  refreshTokenShields();
   for (const preview of previews.values()) drawPreview(overlayGraphics, preview);
   for (const marker of lastKnownMarkers) drawLastKnown(overlayGraphics, marker);
 }
@@ -281,6 +446,8 @@ function createContainer() {
   overlayGraphics.eventMode = "none";
   overlayContainer.addChild(overlayGraphics);
   canvas.stage.addChild(overlayContainer);
+  installShieldTicker();
+  refreshTokenShields();
   redraw();
 }
 
@@ -290,6 +457,7 @@ function destroyContainer() {
     overlayContainer.destroy({ children: true });
   }
   overlayContainer = null;
+  destroyTokenShields();
   overlayGraphics = null;
 }
 
@@ -333,11 +501,25 @@ export function registerCanvasIntegration() {
     previews.clear();
     lastKnownMarkers = [];
   });
-  registerHook("updateToken", redraw);
-  registerHook("createToken", redraw);
-  registerHook("deleteToken", redraw);
+  registerHook("drawToken", renderTokenShield);
+  registerHook("refreshToken", renderTokenShield);
+  registerHook("updateToken", (document) => {
+    if (document?.object) renderTokenShield(document.object);
+    redraw();
+  });
+  registerHook("createToken", (document) => {
+    if (document?.object) renderTokenShield(document.object);
+    else refreshTokenShields();
+    redraw();
+  });
+  registerHook("deleteToken", (document) => {
+    removeTokenShield(document?.id);
+    redraw();
+  });
   registerHook("updateActor", (actor) => {
-    if (actor?.type === SHIP_TYPE && actor?.system?.shipCombat) redraw();
+    if (actor?.type !== SHIP_TYPE || !actor?.system?.shipCombat) return;
+    refreshTokenShields();
+    redraw();
   });
   if (globalThis.canvas?.ready) createContainer();
 }

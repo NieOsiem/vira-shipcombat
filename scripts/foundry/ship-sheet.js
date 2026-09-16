@@ -2,6 +2,7 @@ import { MODULE_ID, SHIP_TYPE } from "../constants.js";
 import { validateShipConfig } from "../model/validation.js";
 import { CANADENSIS_CONFIG } from "../data/canadensis.js";
 import { nativeVehicleFieldValues } from "../model/native-vehicle.js";
+import { buildShipConsoleView } from "./ship-view-model.js";
 
 import { previewPowerRoute } from "../rules/power.js";
 import { previewDefenseRoute } from "../rules/shields.js";
@@ -35,6 +36,168 @@ const HELP = {
 const TARGETED = new Set(["acquire", "analyze", "deepScan", "firingSolution", "fade", "jam", "breakLock", "burnThrough", "attack"]);
 const GM_ONLY = new Set(["enterCombat", "startPhase", "endPhase", "leaveCombat", "reposition", "resolveFate"]);
 const drafts = new Map();
+const selectedTabs = new Map();
+const TARGET_OPERATIONS = new Set(["acquire", "analyze", "deepScan", "firingSolution", "jam", "breakLock", "burnThrough", "attack"]);
+
+function numeric(value, fallback = 0) {
+  if (value === "" || value == null) return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function truthyFormValue(value) {
+  return value === true || value === "true" || value === "on" || value === "1";
+}
+
+function elementFormData(element) {
+  const form = element.matches?.("form") ? element : element.closest?.("form");
+  const values = form ? Object.fromEntries(new FormData(form).entries()) : {};
+  return { ...values, ...(element?.dataset ?? {}) };
+}
+
+function currentTurnKey(state) {
+  const combat = globalThis.game?.combat;
+  if (combat) return `${combat.id}:${combat.round ?? 0}:${combat.turn ?? 0}`;
+  return state?.turnKey ?? null;
+}
+
+function rosterPayload(data, config) {
+  const roster = { command: [], crew: [] };
+  for (const kind of ["command", "crew"]) {
+    const capacity = Number(config?.[`${kind}Capacity`] ?? 0);
+    for (let slot = 0; slot < capacity; slot += 1) {
+      const operatorId = data[`${kind}-${slot}`];
+      if (operatorId) roster[kind].push({ operatorId, slot });
+    }
+  }
+  return roster;
+}
+
+function uiOperation(type, data, config, state) {
+  const operatorId = data.operatorId || undefined;
+  const payload = operatorId ? { operatorId } : {};
+  switch (type) {
+    case "enterCombat":
+    case "startPhase":
+      return { payload: { turnKey: currentTurnKey(state), gmOverride: true }, targetUuids: [] };
+    case "coast":
+    case "endPhase":
+    case "leaveCombat":
+    case "refreshResources":
+      return { payload: { gmOverride: true }, targetUuids: [] };
+    case "resolveFate":
+      return { payload: { gmOverride: true, nonLethal: truthyFormValue(data.nonLethal) }, targetUuids: [] };
+    case "setRoster":
+      return { payload: { gmOverride: true, roster: rosterPayload(data, config) }, targetUuids: [] };
+    case "takeControl":
+      return { payload: { ...payload, control: data.control }, targetUuids: [] };
+    case "maneuver":
+      return {
+        payload: {
+          ...payload,
+          deltaV: { forward: numeric(data.forward), lateral: numeric(data.lateral) },
+          rotation: numeric(data.rotation),
+        },
+        targetUuids: [],
+      };
+    case "rotate":
+      return { payload: { ...payload, rotation: numeric(data.rotation) }, targetUuids: [] };
+    case "armEvasion":
+    case "disarmEvasion":
+    case "fade":
+    case "cooling":
+    case "vent":
+    case "hullRepair":
+      return { payload, targetUuids: [] };
+    case "routePower":
+      return {
+        payload: {
+          ...payload,
+          allocation: Object.fromEntries(["engines", "shields", "sensors", "cooling", "weapons"]
+            .map((system) => [system, numeric(data[system])])),
+        },
+        targetUuids: [],
+      };
+    case "routeDefense": {
+      const sectors = Object.keys(state?.shields?.charge ?? {});
+      return {
+        payload: {
+          ...payload,
+          charge: Object.fromEntries(sectors.map((sector) => [sector, numeric(data[`charge-${sector}`])])),
+          regenerationAllocation: Object.fromEntries(sectors.map((sector) => [sector, numeric(data[`regen-${sector}`])])),
+        },
+        targetUuids: [],
+      };
+    }
+    case "toggleWeapon":
+      return {
+        payload: {
+          ...payload,
+          weaponId: data.weaponId,
+          status: data.weaponStatus,
+          mode: data.weaponMode,
+        },
+        targetUuids: [],
+      };
+    case "ping":
+      return { payload, targetUuids: [] };
+    case "acquire": {
+      const result = { ...payload };
+      if (data.dc !== "" && data.dc != null) result.dc = numeric(data.dc);
+      return { payload: result, targetUuids: data.targetUuid ? [data.targetUuid] : [] };
+    }
+    case "analyze":
+    case "deepScan":
+    case "firingSolution":
+    case "jam":
+    case "breakLock":
+    case "burnThrough":
+      return { payload, targetUuids: data.targetUuid ? [data.targetUuid] : [] };
+    case "attack":
+      return {
+        payload: {
+          ...payload,
+          weaponId: data.weaponId,
+          barrageRounds: numeric(data.barrageRounds, 1),
+          ...(data.aimedComponentId ? { aimedComponentId: data.aimedComponentId } : {}),
+        },
+        targetUuids: data.targetUuid ? [data.targetUuid] : [],
+      };
+    case "beginReload":
+    case "reload":
+    case "cancelReload":
+      return { payload: { ...payload, weaponId: data.weaponId }, targetUuids: [] };
+    case "repair":
+      return {
+        payload: {
+          ...payload,
+          conditionId: data.conditionId,
+          rating: data.rating || "engineering",
+          modifier: numeric(data.modifier),
+        },
+        targetUuids: [],
+      };
+    case "recoveryWork":
+      return { payload: { ...payload, conditionId: data.conditionId }, targetUuids: [] };
+    case "contributeWork":
+      return {
+        payload: { ...payload, jobId: data.jobId, required: numeric(data.required, 1) },
+        targetUuids: [],
+      };
+    case "reposition":
+      return {
+        payload: {
+          gmOverride: true,
+          position: { x: numeric(data.x), y: numeric(data.y) },
+          facing: numeric(data.facing),
+          resetVelocity: truthyFormValue(data.resetVelocity),
+        },
+        targetUuids: [],
+      };
+    default:
+      throw new Error(`No purpose-built UI payload exists for ${type}.`);
+  }
+}
 
 function clone(value) { return foundry.utils.deepClone(value ?? {}); }
 function escapeSecrets(value, isGM, key = "") {
@@ -286,29 +449,98 @@ const { ActorSheetV2 } = foundry.applications.sheets;
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 
 class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
-  static DEFAULT_OPTIONS = { classes: [MODULE_ID, "ship-console"], position: { width: 860, height: 720 }, window: { resizable: true }, actions: {} };
+  static DEFAULT_OPTIONS = {
+    classes: [MODULE_ID, "ship-console"],
+    position: { width: 1040, height: 820 },
+    window: { resizable: true },
+    actions: {},
+  };
+
   static PARTS = { console: { template: `modules/${MODULE_ID}/templates/ship-console.hbs` } };
+  get title() {
+    return `${this.actor?.name ?? this.document?.name ?? "Ship"} · Ship Console`;
+  }
 
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const actor = this.actor ?? this.document;
     const token = actorToken(actor);
     const data = actor.system?.shipCombat ?? {};
+    const config = data.config ?? {};
     const state = clone(data.state);
     const isGM = game.user.isGM;
     const canOperate = Boolean(token && (isGM || actor.isOwner));
-    const unavailableReason = !token ? "Open a placed token to operate this ship." : !canOperate ? "You do not own this token actor." : "";
-    const actions = Object.fromEntries(TABS.map((tab) => [tab, (GROUPS[tab] ?? []).map((type) => {
+    const unavailableReason = !token
+      ? "Place this ship on the active Scene to use operational controls."
+      : !canOperate ? "You do not own this ship." : "";
+
+    const targetLabels = {};
+    if (isGM) {
+      for (const track of Object.values(state.tracks ?? {})) {
+        const uuid = track?.targetUuid;
+        if (!uuid) continue;
+        try {
+          const document = await fromUuid(uuid);
+          targetLabels[uuid] = document?.name ?? document?.actor?.name;
+        } catch (_error) {
+          // A stale contact remains usable as last-known telemetry without its deleted Document.
+        }
+      }
+    }
+
+    const view = buildShipConsoleView(config, state, { token, targetLabels });
+    const tabIds = TABS.map((label) => label.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
+    const activeTab = selectedTabs.get(actor.uuid) ?? tabIds[0];
+    const rawActions = TABS.flatMap((tab) => (GROUPS[tab] ?? []).map((type) => {
       const gmDenied = GM_ONLY.has(type) && !isGM;
-      return { type, help: HELP[type] ?? "{}", targeted: TARGETED.has(type), disabled: !canOperate || gmDenied, reason: unavailableReason || (gmDenied ? "Active GM only." : "") };
-    })]));
+      return {
+        type,
+        group: tab,
+        help: HELP[type] ?? "{}",
+        targeted: TARGETED.has(type),
+        disabled: !canOperate || gmDenied,
+        reason: unavailableReason || (gmDenied ? "Active GM only." : ""),
+      };
+    }));
+
     let log = [];
-    if (isGM && token) { try { log = await getOperationLog() ?? []; } catch (error) { log = [{ error: errorText(error) }]; } }
+    if (isGM && token) {
+      try {
+        log = await getOperationLog() ?? [];
+      } catch (error) {
+        log = [{ error: errorText(error) }];
+      }
+    }
+    const visibleLog = Array.isArray(log) ? log.slice(-30).reverse().map((entry) => ({
+      id: entry.id ?? entry.requestId ?? "",
+      type: entry.request?.type ?? entry.type ?? entry.kind ?? "operation",
+      timestamp: entry.timestamp ?? "",
+      ok: entry.response?.ok !== false && entry.kind !== "rejected",
+      json: pretty(entry),
+      rollback: entry.kind === "operation" && Boolean(entry.id ?? entry.requestId),
+    })) : [];
+
     return foundry.utils.mergeObject(context, {
-      actor, token, tabs: TABS.map((label, index) => ({ label, id: label.toLowerCase().replace(/[^a-z0-9]+/g, "-"), active: index === 0 })),
-      actions, isGM, canOperate, unavailableReason, revision: Number(state.revision ?? 0), phase: state.phase ?? "—", turnKey: state.turnKey ?? "—",
-      specGroups: configurationSummary(data.config ?? {}, state),
-      stateJson: pretty(escapeSecrets(state, isGM)), configJson: pretty(data.config ?? {}), log: Array.isArray(log) ? log.map((entry) => ({ id: entry.id ?? entry.requestId ?? "", json: pretty(entry), rollback: Boolean(entry.id ?? entry.requestId) })) : [],
+      actor,
+      token,
+      tabs: TABS.map((label, index) => ({ label, id: tabIds[index], active: tabIds[index] === activeTab })),
+      isGM,
+      canOperate,
+      unavailableReason,
+      canAdmin: Boolean(isGM && canOperate),
+      canAct: Boolean(canOperate && state.phase === "active"),
+      canAttack: Boolean(canOperate && state.phase === "active" && view.targetedContacts.length > 0),
+      activePhase: state.phase === "active",
+      tabState: Object.fromEntries(tabIds.map((id) => [id, { active: id === activeTab }])),
+      view,
+      rawActions,
+      revision: Number(state.revision ?? 0),
+      phase: state.phase ?? "—",
+      turnKey: state.turnKey ?? "—",
+      specGroups: configurationSummary(config, state),
+      stateJson: pretty(escapeSecrets(state, isGM)),
+      configJson: pretty(config),
+      log: visibleLog,
     }, { inplace: false });
   }
 
@@ -320,81 +552,306 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 
   _attachPartListeners(partId, html, options) {
     super._attachPartListeners(partId, html, options);
-    html.querySelectorAll("[data-tab-button]").forEach((button) => button.addEventListener("click", () => this.#selectTab(html, button.dataset.tabButton)));
-    html.querySelectorAll("form[data-operation]").forEach((form) => {
-      const type = form.dataset.operation; const key = draftKey(this.actor, type); const saved = drafts.get(key);
-      if (saved) { form.elements.payload.value = saved.payload; if (form.elements.targets) form.elements.targets.value = saved.targets; }
-      form.addEventListener("input", () => { drafts.set(key, { payload: form.elements.payload.value, targets: form.elements.targets?.value ?? "" }); this.#preview(form); });
-      form.addEventListener("submit", (event) => this.#submit(event, form));
-      this.#preview(form);
+    html.querySelectorAll("[data-tab-button]").forEach((button) => {
+      button.addEventListener("click", () => this.#selectTab(html, button.dataset.tabButton));
+    });
+    html.querySelectorAll("select[data-default]").forEach((select) => {
+      const preferred = select.dataset.default;
+      if (preferred && Array.from(select.options).some((option) => option.value === preferred)) select.value = preferred;
+    });
+    html.querySelectorAll("form[data-ui-operation]").forEach((form) => {
+      form.addEventListener("submit", (event) => this.#submitUi(event, form));
+    });
+    html.querySelectorAll("button[data-ui-operation]").forEach((button) => {
+      button.addEventListener("click", (event) => this.#submitUi(event, button));
+    });
+    html.querySelectorAll("form[data-live-preview]").forEach((form) => {
+      const refresh = () => void this.#previewUi(form);
+      form.addEventListener("input", refresh);
+      form.addEventListener("change", refresh);
+      refresh();
+    });
+    html.querySelectorAll("[data-distribute]").forEach((button) => {
+      button.addEventListener("click", () => this.#distribute(button));
+    });
+    html.querySelectorAll("form[data-raw-operation]").forEach((form) => {
+      const type = form.dataset.rawOperation;
+      const key = draftKey(this.actor, `raw-${type}`);
+      const saved = drafts.get(key);
+      if (saved) {
+        form.elements.payload.value = saved.payload;
+        if (form.elements.targets) form.elements.targets.value = saved.targets;
+      }
+      form.addEventListener("input", () => {
+        drafts.set(key, { payload: form.elements.payload.value, targets: form.elements.targets?.value ?? "" });
+        void this.#previewRaw(form);
+      });
+      form.addEventListener("submit", (event) => this.#submitRaw(event, form));
     });
     html.querySelector("form[data-config]")?.addEventListener("submit", (event) => this.#saveConfig(event));
     html.querySelector("[data-canadensis]")?.addEventListener("click", () => this.#resetCanadensis());
-    html.querySelectorAll("[data-rollback]").forEach((button) => button.addEventListener("click", () => this.#rollback(button.dataset.rollback)));
+    html.querySelectorAll("[data-rollback]").forEach((button) => {
+      button.addEventListener("click", () => this.#rollback(button.dataset.rollback));
+    });
     html.querySelector("[data-native-vehicle-sheet]")?.addEventListener("click", () => {
-      try { openNativeVehicleSheet(this.actor); } catch (error) { ui.notifications.error(errorText(error)); }
+      try {
+        openNativeVehicleSheet(this.actor);
+      } catch (error) {
+        ui.notifications.error(errorText(error));
+      }
     });
   }
 
   #selectTab(html, id) {
-    html.querySelectorAll("[data-tab-button]").forEach((el) => el.setAttribute("aria-selected", String(el.dataset.tabButton === id)));
-    html.querySelectorAll("[data-tab-panel]").forEach((el) => { el.hidden = el.dataset.tabPanel !== id; });
+    selectedTabs.set(this.actor.uuid, id);
+    html.querySelectorAll("[data-tab-button]").forEach((element) => {
+      element.setAttribute("aria-selected", String(element.dataset.tabButton === id));
+    });
+    html.querySelectorAll("[data-tab-panel]").forEach((element) => {
+      element.hidden = element.dataset.tabPanel !== id;
+    });
   }
 
-  async #preview(form) {
-    const output = form.querySelector("[data-preview]"); if (!output) return;
+  #distribute(button) {
+    const form = button.closest("form");
+    if (!form) return;
+    const prefix = button.dataset.distribute;
+    const inputs = Array.from(form.querySelectorAll(`input[name^="${prefix}-"]`));
+    if (!inputs.length) return;
+    const total = prefix === "regen"
+      ? 100
+      : inputs.reduce((sum, input) => sum + numeric(input.value), 0);
+    const values = inputs.map(() => 0);
+    let remaining = total;
+    let cursor = 0;
+    while (remaining > 0 && inputs.some((input, index) => values[index] < numeric(input.max, Infinity))) {
+      const index = cursor % inputs.length;
+      if (values[index] < numeric(inputs[index].max, Infinity)) {
+        values[index] += 1;
+        remaining -= 1;
+      }
+      cursor += 1;
+    }
+    inputs.forEach((input, index) => {
+      input.value = String(values[index]);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  async #previewUi(form) {
+    const output = form.querySelector("[data-preview]");
+    if (!output) return;
+    const actor = this.actor;
+    const config = actor.system.shipCombat.config;
+    const state = clone(actor.system.shipCombat.state);
+    const type = form.dataset.livePreview;
     try {
-      const payload = parseObject(form.elements.payload.value); const type = form.dataset.operation; const actor = this.actor; const config = actor.system.shipCombat.config; const state = clone(actor.system.shipCombat.state);
+      const data = elementFormData(form);
+      const operation = uiOperation(type, data, config, state);
+      if (type === "maneuver" || type === "rotate") {
+        const token = actorToken(actor);
+        if (!token) throw new Error("Place this ship on the active Scene to preview movement.");
+        const assembled = movementPreviewInput(operation.payload, token, config, state);
+        const result = previewManeuver(assembled.input);
+        setMovementPreview(token.uuid, canvasMovementPreview(result, assembled.geometry));
+        const speed = Math.hypot(Number(result.finalVelocity?.x ?? 0), Number(result.finalVelocity?.y ?? 0));
+        const warning = result.warnings?.[0]?.code ? ` · ${result.warnings[0].code.replaceAll("_", " ")}` : "";
+        output.textContent = `Timeline ${result.timelineUsed.toFixed(2)} / 1 · Final speed ${speed.toFixed(2)} · Facing ${Math.round(result.finalFacing)}°${warning}`;
+      } else if (type === "routePower") {
+        const result = previewPowerRoute(config, state, operation.payload);
+        output.textContent = `${result.committed} / ${result.ceilings.maximum} Power · ${result.unused} available · ${result.redlining ? "REDLINE" : result.emission.band} · ${result.heatAdded} Heat on commit`;
+      } else if (type === "routeDefense") {
+        const result = previewDefenseRoute(config, state, operation.payload);
+        output.textContent = `${result.totalCharge} shield charge conserved · regeneration ${Object.entries(result.regenerationAllocation).map(([sector, value]) => `${sector} ${value}%`).join(" · ")}`;
+      } else if (type === "attack") {
+        const targetUuid = operation.targetUuids[0];
+        if (!targetUuid) {
+          output.textContent = "Select a Targeted contact to preview this weapon.";
+          output.dataset.error = "false";
+          return;
+        }
+        const target = await fromUuid(targetUuid);
+        const targetActor = target?.actor;
+        if (!targetActor) throw new Error("The selected contact is no longer present.");
+        const sourceToken = actorToken(actor);
+        const targetToken = target?.document ?? target;
+        if (!sourceToken) throw new Error("Place this ship on the active scene to preview an attack.");
+        const geometry = sceneGeometry(sourceToken);
+        const targetState = clone(targetActor.system.shipCombat.state);
+        const operator = config.operators.find((entry) => entry.id === operation.payload.operatorId);
+        const result = previewAttack({
+          attackerConfig: config,
+          attackerState: state,
+          targetConfig: targetActor.system.shipCombat.config,
+          targetState,
+          declaration: {
+            ...operation.payload,
+            targetUuid,
+            attackerPosition: tokenCenter(sourceToken, geometry),
+            targetPosition: tokenCenter(targetToken, geometry),
+            attackerVelocity: clone(state.velocity),
+            targetVelocity: clone(targetState.velocity),
+            attackerFacing: Number(sourceToken.rotation ?? 0),
+            targetFacing: Number(targetToken.rotation ?? 0),
+            lineOfSight: true,
+            gunneryModifier: Number(operator?.ratings?.gunnery ?? 0),
+          },
+        });
+        output.textContent = result.legal
+          ? `Legal shot · modifier ${result.public.knownModifierTotal >= 0 ? "+" : ""}${result.public.knownModifierTotal} · range ${Number(result.public.range?.distance ?? 0).toFixed(1)} · strikes ${result.public.struckSector}`
+          : result.violations.map((violation) => violation.message).join(" · ");
+      }
+      output.dataset.error = "false";
+    } catch (error) {
+      output.textContent = errorText(error);
+      output.dataset.error = "true";
+      if (type === "maneuver" || type === "rotate") {
+        const token = actorToken(actor);
+        if (token) clearMovementPreview(token.uuid);
+      }
+    }
+  }
+
+  async #previewRaw(form) {
+    const output = form.querySelector("[data-preview]");
+    if (!output) return;
+    try {
+      const payload = parseObject(form.elements.payload.value);
+      const type = form.dataset.rawOperation;
+      const actor = this.actor;
+      const config = actor.system.shipCombat.config;
+      const state = clone(actor.system.shipCombat.state);
       let result = payload;
       if (type === "routePower") result = previewPowerRoute(config, state, payload);
       else if (type === "routeDefense") result = previewDefenseRoute(config, state, payload);
       else if (type === "maneuver" || type === "rotate") {
         const token = actorToken(actor);
-        if (!token) throw new Error("Open a placed token to preview ship movement.");
+        if (!token) throw new Error("Place this ship on the active Scene to preview movement.");
         const assembled = movementPreviewInput(payload, token, config, state);
         result = previewManeuver(assembled.input);
         setMovementPreview(token.uuid, canvasMovementPreview(result, assembled.geometry));
-      }
-      else if (type === "attack") {
-        const targetUuid = (form.elements.targets?.value ?? "").split(/[\s,]+/).find(Boolean);
+      } else if (type === "attack") {
+        const targetUuid = (form.elements.targets?.value ?? "").split(/[\\s,]+/).find(Boolean);
         if (!targetUuid) throw new Error("Enter a target Token UUID to preview an attack.");
-        const target = await fromUuid(targetUuid); const targetActor = target?.actor;
+        const target = await fromUuid(targetUuid);
+        const targetActor = target?.actor;
         if (!targetActor) throw new Error("The target UUID must identify a placed Token.");
-        result = previewAttack({ attackerConfig: config, attackerState: state, targetConfig: targetActor.system.shipCombat.config, targetState: clone(targetActor.system.shipCombat.state), declaration: { ...payload, targetUuid } });
+        result = previewAttack({
+          attackerConfig: config,
+          attackerState: state,
+          targetConfig: targetActor.system.shipCombat.config,
+          targetState: clone(targetActor.system.shipCombat.state),
+          declaration: { ...payload, targetUuid },
+        });
       }
-      output.textContent = pretty(result); output.dataset.error = "false";
-    } catch (error) { output.textContent = `Preview unavailable: ${errorText(error)}`; output.dataset.error = "true"; }
+      output.textContent = pretty(result);
+      output.dataset.error = "false";
+    } catch (error) {
+      output.textContent = `Preview unavailable: ${errorText(error)}`;
+      output.dataset.error = "true";
+    }
   }
 
-  async #submit(event, form) {
+  async #submitUi(event, element) {
     event.preventDefault();
-    const token = actorToken(this.actor); if (!token) return ui.notifications.warn("Open a placed token to operate this ship.");
+    const type = element.dataset.uiOperation;
+    const data = elementFormData(element);
+    const config = this.actor.system.shipCombat.config;
+    const state = clone(this.actor.system.shipCombat.state);
     try {
-      const payload = parseObject(form.elements.payload.value); const targetUuids = (form.elements.targets?.value ?? "").split(/[\s,]+/).filter(Boolean);
-      const revisions = { [token.uuid]: Number(this.actor.system.shipCombat.state?.revision ?? 0) };
-      for (const uuid of targetUuids) { const document = await fromUuid(uuid); revisions[uuid] = Number(document?.actor?.system?.shipCombat?.state?.revision ?? document?.system?.shipCombat?.state?.revision ?? 0); }
-      const request = { id: foundry.utils.randomID(), type: form.dataset.operation, sourceUuid: token.uuid, targetUuids, expectedRevisions: revisions, payload };
-      const response = await submitShipOperation(request); if (!response?.ok) throw new Error(response?.error?.message ?? response?.error ?? `${form.dataset.operation} was rejected.`);
-      drafts.delete(draftKey(token.uuid, form.dataset.operation)); clearMovementPreview(token.uuid); ui.notifications.info(`${form.dataset.operation} committed.`); await this.render();
-    } catch (error) { ui.notifications.error(errorText(error)); }
+      const operation = uiOperation(type, data, config, state);
+      if (TARGET_OPERATIONS.has(type) && operation.targetUuids.length !== 1) {
+        throw new Error("Select one valid contact.");
+      }
+      element.disabled = true;
+      await this.#commitOperation(type, operation.payload, operation.targetUuids);
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    } finally {
+      element.disabled = false;
+    }
+  }
+
+  async #submitRaw(event, form) {
+    event.preventDefault();
+    try {
+      const type = form.dataset.rawOperation;
+      const payload = parseObject(form.elements.payload.value);
+      const targetUuids = (form.elements.targets?.value ?? "").split(/[\\s,]+/).filter(Boolean);
+      await this.#commitOperation(type, payload, targetUuids);
+      drafts.delete(draftKey(actorToken(this.actor)?.uuid ?? this.actor.uuid, `raw-${type}`));
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
+  }
+
+  async #commitOperation(type, payload, targetUuids) {
+    const token = actorToken(this.actor);
+    if (!token) throw new Error("Place this ship on the active Scene to operate it.");
+    const revisions = { [token.uuid]: Number(this.actor.system.shipCombat.state?.revision ?? 0) };
+    for (const uuid of targetUuids) {
+      const document = await fromUuid(uuid);
+      const revision = document?.actor?.system?.shipCombat?.state?.revision ?? document?.system?.shipCombat?.state?.revision;
+      if (!Number.isInteger(revision)) throw new Error(`The selected target is unavailable: ${uuid}`);
+      revisions[uuid] = revision;
+    }
+    const request = {
+      id: foundry.utils.randomID(),
+      type,
+      sourceUuid: token.uuid,
+      targetUuids,
+      expectedRevisions: revisions,
+      payload,
+    };
+    const response = await submitShipOperation(request);
+    if (!response?.ok) throw new Error(response?.error?.message ?? response?.error ?? `${type} was rejected.`);
+    clearMovementPreview(token.uuid);
+    ui.notifications.info(`${type.replace(/([a-z])([A-Z])/g, "$1 $2")} committed.`);
+    await this.render();
   }
 
   async #saveConfig(event) {
-    event.preventDefault(); if (!game.user.isGM) return ui.notifications.error("Active GM only.");
-    try { const config = parseObject(event.currentTarget.elements.config.value, "Configuration"); const validation = validateShipConfig(config, { tokenWidth: validationTokenWidth(this.actor) }); if (!validation.valid) throw new Error(validation.errors.map((e) => e.message ?? `${e.path}: ${e.code}`).join("\n")); await this.actor.update({ "system.shipCombat.config": foundry.data.operators.ForcedReplacement.create(config), ...nativeVehicleFieldValues(config, this.actor.system.shipCombat.state) }, { diff: false }); ui.notifications.info("Ship configuration saved; combat state was not changed."); await this.render(); } catch (error) { ui.notifications.error(errorText(error)); }
+    event.preventDefault();
+    if (!game.user.isGM) return ui.notifications.error("Active GM only.");
+    try {
+      const config = parseObject(event.currentTarget.elements.config.value, "Configuration");
+      const validation = validateShipConfig(config, { tokenWidth: validationTokenWidth(this.actor) });
+      if (!validation.valid) throw new Error(validation.errors.map((entry) => entry.message ?? `${entry.path}: ${entry.code}`).join("\\n"));
+      await this.actor.update({
+        "system.shipCombat.config": foundry.data.operators.ForcedReplacement.create(config),
+        ...nativeVehicleFieldValues(config, this.actor.system.shipCombat.state),
+      }, { diff: false });
+      ui.notifications.info("Ship configuration saved; combat state was not changed.");
+      await this.render();
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
   }
 
   async #resetCanadensis() {
     if (!game.user.isGM) return;
     if (!globalThis.confirm("Replace this ship's configuration with the exact Canadensis configuration? Combat state will not be changed.")) return;
-    const config = clone(CANADENSIS_CONFIG); const validation = validateShipConfig(config, { tokenWidth: validationTokenWidth(this.actor) });
+    const config = clone(CANADENSIS_CONFIG);
+    const validation = validateShipConfig(config, { tokenWidth: validationTokenWidth(this.actor) });
     if (!validation.valid) return ui.notifications.error("Bundled Canadensis configuration is invalid.");
-    await this.actor.update({ "system.shipCombat.config": foundry.data.operators.ForcedReplacement.create(config), ...nativeVehicleFieldValues(config, this.actor.system.shipCombat.state) }, { diff: false }); ui.notifications.info("Canadensis configuration restored; combat state was not changed."); await this.render();
+    await this.actor.update({
+      "system.shipCombat.config": foundry.data.operators.ForcedReplacement.create(config),
+      ...nativeVehicleFieldValues(config, this.actor.system.shipCombat.state),
+    }, { diff: false });
+    ui.notifications.info("Canadensis configuration restored; combat state was not changed.");
+    await this.render();
   }
 
   async #rollback(id) {
     if (!game.user.isGM || !globalThis.confirm(`Roll back the whole operation ${id}?`)) return;
-    try { const response = await rollbackShipOperation(id); if (!response?.ok) throw new Error(response?.error?.message ?? response?.error ?? "Rollback was rejected."); ui.notifications.info("Whole operation rolled back."); await this.render(); } catch (error) { ui.notifications.error(errorText(error)); }
+    try {
+      const response = await rollbackShipOperation(id);
+      if (!response?.ok) throw new Error(response?.error?.message ?? response?.error ?? "Rollback was rejected.");
+      ui.notifications.info("Whole operation rolled back.");
+      await this.render();
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
   }
 }
 

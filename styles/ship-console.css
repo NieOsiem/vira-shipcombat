@@ -1,180 +1,764 @@
 .vira-shipcombat.ship-console {
-  min-width: 320px;
+  --ship-bg: #080d12;
+  --ship-panel: #101820;
+  --ship-panel-raised: #16222c;
+  --ship-border: #263b48;
+  --ship-border-bright: #3b6170;
+  --ship-text: #e7f2f5;
+  --ship-muted: #8ea5ad;
+  --ship-cyan: #3ee8d0;
+  --ship-cyan-soft: rgb(62 232 208 / 16%);
+  --ship-blue: #54a8ff;
+  --ship-green: #55e18b;
+  --ship-amber: #ffbd52;
+  --ship-orange: #ff7a45;
+  --ship-red: #ff5267;
+  min-width: 680px;
+  color: var(--ship-text);
+  color-scheme: dark;
+}
+
+.vira-shipcombat.ship-console .window-content {
+  padding: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgb(62 232 208 / 3%) 0, transparent 35%),
+    radial-gradient(circle at 80% 0, rgb(84 168 255 / 8%), transparent 35%),
+    var(--ship-bg);
+}
+
+.ship-console-layout,
+.ship-console-layout * {
+  box-sizing: border-box;
 }
 
 .ship-console-layout {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
   height: 100%;
-  padding: 0.75rem;
+  min-height: 0;
   overflow: hidden;
+  font-family: var(--font-body, sans-serif);
+}
+
+.ship-console-layout button,
+.ship-console-layout input,
+.ship-console-layout select,
+.ship-console-layout textarea {
+  border: 1px solid var(--ship-border);
+  border-radius: 3px;
+  color: var(--ship-text);
+  background: #0b1218;
+  box-shadow: none;
+}
+
+.ship-console-layout button {
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.ship-console-layout button:hover:not(:disabled),
+.ship-console-layout button:focus-visible:not(:disabled) {
+  border-color: var(--ship-cyan);
+  color: #fff;
+  background: var(--ship-cyan-soft);
+  box-shadow: 0 0 0 1px rgb(62 232 208 / 20%), 0 0 18px rgb(62 232 208 / 10%);
+}
+
+.ship-console-layout button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.ship-console-layout input,
+.ship-console-layout select,
+.ship-console-layout textarea {
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.35rem 0.45rem;
+}
+
+.ship-console-layout textarea {
+  resize: vertical;
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.8rem;
+}
+
+.ship-console-layout label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  color: var(--ship-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+}
+
+.ship-console-layout h1,
+.ship-console-layout h2,
+.ship-console-layout h3,
+.ship-console-layout h4,
+.ship-console-layout p,
+.ship-console-layout dl {
+  margin: 0;
 }
 
 .ship-console-header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex: 0 0 auto;
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--ship-border);
+  background: linear-gradient(90deg, #101a22, #0b1218);
 }
+
+.ship-console-portrait {
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  overflow: hidden;
+  border: 1px solid var(--ship-border-bright);
+  background: #05090c;
+  clip-path: polygon(12% 0, 88% 0, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0 88%, 0 12%);
+}
+
+.ship-console-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .ship-console-heading {
   flex: 1;
   min-width: 0;
 }
 
-.ship-console-header [data-native-vehicle-sheet] {
+.ship-console-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.ship-console-heading h1 {
+  overflow: hidden;
+  color: #fff;
+  font-size: 1.35rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ship-console-heading p,
+.ship-muted {
+  color: var(--ship-muted);
+  font-size: 0.77rem;
+}
+
+.ship-phase,
+.ship-status-chip,
+.ship-readout {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.45rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--ship-border-bright);
+  border-radius: 2px;
+  color: var(--ship-cyan);
+  background: var(--ship-cyan-soft);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ship-phase--outsideCombat,
+.ship-status-chip--off {
+  color: var(--ship-muted);
+  background: rgb(142 165 173 / 10%);
+}
+
+.ship-phase--end,
+.ship-status-chip--booting {
+  color: var(--ship-amber);
+  border-color: rgb(255 189 82 / 45%);
+  background: rgb(255 189 82 / 12%);
+}
+
+.ship-icon-button {
   flex: 0 0 auto;
+  width: 2.4rem;
+  padding: 0;
+  font-size: 1rem;
 }
 
-
-.ship-console-header img {
-  flex: 0 0 auto;
-  object-fit: cover;
-  border: 1px solid var(--color-border-dark, #555);
-}
-
-.ship-console-header h1,
-.ship-console-header p,
-.ship-console-panel h2,
-.ship-console-panel h3 {
-  margin: 0.2rem 0;
-}
-
-.ship-console-notice,
-.ship-console-reason {
-  border-left: 4px solid #8b5a00;
-  padding: 0.5rem;
-  background: rgb(139 90 0 / 12%);
-}
-.ship-console-specifications {
-  padding: 0.5rem;
-  border: 1px solid var(--color-border-light-tertiary, #888);
-}
-
-.ship-console-specifications > h2,
-.ship-console-specifications h3 {
-  margin: 0 0 0.35rem;
-}
-
-.ship-console-specification-groups {
+.ship-status-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--ship-border);
+  background: var(--ship-border);
+}
+
+.ship-status-meter {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.5rem 0.7rem;
+  background: #0c141a;
+}
+
+.ship-status-meter > div:first-child,
+.ship-readiness > div:first-child {
+  display: flex;
+  justify-content: space-between;
   gap: 0.5rem;
+  color: var(--ship-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.ship-console-specification-groups section {
-  min-width: 0;
+.ship-status-meter strong,
+.ship-readiness strong {
+  color: var(--ship-text);
+  font-family: var(--font-monospace, monospace);
 }
 
-.ship-console-specification-groups dl {
+.ship-meter {
+  position: relative;
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #273139;
+}
+
+.ship-meter > span {
+  display: block;
+  width: var(--meter-value, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #23885b, var(--ship-green));
+  box-shadow: 0 0 10px currentcolor;
+  transition: width 160ms ease;
+}
+
+.ship-meter--heat > span { background: linear-gradient(90deg, var(--ship-green), var(--ship-amber), var(--ship-orange)); }
+.ship-meter--shield > span { background: linear-gradient(90deg, #167db5, var(--ship-cyan)); }
+.ship-meter--power > span,
+.ship-meter--timeline > span { background: linear-gradient(90deg, #3f7eff, #73bcff); }
+.ship-meter--weapon > span { background: linear-gradient(90deg, #e69b30, var(--ship-amber)); }
+.ship-meter--danger > span { background: linear-gradient(90deg, var(--ship-orange), var(--ship-red)); }
+
+.ship-console-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 0 auto;
   margin: 0;
+  padding: 0.45rem 0.85rem;
+  color: var(--ship-amber);
+  border-bottom: 1px solid rgb(255 189 82 / 35%);
+  background: rgb(255 189 82 / 10%);
+  font-size: 0.8rem;
 }
-
-.ship-console-specification-groups dl > div {
-  display: grid;
-  grid-template-columns: minmax(7rem, 0.8fr) minmax(0, 1.2fr);
-  gap: 0.4rem;
-}
-
-.ship-console-specification-groups dt {
-  font-weight: bold;
-}
-
-.ship-console-specification-groups dd {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
 
 .ship-console-tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--color-border-light-tertiary, #888);
-  padding-bottom: 0.35rem;
+  flex: 0 0 auto;
+  gap: 0;
+  padding: 0 0.5rem;
+  border-bottom: 1px solid var(--ship-border);
+  background: #0a1117;
+}
+
+.ship-console-tabs button {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 2.45rem;
+  border: 0;
+  border-radius: 0;
+  color: var(--ship-muted);
+  background: transparent;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.ship-console-tabs button::after {
+  content: "";
+  position: absolute;
+  right: 20%;
+  bottom: -1px;
+  left: 20%;
+  height: 2px;
+  background: transparent;
 }
 
 .ship-console-tabs button[aria-selected="true"] {
-  font-weight: bold;
-  text-decoration: underline;
+  color: var(--ship-cyan);
+  background: linear-gradient(180deg, transparent, rgb(62 232 208 / 8%));
+}
+
+.ship-console-tabs button[aria-selected="true"]::after {
+  right: 0;
+  left: 0;
+  background: var(--ship-cyan);
+  box-shadow: 0 0 10px var(--ship-cyan);
+}
+
+.ship-console-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .ship-console-panel {
+  height: 100%;
   min-height: 0;
+  padding: 0.9rem;
   overflow: auto;
-  padding-right: 0.25rem;
+  scrollbar-color: var(--ship-border-bright) transparent;
 }
 
-.ship-console-actions {
+.ship-console-panel[hidden] { display: none; }
+
+.ship-panel-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ship-border);
+}
+
+.ship-panel-heading h2 {
+  color: #fff;
+  font-size: 1.3rem;
+}
+
+.ship-kicker {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--ship-cyan);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ship-card {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--ship-border);
+  border-radius: 4px;
+  background: linear-gradient(145deg, rgb(22 34 44 / 92%), rgb(12 20 26 / 94%));
+  box-shadow: inset 0 1px rgb(255 255 255 / 3%);
+}
+
+.ship-card--emphasis { border-color: var(--ship-border-bright); }
+.ship-card--danger { border-color: rgb(255 82 103 / 50%); }
+
+.ship-card > header,
+.ship-contact-card > header,
+.ship-weapon-card > header,
+.ship-condition-card > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.ship-card h3,
+.ship-contact-card h3 {
+  color: #fff;
+  font-size: 0.98rem;
+}
+
+.ship-dashboard-grid,
+.ship-operator-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.ship-stat-grid,
+.ship-rating-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.8rem;
+}
+
+.ship-stat-grid > div,
+.ship-rating-grid > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid rgb(142 165 173 / 12%);
+}
+
+.ship-stat-grid dt,
+.ship-rating-grid dt {
+  color: var(--ship-muted);
+  font-size: 0.72rem;
+}
+
+.ship-stat-grid dd,
+.ship-rating-grid dd {
+  margin: 0;
+  color: var(--ship-text);
+  font-family: var(--font-monospace, monospace);
+  font-weight: 750;
+}
+
+.ship-warning,
+.ship-danger {
+  color: var(--ship-red) !important;
+}
+
+.ship-warning {
+  margin-top: 0.55rem !important;
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.ship-alert-stack {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.7rem;
+}
+
+.ship-alert {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.1rem;
+  padding: 0.35rem 0.6rem;
+  border-left: 3px solid var(--ship-amber);
+  color: var(--ship-amber);
+  background: rgb(255 189 82 / 12%);
+  font-size: 0.78rem;
+}
+
+.ship-alert--critical,
+.ship-alert--destroyed,
+.ship-alert--catastrophic { border-color: var(--ship-red); color: var(--ship-red); background: rgb(255 82 103 / 12%); }
+.ship-alert span { text-transform: uppercase; }
+
+.ship-button-grid,
+.ship-action-row,
+.ship-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.ship-button-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ship-action-row { align-items: center; margin-top: 0.65rem; }
+.ship-action-row > button { flex: 1 1 10rem; }
+.ship-segmented > button { flex: 1 1 0; }
+
+.ship-primary {
+  border-color: rgb(62 232 208 / 65%) !important;
+  color: #051211 !important;
+  background: linear-gradient(180deg, #61f5df, #29bda9) !important;
+  text-shadow: none;
+}
+
+.ship-primary:hover:not(:disabled) { background: linear-gradient(180deg, #84ffe9, #3bd8c1) !important; }
+
+.ship-operator-grid { margin-bottom: 0.75rem; }
+.ship-operator-card { display: grid; gap: 0.6rem; }
+.ship-roster-editor { margin-top: 0.75rem; }
+
+.ship-form-grid,
+.ship-vector-control,
+.ship-power-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.65rem;
+}
+
+.ship-vector-control { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ship-vector-control label { position: relative; }
+.ship-vector-control label > span { position: absolute; right: 0.45rem; bottom: 0.45rem; color: var(--ship-muted); font-size: 0.66rem; }
+.ship-power-grid { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); }
+.ship-power-grid label > span { display: flex; justify-content: space-between; gap: 0.25rem; }
+.ship-power-grid small { color: var(--ship-amber); white-space: nowrap; }
+
+.ship-helm-layout,
+.ship-systems-layout,
+.ship-sensor-layout,
+.ship-damage-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 0.75rem;
   align-items: start;
 }
 
-.ship-operation fieldset {
+.ship-systems-layout { grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); }
+
+.ship-maneuver-card,
+.ship-flight-instruments,
+.ship-sensor-controls { display: grid; gap: 0.65rem; }
+
+.ship-vector-dial {
+  display: grid;
+  place-items: center;
+  min-height: 12rem;
+  border: 1px solid var(--ship-border);
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle, transparent 0 22px, rgb(62 232 208 / 12%) 23px 24px), linear-gradient(90deg, transparent 49.7%, rgb(62 232 208 / 18%) 50%, transparent 50.3%), linear-gradient(transparent 49.7%, rgb(62 232 208 / 18%) 50%, transparent 50.3%);
+  color: var(--ship-cyan);
+}
+
+.ship-vector-dial i { font-size: 2.2rem; transform: rotate(-45deg); filter: drop-shadow(0 0 8px var(--ship-cyan)); }
+.ship-vector-dial span { color: var(--ship-muted); font-family: var(--font-monospace, monospace); }
+.ship-admin-panel { margin-top: 0.75rem; }
+.ship-admin-panel summary,
+.ship-diagnostics > summary,
+.ship-console-config > summary { cursor: pointer; color: var(--ship-cyan); font-weight: 750; }
+
+.ship-preview-line {
+  min-height: 1.4rem;
+  padding: 0.35rem 0.5rem;
+  border-left: 2px solid var(--ship-cyan);
+  color: var(--ship-muted);
+  background: rgb(62 232 208 / 6%);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.72rem;
+}
+
+.ship-preview-line[data-error="true"] { border-color: var(--ship-red); color: var(--ship-red); background: rgb(255 82 103 / 7%); }
+
+.ship-shield-card { display: grid; gap: 0.55rem; }
+.ship-shield-diagram {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: auto auto auto;
+  gap: 0.5rem;
+  align-items: stretch;
+  margin: 0.25rem 0;
+}
+
+.ship-shield-core {
+  display: grid;
+  grid-column: 2;
+  grid-row: 2;
+  place-items: center;
+  min-height: 8.5rem;
+  border: 1px solid rgb(62 232 208 / 45%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(62 232 208 / 13%), transparent 68%);
+  color: var(--ship-cyan);
+  box-shadow: inset 0 0 25px rgb(62 232 208 / 8%);
+}
+
+.ship-shield-core i { font-size: 1.5rem; }
+.ship-shield-core strong { font-size: 1.5rem; }
+.ship-shield-core span { color: var(--ship-muted); font-size: 0.65rem; text-transform: uppercase; }
+
+.ship-shield-sector {
+  display: grid !important;
+  align-content: center;
+  gap: 0.25rem !important;
+  padding: 0.45rem;
+  border: 1px solid rgb(62 232 208 / 28%);
+  border-radius: 3px;
+  background: rgb(62 232 208 / 5%);
+  text-align: center;
+}
+
+.ship-shield-sector[data-sector="fore"] { grid-column: 2; grid-row: 1; }
+.ship-shield-sector[data-sector="port"] { grid-column: 1; grid-row: 2; }
+.ship-shield-sector[data-sector="starboard"] { grid-column: 3; grid-row: 2; }
+.ship-shield-sector[data-sector="aft"] { grid-column: 2; grid-row: 3; }
+.ship-shield-sector[data-sector="bubble"] { grid-column: 1 / 4; grid-row: 1 / 4; }
+.ship-shield-sector > span { color: var(--ship-cyan); text-transform: uppercase; }
+.ship-shield-sector > strong { color: var(--ship-text); font-family: var(--font-monospace, monospace); }
+.ship-shield-sector input { display: inline-block; width: 4.2rem; min-height: 1.6rem; margin: auto; padding: 0.15rem; text-align: center; }
+.ship-shield-sector small { color: var(--ship-muted); }
+.ship-shield-sector em { color: var(--ship-red); font-size: 0.67rem; }
+.ship-shield-diagram--bubble .ship-shield-core { display: none; }
+
+.ship-radar {
+  position: relative;
+  width: min(100%, 33rem);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid rgb(62 232 208 / 55%);
+  border-radius: 50%;
+  background:
+    conic-gradient(from -15deg, transparent 0 7deg, rgb(62 232 208 / 12%) 7deg 15deg, transparent 15deg 360deg),
+    repeating-radial-gradient(circle, transparent 0 11.5%, rgb(62 232 208 / 18%) 11.8% 12.1%),
+    radial-gradient(circle, rgb(62 232 208 / 8%), transparent 68%),
+    #071014;
+  box-shadow: inset 0 0 45px rgb(62 232 208 / 10%), 0 0 20px rgb(62 232 208 / 5%);
+}
+
+.ship-radar-axis { position: absolute; background: rgb(62 232 208 / 18%); }
+.ship-radar-axis--vertical { top: 0; bottom: 0; left: 50%; width: 1px; }
+.ship-radar-axis--horizontal { top: 50%; right: 0; left: 0; height: 1px; }
+.ship-radar-heading { position: absolute; top: 0.5rem; left: 50%; color: var(--ship-cyan); font: 700 0.62rem var(--font-monospace, monospace); transform: translateX(-50%); }
+.ship-radar-range { position: absolute; right: 8%; bottom: 8%; color: var(--ship-muted); font: 0.65rem var(--font-monospace, monospace); }
+.ship-radar-center { position: absolute; top: 50%; left: 50%; color: var(--ship-cyan); transform: translate(-50%, -50%) rotate(-45deg); filter: drop-shadow(0 0 6px var(--ship-cyan)); }
+
+.ship-radar-contact {
+  position: absolute;
+  top: var(--contact-y);
+  left: var(--contact-x);
+  display: grid;
+  place-items: center;
+  color: var(--ship-amber);
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 0 5px currentcolor);
+}
+
+.ship-radar-contact.is-targeted { color: var(--ship-red); }
+.ship-radar-contact.is-stale { color: var(--ship-muted); opacity: 0.65; }
+.ship-radar-contact small { position: absolute; top: 1rem; width: max-content; max-width: 8rem; overflow: hidden; font-size: 0.62rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.ship-contact-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.ship-contact-card {
+  padding: 0.65rem;
+  border: 1px solid var(--ship-border);
+  border-left: 3px solid var(--ship-amber);
+  background: var(--ship-panel);
+}
+
+.ship-contact-card.is-targeted { border-left-color: var(--ship-red); }
+.ship-contact-card header span { color: var(--ship-amber); font-size: 0.68rem; text-transform: uppercase; }
+
+.ship-weapon-list,
+.ship-condition-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.ship-weapon-list {
+  grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr));
+  align-items: start;
+}
+
+.ship-weapon-card {
+  position: relative;
   display: grid;
   gap: 0.4rem;
-  margin: 0;
-  border: 1px solid var(--color-border-light-tertiary, #888);
+  padding: 0.6rem 0.65rem;
+  overflow: hidden;
 }
+.ship-weapon-card::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--ship-amber); }
+.ship-weapon-card > header { margin-bottom: 0.15rem; }
+.ship-weapon-stats { display: grid; grid-template-columns: 2fr repeat(5, 1fr); gap: 0.25rem; }
+.ship-weapon-stats > div { display: grid; gap: 0.05rem; min-width: 0; padding: 0.25rem 0.3rem; border: 1px solid rgb(142 165 173 / 14%); background: rgb(0 0 0 / 12%); }
+.ship-weapon-stats span { color: var(--ship-muted); font-size: 0.57rem; text-transform: uppercase; }
+.ship-weapon-stats strong { overflow: hidden; color: var(--ship-text); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
+.ship-readiness { display: grid; gap: 0.15rem; }
+.ship-weapon-card .ship-form-grid { gap: 0.35rem; margin-top: 0.15rem; }
+.ship-weapon-card label { gap: 0.15rem; font-size: 0.63rem; }
+.ship-weapon-card input,
+.ship-weapon-card select,
+.ship-weapon-card button { min-height: 1.8rem; }
+.ship-weapon-power-controls { grid-template-columns: 1fr 1fr auto; align-items: end; }
+.ship-weapon-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 0.4rem; }
+.ship-weapon-footer .ship-preview-line { min-height: 1.8rem; }
+.ship-fire-button { width: auto; min-width: 10rem; min-height: 1.8rem !important; color: #1b1100 !important; background: linear-gradient(180deg, #ffd069, #d79026) !important; border-color: #ffd06b !important; }
 
-.ship-operation label,
-.ship-console-config label {
-  display: grid;
-  gap: 0.2rem;
-  font-weight: bold;
-}
+.ship-condition-card { border-left: 3px solid var(--ship-amber); }
+.ship-condition-card--critical,
+.ship-condition-card--destroyed,
+.ship-condition-card--catastrophic { border-left-color: var(--ship-red); }
 
-.ship-operation textarea,
-.ship-console-config textarea,
-.ship-operation input {
-  box-sizing: border-box;
-  width: 100%;
-  font-family: monospace;
-  font-size: 0.86rem;
-}
-
-.ship-console-help,
-.ship-console-reason {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-size: 0.85rem;
-}
-
-.ship-console-state,
-.ship-operation pre,
-.ship-console-log pre {
-  max-width: 100%;
-  padding: 0.5rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: rgb(0 0 0 / 8%);
-  border: 1px solid var(--color-border-light-tertiary, #888);
-}
-
-.ship-operation pre[data-error="true"] {
-  border-color: #9b1c1c;
+.ship-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 4rem;
+  color: var(--ship-muted);
+  text-align: center;
 }
 
 .ship-console-log {
-  padding-left: 1.5rem;
+  display: grid;
+  gap: 0.45rem;
+  max-height: 24rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
 }
 
-.ship-console-log li {
-  margin-bottom: 0.75rem;
+.ship-console-log li { padding: 0.5rem; border-left: 2px solid var(--ship-cyan); background: rgb(0 0 0 / 15%); }
+.ship-console-log li.is-error { border-color: var(--ship-red); }
+.ship-console-log li > div { display: flex; justify-content: space-between; gap: 0.5rem; }
+.ship-console-log li span { color: var(--ship-muted); font-size: 0.7rem; }
+.ship-console-log pre,
+.ship-console-state,
+.ship-operation pre { max-width: 100%; max-height: 20rem; padding: 0.5rem; overflow: auto; border: 1px solid var(--ship-border); background: #070b0f; color: #b9d1d8; font: 0.72rem var(--font-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ship-console-log button { margin-top: 0.4rem; }
+
+.ship-console-specifications,
+.ship-diagnostics,
+.ship-console-config { margin-top: 0.65rem; }
+.ship-console-specification-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+.ship-console-specification-groups h4 { margin-bottom: 0.4rem; color: var(--ship-cyan); }
+.ship-console-specification-groups dl > div { display: grid; grid-template-columns: minmax(6.5rem, 0.8fr) minmax(0, 1.2fr); gap: 0.4rem; padding: 0.15rem 0; border-bottom: 1px solid rgb(142 165 173 / 10%); }
+.ship-console-specification-groups dt { color: var(--ship-muted); font-size: 0.7rem; }
+.ship-console-specification-groups dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.72rem; }
+
+.ship-console-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.55rem; margin-top: 0.65rem; }
+.ship-operation fieldset { display: grid; gap: 0.4rem; margin: 0; border: 1px solid var(--ship-border); }
+.ship-operation legend { color: var(--ship-cyan); }
+.ship-console-help,
+.ship-console-reason { color: var(--ship-muted); font-size: 0.7rem; overflow-wrap: anywhere; }
+.ship-console-reason { color: var(--ship-amber); }
+.ship-checkbox { display: flex !important; align-items: center; gap: 0.45rem !important; }
+.ship-checkbox input { width: auto; }
+
+@media (max-width: 900px) {
+  .vira-shipcombat.ship-console { min-width: 560px; }
+  .ship-systems-layout,
+  .ship-sensor-layout,
+  .ship-damage-layout { grid-template-columns: 1fr; }
+  .ship-power-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ship-weapon-stats { grid-template-columns: repeat(3, 1fr); }
+  .ship-console-specification-groups { grid-template-columns: 1fr; }
 }
 
-.ship-console-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-@media (max-width: 560px) {
-  .ship-console-layout { padding: 0.4rem; }
-  .ship-console-actions { grid-template-columns: 1fr; }
-  .ship-console-tabs button { flex: 1 1 45%; }
+@media (max-width: 680px) {
+  .vira-shipcombat.ship-console { min-width: 360px; }
+  .ship-status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ship-console-tabs { overflow-x: auto; }
+  .ship-console-tabs button { flex: 0 0 auto; }
+  .ship-dashboard-grid,
+  .ship-operator-grid,
+  .ship-helm-layout { grid-template-columns: 1fr; }
+  .ship-form-grid,
+  .ship-vector-control,
+  .ship-power-grid { grid-template-columns: 1fr 1fr; }
+  .ship-shield-diagram { grid-template-columns: 1fr 1fr; grid-template-rows: auto; }
+  .ship-shield-core { display: none; }
+  .ship-shield-sector[data-sector] { grid-column: auto; grid-row: auto; }
+  .ship-weapon-stats { grid-template-columns: repeat(2, 1fr); }
+  .ship-weapon-power-controls { grid-template-columns: 1fr; }
 }
