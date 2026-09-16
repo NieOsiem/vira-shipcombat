@@ -222,11 +222,10 @@ function assertResultScope(result, records) {
 }
 
 function rollD20() {
-  const roll = globalThis.Roll?.create
-    ? globalThis.Roll.create("1d20")
-    : (globalThis.Roll ? new globalThis.Roll("1d20") : null);
-  if (roll?.evaluateSync) return Number(roll.evaluateSync().total);
-  return Math.floor(Math.random() * 20) + 1;
+  const random = typeof globalThis.CONFIG?.Dice?.randomUniform === "function"
+    ? globalThis.CONFIG.Dice.randomUniform()
+    : Math.random();
+  return Math.ceil((1 - random) * 20);
 }
 
 function finiteNumber(value, fallback) {

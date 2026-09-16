@@ -3,6 +3,7 @@
   "title": "Vira Ship Combat",
   "description": "Ship combat module for Foundry Virtual Tabletop.",
   "version": "0.0.1",
+  "socket": true,
   "compatibility": {
     "minimum": "14",
     "verified": "14"

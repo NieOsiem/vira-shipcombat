@@ -312,6 +312,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     }, { inplace: false });
   }
 
+  async close(options = {}) {
+    const token = actorToken(this.actor);
+    if (token) clearMovementPreview(token.uuid);
+    return super.close(options);
+  }
+
   _attachPartListeners(partId, html, options) {
     super._attachPartListeners(partId, html, options);
     html.querySelectorAll("[data-tab-button]").forEach((button) => button.addEventListener("click", () => this.#selectTab(html, button.dataset.tabButton)));
@@ -395,3 +401,5 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 export function registerShipSheet() {
   foundry.applications.apps.DocumentSheetConfig.registerSheet(Actor, MODULE_ID, ShipConsole, { types: [SHIP_TYPE], makeDefault: true, label: "Vira Ship Console" });
 }
+
+export { ShipConsole, movementPreviewInput, canvasMovementPreview };
