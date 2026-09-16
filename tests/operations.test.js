@@ -167,6 +167,130 @@ describe("dispatcher rejection and authority", () => {
   });
 });
 
+describe("authority invariants", () => {
+  test("client cost and free flags cannot bypass a paid sensor Action", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "active";
+    source.state.resources.actions[GUNNER] = 1;
+    assignedUser(source, GUNNER, "sensor-user");
+
+    const result = executeShipOperation(
+      request("ping", SOURCE, [], { operatorId: GUNNER, cost: 0, free: true, operation: { free: true } }),
+      context([[SOURCE, source]], { isGM: false, userId: "sensor-user" }),
+    );
+
+    expect(result.shipStates[SOURCE].resources.actions[GUNNER]).toBe(0);
+  });
+
+  test("roster identities already assigned to another ship are rejected", () => {
+    const source = ship(SOURCE);
+    const target = ship(TARGET_A);
+    expect(errorCode(() => executeShipOperation(
+      request("setRoster", SOURCE, [TARGET_A], { roster: clone(source.state.roster), occupiedIdentities: [] }),
+      context([[SOURCE, source], [TARGET_A, target]]),
+    ))).toBe("DUPLICATE_OPERATOR");
+  });
+
+  test("Start cannot run twice and End requires the mandatory coast", () => {
+    const active = ship(SOURCE);
+    active.state.phase = "active";
+    expect(errorCode(() => executeShipOperation(
+      request("startPhase", SOURCE),
+      context([[SOURCE, active]]),
+    ))).toBe("SHIP_NOT_STARTING");
+    expect(errorCode(() => executeShipOperation(
+      request("endPhase", SOURCE),
+      context([[SOURCE, active]]),
+    ))).toBe("COAST_REQUIRED");
+  });
+
+  test("Power and Defense controls release on commit while free weapon toggles need no control or resource", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "active";
+    assignedUser(source, GUNNER, "operator-user");
+    source.state.resources.actions[GUNNER] = 0;
+
+    source.state.controls.power = { operatorId: GUNNER };
+    const power = executeShipOperation(
+      request("routePower", SOURCE, [], { operatorId: GUNNER, allocation: clone(source.state.power) }),
+      context([[SOURCE, source]], { isGM: false, userId: "operator-user" }),
+    );
+    expect(power.shipStates[SOURCE].controls.power).toBeNull();
+
+    const defenseSource = clone(source);
+    defenseSource.state.controls.defense = { operatorId: GUNNER };
+    const defense = executeShipOperation(
+      request("routeDefense", SOURCE, [], { operatorId: GUNNER }),
+      context([[SOURCE, defenseSource]], { isGM: false, userId: "operator-user" }),
+    );
+    expect(defense.shipStates[SOURCE].controls.defense).toBeNull();
+
+    const toggled = executeShipOperation(
+      request("toggleWeapon", SOURCE, [], {
+        operatorId: GUNNER,
+        weaponId: "canadensis-twin-railgun",
+        status: "off",
+      }),
+      context([[SOURCE, source]], { isGM: false, userId: "operator-user" }),
+    );
+    expect(toggled.shipStates[SOURCE].weapons["canadensis-twin-railgun"].status).toBe("off");
+    expect(toggled.shipStates[SOURCE].resources.actions[GUNNER]).toBe(0);
+  });
+
+  test("immediate fault consequences shed Power, drop Evasion, and invalidate sensor tracks", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "active";
+    assignedUser(source, GUNNER, "operator-user");
+    source.state.resources.actions[GUNNER] = 0;
+    source.state.evasion = { armed: true, reserved: 0.2 };
+    source.state.tracks[TARGET_A] = {
+      targetUuid: TARGET_A,
+      state: "targeted",
+      passiveContact: true,
+      firingSolution: true,
+      remembered: {},
+      jams: [],
+    };
+    source.state.conditions.reactor = {
+      kind: "fault",
+      conditionId: "reactorFault",
+      channelId: "reactorFault",
+      componentId: source.config.components.reactor.id,
+      severity: "minor",
+    };
+    source.state.conditions.drive = {
+      kind: "fault",
+      conditionId: "driveFailure",
+      channelId: "driveFailure",
+      componentId: source.config.components.drive.id,
+      severity: "destroyed",
+    };
+    source.state.conditions.sensor = {
+      kind: "fault",
+      conditionId: "sensorFault",
+      channelId: "sensorFault",
+      componentId: source.config.components.sensor.id,
+      severity: "destroyed",
+    };
+
+    const result = executeShipOperation(
+      request("toggleWeapon", SOURCE, [], {
+        operatorId: GUNNER,
+        weaponId: "canadensis-twin-railgun",
+        status: "off",
+      }),
+      context([[SOURCE, source]], { isGM: false, userId: "operator-user" }),
+    );
+    const state = result.shipStates[SOURCE];
+    const committed = ["engines", "shields", "sensors", "cooling", "weapons"]
+      .reduce((total, system) => total + state.power[system], 0);
+    expect(committed).toBeLessThanOrEqual(11);
+    expect(state.evasion.armed).toBe(false);
+    expect(state.tracks[trackKey(TARGET_A)].state).toBe("undetected");
+    expect(state.tracks[trackKey(TARGET_A)].firingSolution).toBe(false);
+  });
+});
+
 describe("multi-ship replacement scope and event privacy", () => {
   test("an attack replaces source and target while separating public from GM detail", () => {
     const source = ship(SOURCE);

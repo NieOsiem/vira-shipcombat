@@ -169,6 +169,33 @@ describe("Power routing and weapon lifecycle", () => {
   });
 });
 
+  test("Power commits persist presets and validated shedding priorities", () => {
+    const { config, state } = freshShip();
+    const preset = config.powerPresets.find(({ id }) => id === "pursuit");
+    const sheddingPriority = ["weapons", "cooling", "shields", "sensors", "engines"];
+    const weaponPriority = [...config.weaponPriority].reverse();
+
+    const result = commitPowerRoute(config, state, clone({
+      powerPresetId: preset.id,
+      allocation: preset.allocations,
+      sheddingPriority,
+      weaponPriority,
+    }));
+
+    expect(result.powerPresetId).toBe("pursuit");
+    expect(state.powerPresetId).toBe("pursuit");
+    expect(state.sheddingPriority).toEqual(sheddingPriority);
+    expect(state.weaponPriority).toEqual(weaponPriority);
+
+    captureViolation(
+      () => commitPowerRoute(config, state, clone({
+        allocation: preset.allocations,
+        sheddingPriority: ["engines", "engines", "sensors", "cooling", "weapons"],
+      })),
+      "INVALID_POWER_PRIORITY",
+    );
+  });
+
 describe("shield allocation, collapse, and recovery", () => {
   test("integer regeneration uses stable directional tie-breaking", () => {
     expect(allocateRegeneration(3, clone({ fore: 25, port: 25, starboard: 25, aft: 25 }))).toEqual({
@@ -318,6 +345,7 @@ describe("ordered lifecycle transactions", () => {
       config: clone(record.config),
       state: clone(result.shipStates[SOURCE]),
     });
+    nextAuthority.ships[SOURCE].state.phase = "start";
     const next = executeShipOperation(
       gmRequest("phase.start", { turnKey: "round-2" }),
       nextAuthority,

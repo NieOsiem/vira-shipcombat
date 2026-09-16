@@ -155,6 +155,11 @@ export function runStartPhase(config, state, {
       .map(([weaponId]) => [weaponId, true]));
     const entryCounters = { ventCooldown: Number.isInteger(draft.ventCooldown) ? draft.ventCooldown : null };
 
+    if (draft.phase !== "start") {
+      throw new RuleViolation("SHIP_NOT_STARTING", "Start Phase may resolve only once after combat entry or the previous End Phase.", {
+        phase: draft.phase,
+      });
+    }
     draft.phase = "start";
     draft.turnKey = turnKey ?? null;
     const expired = expireEffects(draft, "nextStart", draft.turnKey);
@@ -209,10 +214,11 @@ export function runEndActiveCoast(config, state, input = {}) {
 
 export function runEndPhase(config, state, { random = [], endKey = state?.turnKey } = {}) {
   return transaction(state, (draft) => {
-    if (draft.phase !== "end" && draft.phase !== "active") {
-      throw new RuleViolation("SHIP_NOT_ENDING", "End Phase requires an Active or end-of-Active ship.", { phase: draft.phase });
+    if (draft.phase !== "end") {
+      throw new RuleViolation("COAST_REQUIRED", "End Phase requires the mandatory End-of-Active coast to resolve first.", {
+        phase: draft.phase,
+      });
     }
-    draft.phase = "end";
     const events = [];
 
     const overspeed = getOverspeedDamage(draft.velocity ?? { x: 0, y: 0 }, Number(config?.safeVelocity ?? 0));

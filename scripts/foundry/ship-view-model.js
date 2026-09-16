@@ -36,6 +36,14 @@ function meter(value, maximum, tone = "normal") {
     tone,
   };
 }
+function availabilityLabel(counter) {
+  const turns = whole(counter);
+  if (turns === 0) return "Available now";
+  if (turns === 1) return "Available next Start";
+  if (turns === 2) return "Available on the second future Start";
+  return `Available after ${turns} future Starts`;
+}
+
 
 function holderId(holder) {
   return typeof holder === "string" ? holder : holder?.operatorId ?? null;
@@ -83,6 +91,7 @@ function operatorViews(config, state) {
         engineering: whole(profile?.ratings?.engineering),
       },
       heldControls,
+      userId: entry.assignment?.userId ?? profile?.userId ?? null,
       controlsLabel: heldControls.length ? heldControls.join(" · ") : "None",
       inactive: profile.active === false || profile.incapacitated === true || profile.disconnected === true
         || entry.assignment?.active === false || entry.assignment?.incapacitated === true || entry.assignment?.disconnected === true,
@@ -147,6 +156,15 @@ function powerOptions(config, powerState, system) {
 
 function powerView(config, state) {
   const powerState = getPowerState(config, state);
+  const systems = POWER_SYSTEMS.map(([id, label]) => ({ id, label }));
+  const weapons = (config?.components?.weapons ?? []).map((weapon) => ({ id: weapon.id, label: weapon.label ?? weapon.id }));
+  const prioritySlots = (entries, selected) => selected.map((selectedId, index) => ({
+    index,
+    label: `${index + 1}`,
+    options: entries.map((entry) => ({ ...entry, selected: entry.id === selectedId })),
+  }));
+  const sheddingPriority = state?.sheddingPriority ?? config?.sheddingPriority ?? systems.map(({ id }) => id);
+  const weaponPriority = state?.weaponPriority ?? config?.weaponPriority ?? weapons.map(({ id }) => id);
   return {
     ...powerState,
     meter: meter(powerState.committed, powerState.ceilings.maximum, powerState.redlining ? "danger" : "power"),
@@ -158,6 +176,14 @@ function powerView(config, state) {
       options: powerOptions(config, powerState, id),
       reservation: id === "weapons" ? whole(powerState.weaponReserved) : null,
     })),
+    presets: (config?.powerPresets ?? []).map((preset) => ({
+      id: preset.id,
+      label: preset.label ?? preset.id,
+      allocation: JSON.stringify(preset.allocations ?? {}),
+      selected: preset.id === state?.powerPresetId,
+    })),
+    sheddingPriority: prioritySlots(systems, sheddingPriority),
+    weaponPriority: prioritySlots(weapons, weaponPriority),
   };
 }
 
@@ -171,6 +197,7 @@ function shieldView(config, state) {
     capacity: whole(route.capacities[id]),
     allocation: whole(state?.shields?.regenerationAllocation?.[id], id === "bubble" ? 100 : 0),
     collapse: whole(state?.shields?.collapse?.[id]),
+    collapseLabel: availabilityLabel(state?.shields?.collapse?.[id]),
     meter: meter(route.charge[id], route.capacities[id], state?.shields?.collapse?.[id] > 0 ? "danger" : "shield"),
   }));
   return {
@@ -206,7 +233,7 @@ function weaponViews(config, state, powerState) {
       label: weapon.label ?? weapon.id,
       hardpoint: hardpoint?.label ?? weapon.regions?.join(" / ") ?? "Hardpoint",
       status,
-      statusLabel: status === "booting" ? `Booting · ${whole(current.bootCounter)}` : status,
+      statusLabel: status === "booting" ? `Booting · ${availabilityLabel(current.bootCounter)}` : status,
       online: status === "online",
       off: status === "off",
       powered: status !== "off",
@@ -308,12 +335,13 @@ function contactViews(state, token, sensorStats, labels = {}) {
   }).sort((left, right) => Number(right.targeted) - Number(left.targeted) || Number(right.live) - Number(left.live) || left.label.localeCompare(right.label));
 }
 
-export function buildShipConsoleView(config, state, { token = null, targetLabels = {} } = {}) {
+export function buildShipConsoleView(config, state, { token = null, targetLabels = {}, operatorUserId = null } = {}) {
   const power = powerView(config, state);
   const shields = shieldView(config, state);
   const sensor = getSensorStats(config, state);
   const signature = getCurrentSignature(config, state);
-  const operators = operatorViews(config, state);
+  const operators = operatorViews(config, state)
+    .filter((operator) => operatorUserId == null || operator.userId === operatorUserId);
   const controls = state?.controls ?? {};
   const defaults = {
     helm: bestOperator(operators, "piloting", holderId(controls.helm)),
@@ -370,6 +398,7 @@ export function buildShipConsoleView(config, state, { token = null, targetLabels
     cooling: {
       heat,
       ventCooldown: whole(state?.ventCooldown),
+      ventCooldownLabel: availabilityLabel(state?.ventCooldown),
       ventReady: whole(state?.ventCooldown) === 0,
     },
   };

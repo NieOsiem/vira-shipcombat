@@ -371,6 +371,11 @@ function warningEntries(preview, anchor, collisions) {
 }
 
 function drawPreview(graphics, preview) {
+  for (const projection of preview?.targetedCoasts ?? []) {
+    const points = pointsFrom(projection.path ?? []);
+    strokePath(graphics, points, { color: COLORS.marker, width: 2, alpha: 0.45, dashed: true });
+    if (points.length) addLabel(`${projection.label ?? "Target"} COAST`, points.at(-1), COLORS.marker, { x: 8, y: 8 });
+  }
   const { powered, coast } = trajectoryPaths(preview);
   strokePath(graphics, powered, { color: COLORS.powered, width: 4, alpha: 0.95 });
   strokePath(graphics, coast, { color: COLORS.coast, width: 3, alpha: 0.9, dashed: true });

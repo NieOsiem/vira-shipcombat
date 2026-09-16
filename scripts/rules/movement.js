@@ -1,4 +1,5 @@
 import { RuleViolation } from "../constants.js";
+import { getFaultEffects } from "./conditions.js";
 import {
   EPSILON,
   add,
@@ -43,6 +44,27 @@ export const SIZE_DAMAGE_MULTIPLIERS = Object.freeze([
   Object.freeze({ smaller: 4, larger: 0.1 }),
   Object.freeze({ smaller: 5, larger: 0.05 }),
 ]);
+function tierAt(component, power) {
+  const tiers = Array.from(component?.tiers ?? []).filter((tier) => Number(tier?.power) <= power);
+  tiers.sort((left, right) => Number(left.power) - Number(right.power));
+  return tiers.at(-1) ?? { multiplier: 0, online: false };
+}
+
+export function getDriveCapabilities(config, state) {
+  const drive = config?.components?.drive ?? {};
+  const tier = tierAt(drive, Number(state?.power?.engines ?? 0));
+  const driveFault = getFaultEffects(config, state, { componentId: drive.id, channel: "driveFailure" });
+  const thrusterFault = getFaultEffects(config, state, { componentId: drive.id, channel: "maneuveringThrusterFailure" });
+  const base = drive.base ?? {};
+  const multiplier = Number(tier.multiplier ?? 0);
+  return {
+    forward: Number(base.forward ?? 0) * multiplier * Number(driveFault.forwardMultiplier ?? driveFault.capabilityMultiplier ?? 1),
+    retro: Number(base.retro ?? 0) * multiplier * Number(driveFault.retroMultiplier ?? driveFault.capabilityMultiplier ?? 1),
+    port: Number(base.port ?? 0) * multiplier * Number(thrusterFault.lateralMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
+    starboard: Number(base.starboard ?? 0) * multiplier * Number(thrusterFault.lateralMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
+    rotation: Number(base.rotation ?? 0) * multiplier * Number(thrusterFault.rotationMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
+  };
+}
 
 function violation(code, message, details = undefined) {
   throw new RuleViolation(code, message, details);

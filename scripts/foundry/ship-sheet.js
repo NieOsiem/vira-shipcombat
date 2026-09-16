@@ -6,8 +6,9 @@ import { buildShipConsoleView } from "./ship-view-model.js";
 
 import { previewPowerRoute } from "../rules/power.js";
 import { previewDefenseRoute } from "../rules/shields.js";
-import { previewManeuver } from "../rules/movement.js";
+import { getDriveCapabilities, previewManeuver, projectCoast } from "../rules/movement.js";
 import { previewAttack } from "../rules/combat.js";
+import { TRACK_STATUS } from "../rules/sensors.js";
 import { submitShipOperation, rollbackShipOperation, getOperationLog } from "../state/action-queue.js";
 import { setMovementPreview, clearMovementPreview } from "../canvas/overlays.js";
 
@@ -115,6 +116,15 @@ function uiOperation(type, data, config, state) {
           ...payload,
           allocation: Object.fromEntries(["engines", "shields", "sensors", "cooling", "weapons"]
             .map((system) => [system, numeric(data[system])])),
+          powerPresetId: data.powerPresetId || null,
+          sheddingPriority: Object.keys(data)
+            .filter((key) => key.startsWith("sheddingPriority-"))
+            .sort((left, right) => numeric(left.split("-").at(-1)) - numeric(right.split("-").at(-1)))
+            .map((key) => data[key]),
+          weaponPriority: Object.keys(data)
+            .filter((key) => key.startsWith("weaponPriority-"))
+            .sort((left, right) => numeric(left.split("-").at(-1)) - numeric(right.split("-").at(-1)))
+            .map((key) => data[key]),
         },
         targetUuids: [],
       };
@@ -209,6 +219,48 @@ function escapeSecrets(value, isGM, key = "") {
   return Object.fromEntries(Object.entries(value).map(([childKey, child]) => [childKey, escapeSecrets(child, false, childKey)]));
 }
 function errorText(error) { return error?.message ?? String(error); }
+function assignedUserIds(config, state) {
+  const profiles = new Map((config?.operators ?? []).map((profile) => [profile.id, profile]));
+  const ids = new Set();
+  for (const kind of ["command", "crew"]) {
+    for (const assignment of state?.roster?.[kind] ?? []) {
+      const operatorId = typeof assignment === "string" ? assignment : assignment?.operatorId ?? assignment?.id;
+      const userId = assignment?.userId ?? profiles.get(operatorId)?.userId;
+      if (typeof userId === "string" && userId) ids.add(userId);
+    }
+  }
+  return ids;
+}
+
+function signed(value) {
+  const number = Number(value ?? 0);
+  return `${number >= 0 ? "+" : ""}${number}`;
+}
+
+function attackPreviewText(result) {
+  const preview = result.public ?? {};
+  const categories = preview.categories ?? {};
+  const motion = preview.relativeMotion ?? {};
+  const validity = [
+    `Arc ${preview.arcValid ? "OK" : "blocked"}`,
+    `Range ${preview.rangeValid ? "OK" : "blocked"}`,
+    `LOS ${preview.lineOfSightValid ? "OK" : "blocked"}`,
+  ].join(" · ");
+  const modifiers = [
+    `Gunnery ${signed(categories.gunnery)}`,
+    `Weapon ${signed(categories.weapon)}`,
+    `Range ${signed(categories.range)}`,
+    `Motion ${signed(categories.relativeMotion)}`,
+    `Sensors ${signed(categories.sensors)}`,
+    `Special ${signed(categories.special)}`,
+  ].join(" · ");
+  const motionDetail = `Motion T ${Number(motion.transverseSpeed ?? 0).toFixed(2)} · R ${Number(motion.radialSpeed ?? 0).toFixed(2)} · raw ${Number(motion.rawMotion ?? 0).toFixed(2)} · projectile ×${Number(motion.projectileMultiplier ?? 1).toFixed(2)} · effective ${Number(motion.effectiveMotion ?? 0).toFixed(2)} (${motion.band ?? "—"})`;
+  const violations = result.violations?.length
+    ? ` · ${result.violations.map((entry) => entry.message).join(" · ")}`
+    : "";
+  return `${result.legal ? "LEGAL SHOT" : "ILLEGAL SHOT"} · AC ${preview.finalAc ?? "—"} · Total ${signed(preview.knownModifierTotal)} · ${modifiers} · ${validity} · Range band ${preview.range?.band ?? "—"} at ${Number(preview.range?.distance ?? 0).toFixed(1)} · Strikes ${preview.struckSector ?? "—"} · ${motionDetail}${violations}`;
+}
+
 function actorToken(actor) {
   const synthetic = actor?.token?.document ?? actor?.token;
   if (synthetic && (actor?.isToken || synthetic.actor === actor)) return synthetic;
@@ -321,21 +373,7 @@ function tokenRadius(token, geometry) {
 }
 
 function driveCapabilities(config, state) {
-  const drive = config?.components?.drive ?? {};
-  const power = Number(state?.power?.engines ?? 0);
-  const tier = Array.from(drive.tiers ?? [])
-    .filter((entry) => Number(entry?.power) <= power)
-    .sort((left, right) => Number(left.power) - Number(right.power))
-    .at(-1);
-  const multiplier = Number(tier?.multiplier ?? 0);
-  const base = drive.base ?? {};
-  return {
-    forward: Number(base.forward ?? 0) * multiplier,
-    retro: Number(base.retro ?? 0) * multiplier,
-    port: Number(base.port ?? 0) * multiplier,
-    starboard: Number(base.starboard ?? 0) * multiplier,
-    rotation: Number(base.rotation ?? 0) * multiplier,
-  };
+  return getDriveCapabilities(config, state);
 }
 
 function collectionValues(collection) {
@@ -350,14 +388,90 @@ function sceneTokenDocuments(scene) {
   if (documents.length > 0) return documents.map((entry) => entry?.document ?? entry);
   return collectionValues(globalThis.canvas?.tokens?.placeables).map((entry) => entry?.document ?? entry);
 }
+function doorIsOpen(wall) {
+  const open = globalThis.CONST?.WALL_DOOR_STATES?.OPEN ?? 1;
+  return Number(wall?.ds ?? wall?.document?.ds ?? wall?._source?.ds) === open;
+}
 
-function movementObstacles(sourceToken, geometry) {
+function wallCoordinates(wall) {
+  const coordinates = wall?.c ?? wall?.document?.c ?? wall?._source?.c;
+  if (!Array.isArray(coordinates) || coordinates.length < 4) return null;
+  const values = coordinates.slice(0, 4).map(Number);
+  return values.every(Number.isFinite) ? values : null;
+}
+
+function movementWall(wall) {
+  if (doorIsOpen(wall)) return false;
+  const none = globalThis.CONST?.WALL_MOVEMENT_TYPES?.NONE ?? 0;
+  return Number(wall?.move ?? wall?.document?.move ?? wall?._source?.move ?? 1) !== none;
+}
+
+function sightWall(wall) {
+  if (doorIsOpen(wall)) return false;
+  const none = globalThis.CONST?.WALL_SENSE_TYPES?.NONE ?? 0;
+  return Number(wall?.sight ?? wall?.document?.sight ?? wall?._source?.sight ?? 1) !== none;
+}
+
+function cross(first, second, third) {
+  return ((second.x - first.x) * (third.y - first.y))
+    - ((second.y - first.y) * (third.x - first.x));
+}
+
+function pointOnSegment(point, start, end, epsilon = 1e-9) {
+  return Math.abs(cross(start, end, point)) <= epsilon
+    && point.x >= Math.min(start.x, end.x) - epsilon
+    && point.x <= Math.max(start.x, end.x) + epsilon
+    && point.y >= Math.min(start.y, end.y) - epsilon
+    && point.y <= Math.max(start.y, end.y) + epsilon;
+}
+
+function segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd) {
+  const firstSideStart = cross(firstStart, firstEnd, secondStart);
+  const firstSideEnd = cross(firstStart, firstEnd, secondEnd);
+  const secondSideStart = cross(secondStart, secondEnd, firstStart);
+  const secondSideEnd = cross(secondStart, secondEnd, firstEnd);
+  const epsilon = 1e-9;
+  if (((firstSideStart > epsilon && firstSideEnd < -epsilon) || (firstSideStart < -epsilon && firstSideEnd > epsilon))
+    && ((secondSideStart > epsilon && secondSideEnd < -epsilon) || (secondSideStart < -epsilon && secondSideEnd > epsilon))) {
+    return true;
+  }
+  return (Math.abs(firstSideStart) <= epsilon && pointOnSegment(secondStart, firstStart, firstEnd, epsilon))
+    || (Math.abs(firstSideEnd) <= epsilon && pointOnSegment(secondEnd, firstStart, firstEnd, epsilon))
+    || (Math.abs(secondSideStart) <= epsilon && pointOnSegment(firstStart, secondStart, secondEnd, epsilon))
+    || (Math.abs(secondSideEnd) <= epsilon && pointOnSegment(firstEnd, secondStart, secondEnd, epsilon));
+}
+
+function trackForTarget(state, targetUuid) {
+  return Object.values(state?.tracks ?? {}).find((track) => String(track?.targetUuid) === String(targetUuid));
+}
+
+function liveTrack(state, targetUuid) {
+  const track = trackForTarget(state, targetUuid);
+  return track?.state === TRACK_STATUS.CONTACT || track?.state === TRACK_STATUS.TARGETED;
+}
+
+function weaponLineOfSight(sourceToken, targetToken, geometry) {
+  const start = tokenCenter(sourceToken, geometry);
+  const end = tokenCenter(targetToken, geometry);
+  return !collectionValues(geometry.scene?.walls).some((wall) => {
+    if (!sightWall(wall)) return false;
+    const coordinates = wallCoordinates(wall);
+    if (!coordinates) return false;
+    const a = { x: coordinates[0] * geometry.unitsPerPixel, y: coordinates[1] * geometry.unitsPerPixel };
+    const b = { x: coordinates[2] * geometry.unitsPerPixel, y: coordinates[3] * geometry.unitsPerPixel };
+    return segmentsIntersect(start, end, a, b);
+  });
+}
+
+
+function movementObstacles(sourceToken, geometry, observerState, isGM = globalThis.game?.user?.isGM === true) {
   const obstacles = [];
   for (const token of sceneTokenDocuments(geometry.scene)) {
     if (!token || token.uuid === sourceToken.uuid || token.id === sourceToken.id) continue;
     const actor = token.actor;
     const shipCombat = actor?.system?.shipCombat;
     if (actor?.type !== SHIP_TYPE || !shipCombat?.config || !shipCombat?.state) continue;
+    if (!isGM && (token.hidden === true || (!actor.isOwner && !liveTrack(observerState, token.uuid)))) continue;
     obstacles.push({
       id: token.uuid ?? token.id,
       position: tokenCenter(token, geometry),
@@ -370,23 +484,46 @@ function movementObstacles(sourceToken, geometry) {
     });
   }
   for (const wall of collectionValues(geometry.scene?.walls)) {
+    if (!movementWall(wall)) continue;
     const document = wall?.document ?? wall;
-    const coordinates = document?.c ?? wall?.c;
-    if (!Array.isArray(coordinates) || coordinates.length < 4) continue;
+    const coordinates = wallCoordinates(wall);
+    if (!coordinates) continue;
     obstacles.push({
       id: document.uuid ?? document.id ?? wall.id,
       type: "wall",
-      a: { x: Number(coordinates[0]) * geometry.unitsPerPixel, y: Number(coordinates[1]) * geometry.unitsPerPixel },
-      b: { x: Number(coordinates[2]) * geometry.unitsPerPixel, y: Number(coordinates[3]) * geometry.unitsPerPixel },
+      a: { x: coordinates[0] * geometry.unitsPerPixel, y: coordinates[1] * geometry.unitsPerPixel },
+      b: { x: coordinates[2] * geometry.unitsPerPixel, y: coordinates[3] * geometry.unitsPerPixel },
     });
   }
   return obstacles;
 }
 
+function targetedCoastProjections(state, geometry) {
+  const tokens = new Map(sceneTokenDocuments(geometry.scene).map((token) => [String(token.uuid), token]));
+  const projections = [];
+  for (const track of Object.values(state?.tracks ?? {})) {
+    if (track?.state !== TRACK_STATUS.TARGETED) continue;
+    const token = tokens.get(String(track.targetUuid));
+    const targetState = token?.actor?.system?.shipCombat?.state;
+    if (!token || !targetState) continue;
+    if (!globalThis.game?.user?.isGM && token.hidden === true) continue;
+    const duration = targetState.phase === "active" ? Math.max(0, 1 - Number(targetState.timeline ?? 0)) : 1;
+    const projection = projectCoast({
+      position: tokenCenter(token, geometry),
+      velocity: clone(targetState.velocity ?? { x: 0, y: 0 }),
+      facing: Number(token.rotation ?? 0),
+      duration,
+      collisionRadius: tokenRadius(token, geometry),
+    });
+    projections.push({ targetUuid: token.uuid, label: token.name ?? token.actor?.name ?? "Target", path: projection.path });
+  }
+  return projections;
+}
 function canvasPoint(point, pixelsPerUnit) {
   if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) return point;
   return { ...point, x: Number(point.x) * pixelsPerUnit, y: Number(point.y) * pixelsPerUnit };
 }
+
 
 function canvasMovementPreview(preview, geometry) {
   const converted = clone(preview);
@@ -412,6 +549,15 @@ function canvasMovementPreview(preview, geometry) {
       position: canvasPoint(entry.position, geometry.pixelsPerUnit),
     }))
     : converted.warnings;
+  converted.targetedCoasts = Array.isArray(converted.targetedCoasts)
+    ? converted.targetedCoasts.map((projection) => ({
+        ...projection,
+        path: projection.path?.map((entry) => ({
+          ...entry,
+          position: canvasPoint(entry.position, geometry.pixelsPerUnit),
+        })),
+      }))
+    : [];
   return converted;
 }
 
@@ -439,9 +585,10 @@ function movementPreviewInput(payload, token, config, state) {
         maxHull: config.maxHull,
         armor: 0,
       },
-      obstacles: movementObstacles(token, geometry),
+      obstacles: movementObstacles(token, geometry, state),
     },
     geometry,
+    targetedCoasts: targetedCoastProjections(state, geometry),
   };
 }
 
@@ -469,10 +616,14 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const config = data.config ?? {};
     const state = clone(data.state);
     const isGM = game.user.isGM;
-    const canOperate = Boolean(token && (isGM || actor.isOwner));
+    const observer = CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;
+    const canInspect = isGM || actor.testUserPermission(game.user, observer);
+    const assigned = assignedUserIds(config, state).has(game.user.id);
+    const canOperate = Boolean(token && (isGM || (canInspect && assigned)));
     const unavailableReason = !token
       ? "Place this ship on the active Scene to use operational controls."
-      : !canOperate ? "You do not own this ship." : "";
+      : !canInspect ? "Observer permission is required."
+        : !isGM && !assigned ? "No ship operator is assigned to your user." : "";
 
     const targetLabels = {};
     if (isGM) {
@@ -488,7 +639,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       }
     }
 
-    const view = buildShipConsoleView(config, state, { token, targetLabels });
+    const view = buildShipConsoleView(config, state, {
+      token,
+      targetLabels,
+      operatorUserId: isGM ? null : game.user.id,
+    });
     const tabIds = TABS.map((label) => label.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
     const activeTab = selectedTabs.get(actor.uuid) ?? tabIds[0];
     const rawActions = TABS.flatMap((tab) => (GROUPS[tab] ?? []).map((type) => {
@@ -528,6 +683,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       canOperate,
       unavailableReason,
       canAdmin: Boolean(isGM && canOperate),
+      canEnterCombat: Boolean(isGM && canOperate && state.phase === "outsideCombat"),
+      canStartPhase: Boolean(isGM && canOperate && state.phase === "start"),
+      canCoast: Boolean(isGM && canOperate && state.phase === "active"),
+      canEndPhase: Boolean(isGM && canOperate && state.phase === "end"),
+      canLeaveCombat: Boolean(isGM && canOperate && state.phase !== "outsideCombat"),
+      canRefreshResources: Boolean(isGM && canOperate && state.phase === "start"),
       canAct: Boolean(canOperate && state.phase === "active"),
       canAttack: Boolean(canOperate && state.phase === "active" && view.targetedContacts.length > 0),
       activePhase: state.phase === "active",
@@ -558,6 +719,23 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     html.querySelectorAll("select[data-default]").forEach((select) => {
       const preferred = select.dataset.default;
       if (preferred && Array.from(select.options).some((option) => option.value === preferred)) select.value = preferred;
+    });
+    html.querySelectorAll("select[data-power-preset]").forEach((select) => {
+      select.addEventListener("change", () => {
+        const allocation = JSON.parse(select.selectedOptions[0]?.dataset.allocation ?? "{}");
+        const form = select.closest("form");
+        for (const [system, value] of Object.entries(allocation)) {
+          const input = form?.elements?.namedItem(system);
+          if (input) input.value = String(value);
+        }
+        form?.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+    html.querySelectorAll("select[data-power-system]").forEach((select) => {
+      select.addEventListener("change", () => {
+        const preset = select.closest("form")?.querySelector("select[data-power-preset]");
+        if (preset) preset.value = "";
+      });
     });
     html.querySelectorAll("form[data-ui-operation]").forEach((form) => {
       form.addEventListener("submit", (event) => this.#submitUi(event, form));
@@ -652,7 +830,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         const token = actorToken(actor);
         if (!token) throw new Error("Place this ship on the active Scene to preview movement.");
         const assembled = movementPreviewInput(operation.payload, token, config, state);
-        const result = previewManeuver(assembled.input);
+        const result = {
+          ...previewManeuver(assembled.input),
+          targetedCoasts: assembled.targetedCoasts,
+        };
         setMovementPreview(token.uuid, canvasMovementPreview(result, assembled.geometry));
         const speed = Math.hypot(Number(result.finalVelocity?.x ?? 0), Number(result.finalVelocity?.y ?? 0));
         const warning = result.warnings?.[0]?.code ? ` · ${result.warnings[0].code.replaceAll("_", " ")}` : "";
@@ -693,13 +874,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             targetVelocity: clone(targetState.velocity),
             attackerFacing: Number(sourceToken.rotation ?? 0),
             targetFacing: Number(targetToken.rotation ?? 0),
-            lineOfSight: true,
+            lineOfSight: weaponLineOfSight(sourceToken, targetToken, geometry),
             gunneryModifier: Number(operator?.ratings?.gunnery ?? 0),
           },
         });
-        output.textContent = result.legal
-          ? `Legal shot · modifier ${result.public.knownModifierTotal >= 0 ? "+" : ""}${result.public.knownModifierTotal} · range ${Number(result.public.range?.distance ?? 0).toFixed(1)} · strikes ${result.public.struckSector}`
-          : result.violations.map((violation) => violation.message).join(" · ");
+        output.textContent = attackPreviewText(result);
       }
       output.dataset.error = "false";
     } catch (error) {
@@ -728,7 +907,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         const token = actorToken(actor);
         if (!token) throw new Error("Place this ship on the active Scene to preview movement.");
         const assembled = movementPreviewInput(payload, token, config, state);
-        result = previewManeuver(assembled.input);
+        result = {
+          ...previewManeuver(assembled.input),
+          targetedCoasts: assembled.targetedCoasts,
+        };
         setMovementPreview(token.uuid, canvasMovementPreview(result, assembled.geometry));
       } else if (type === "attack") {
         const targetUuid = (form.elements.targets?.value ?? "").split(/[\\s,]+/).find(Boolean);
@@ -736,12 +918,29 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         const target = await fromUuid(targetUuid);
         const targetActor = target?.actor;
         if (!targetActor) throw new Error("The target UUID must identify a placed Token.");
+        const sourceToken = actorToken(actor);
+        const targetToken = target?.document ?? target;
+        if (!sourceToken) throw new Error("Place this ship on the active scene to preview an attack.");
+        const geometry = sceneGeometry(sourceToken);
+        const targetState = clone(targetActor.system.shipCombat.state);
+        const operator = config.operators.find((entry) => entry.id === payload.operatorId);
         result = previewAttack({
           attackerConfig: config,
           attackerState: state,
           targetConfig: targetActor.system.shipCombat.config,
-          targetState: clone(targetActor.system.shipCombat.state),
-          declaration: { ...payload, targetUuid },
+          targetState,
+          declaration: {
+            ...payload,
+            targetUuid,
+            attackerPosition: tokenCenter(sourceToken, geometry),
+            targetPosition: tokenCenter(targetToken, geometry),
+            attackerVelocity: clone(state.velocity),
+            targetVelocity: clone(targetState.velocity),
+            attackerFacing: Number(sourceToken.rotation ?? 0),
+            targetFacing: Number(targetToken.rotation ?? 0),
+            lineOfSight: weaponLineOfSight(sourceToken, targetToken, geometry),
+            gunneryModifier: Number(operator?.ratings?.gunnery ?? 0),
+          },
         });
       }
       output.textContent = pretty(result);

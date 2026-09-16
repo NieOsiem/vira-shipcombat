@@ -545,6 +545,23 @@ describe("attack previews, commitment, and damage", () => {
     expect(outOfArc.violations.map(({ code }) => code)).toContain("TARGET_OUT_OF_ARC");
   });
 
+  test("armed Evasion applies the configured AC bonus to attack previews", () => {
+    const { attacker, target, declaration } = prepareAttack();
+    target.state.evasion = { armed: true, reserved: 0.2 };
+    target.config.evasionAcBonus = 3;
+
+    const preview = previewAttack({
+      attackerConfig: attacker.config,
+      attackerState: clone(attacker.state),
+      targetConfig: target.config,
+      targetState: clone(target.state),
+      declaration: clone(declaration),
+    });
+
+    expect(preview.public.finalAc).toBe(target.config.ac + 3);
+    expect(preview.gm.actualTargetAc).toBe(target.config.ac + 3);
+  });
+
   test("stale declarations and post-spend roll failures are atomic", () => {
     const { attacker, target, declaration } = prepareAttack({ firingSolution: true });
     const attackerBefore = clone(attacker.state);

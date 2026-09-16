@@ -175,11 +175,14 @@ function barrageProfile(profile, declaration) {
   return selected;
 }
 
-function activeTargetAC(config, state, track, declaration) {
-  if (Number.isFinite(declaration.targetAc)) return declaration.targetAc;
+export function getEffectiveAttackAC(config, state, declaredAc) {
+  if (Number.isFinite(declaredAc)) return declaredAc;
   const base = finite(config?.ac);
-  const evasion = state?.evasion?.active === true || state?.evasion?.reserved === true || finite(state?.evasion, 0) > 0;
-  return base + (evasion ? finite(config?.evasionAcBonus, 2) : 0);
+  return base + (state?.evasion?.armed === true ? finite(config?.evasionAcBonus, 2) : 0);
+}
+
+function activeTargetAC(config, state, track, declaration) {
+  return getEffectiveAttackAC(config, state, declaration.targetAc);
 }
 
 function knownTargetAC(track, actual) {

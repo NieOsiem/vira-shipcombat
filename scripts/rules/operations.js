@@ -4,6 +4,7 @@ import {
   cancelWeaponReload,
   commitAttack,
   contributeWeaponReload,
+  getEffectiveAttackAC,
 } from "./combat.js";
 import { applyConditionTiers, getFaultEffects, selectCondition } from "./conditions.js";
 import { resolveShipFate } from "./damage.js";
@@ -20,7 +21,9 @@ import {
   applyRotation,
   armEvasion,
   disarmEvasion,
+  enforceEvasionEligibility,
   getCollisionSeverity,
+  getDriveCapabilities,
 } from "./movement.js";
 import {
   contributeWork,
@@ -29,7 +32,7 @@ import {
   takeControl,
   validateRoster,
 } from "./operators.js";
-import { commitPowerRoute, toggleWeapon } from "./power.js";
+import { applyPowerShedding, commitPowerRoute, toggleWeapon } from "./power.js";
 import {
   activeCooling,
   contributeRecoveryWork,
@@ -47,9 +50,11 @@ import {
   calculateFiringSolution,
   deepScan,
   fadeTrack,
+  getSensorStats,
   jamTarget,
+  refreshObserverTracks,
 } from "./sensors.js";
-import { commitDefenseRoute, resolveShieldDamage } from "./shields.js";
+import { applyShieldCapacityClamping, commitDefenseRoute, resolveShieldDamage } from "./shields.js";
 
 export const OPERATION_TYPES = Object.freeze({
   ENTER_COMBAT: "enterCombat",
@@ -390,26 +395,8 @@ function tokenTransform(ship, position, facing, context) {
   ship.token = { ...ship.token, ...clone(update) };
 }
 
-function tierAt(component, power) {
-  const tiers = Array.from(component?.tiers ?? []).filter((tier) => Number(tier?.power) <= power);
-  tiers.sort((left, right) => Number(left.power) - Number(right.power));
-  return tiers.at(-1) ?? { multiplier: 0, online: false };
-}
-
 function driveCapabilities(ship) {
-  const drive = ship.config?.components?.drive ?? {};
-  const tier = tierAt(drive, Number(ship.state?.power?.engines ?? 0));
-  const driveFault = getFaultEffects(ship.config, ship.state, { componentId: drive.id, channel: "driveFailure" });
-  const thrusterFault = getFaultEffects(ship.config, ship.state, { componentId: drive.id, channel: "maneuveringThrusterFailure" });
-  const base = drive.base ?? {};
-  const multiplier = Number(tier.multiplier ?? 0);
-  return {
-    forward: Number(base.forward ?? 0) * multiplier * Number(driveFault.forwardMultiplier ?? driveFault.capabilityMultiplier ?? 1),
-    retro: Number(base.retro ?? 0) * multiplier * Number(driveFault.retroMultiplier ?? driveFault.capabilityMultiplier ?? 1),
-    port: Number(base.port ?? 0) * multiplier * Number(thrusterFault.lateralMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
-    starboard: Number(base.starboard ?? 0) * multiplier * Number(thrusterFault.lateralMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
-    rotation: Number(base.rotation ?? 0) * multiplier * Number(thrusterFault.rotationMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
-  };
+  return getDriveCapabilities(ship.config, ship.state);
 }
 
 function obstacleSnapshots(source, drafts, context) {
@@ -464,10 +451,21 @@ function targetObservation(source, target, operation, context) {
     position,
     velocity: clone(target.state?.velocity ?? { x: 0, y: 0 }),
     facing: facingOf(target, context),
+    effectiveAc: getEffectiveAttackAC(target.config, target.state),
     label: target.source?.label ?? target.token?.name ?? target.config?.label,
     size: target.config?.size,
     shipClass: target.config?.shipClass ?? target.config?.label,
   };
+}
+
+function occupiedRosterIdentities(source, drafts) {
+  const identities = [];
+  for (const ship of drafts.values()) {
+    if (ship.uuid === source.uuid) continue;
+    const validated = validateRoster(ship.config, ship.state?.roster ?? { command: [], crew: [] });
+    identities.push(...validated.identities.map((identity) => ({ ...identity, shipUuid: ship.uuid })));
+  }
+  return identities;
 }
 
 function sensorInput(source, target, operation, context, operator) {
@@ -543,17 +541,46 @@ function requireControl(source, control, operatorId) {
     violation("CONTROL_REQUIRED", `This operation requires held ${control} control.`, { control, operatorId, holderId: holderId ?? null });
   }
 }
+function releaseControl(source, control, operatorId) {
+  const holder = source.state?.controls?.[control];
+  const holderId = typeof holder === "string" ? holder : holder?.operatorId;
+  if (holderId !== operatorId) return false;
+  source.state.controls[control] = null;
+  return true;
+}
+
+function evasionEligibility(ship) {
+  const capabilities = driveCapabilities(ship);
+  return enforceEvasionEligibility(ship.state, {
+    enginesPower: Number(ship.state?.power?.engines ?? 0),
+    hardwareOperational: Math.max(capabilities.forward, capabilities.retro) > 0
+      && capabilities.rotation > 0 && Math.max(capabilities.port, capabilities.starboard) > 0,
+    maneuverCapability: Math.max(capabilities.forward, capabilities.retro, capabilities.port, capabilities.starboard),
+    evasionAcBonus: ship.config?.evasionAcBonus,
+  });
+}
+
+function applyImmediateConsequences(ship) {
+  const shedding = applyPowerShedding(ship.config, ship.state);
+  const shields = applyShieldCapacityClamping(ship.config, ship.state);
+  const evasion = evasionEligibility(ship);
+  const sensors = getSensorStats(ship.config, ship.state).online
+    ? null
+    : refreshObserverTracks({ observerConfig: ship.config, observerState: ship.state, targets: [] });
+  return { shedding, shields, evasion, sensors };
+}
+
 
 function operationMetadata(operation) {
-  return { id: operation.type, ...(operation.payload.operation ?? {}) };
+  return { id: operation.type };
 }
 
 function spend(source, operation) {
   return spendOperationResource(source.config, source.state, {
     operatorId: operation.payload.operatorId,
     operation: operationMetadata(operation),
-    cost: operation.payload.cost ?? 1,
-    free: operation.payload.free === true,
+    cost: 1,
+    free: false,
   });
 }
 
@@ -677,6 +704,7 @@ export function executeShipOperation(operation, context) {
         .map((ship) => targetObservation(source, ship, request, context));
       result = runStartPhase(source.config, source.state, {
         ...request.payload,
+        occupiedIdentities: occupiedRosterIdentities(source, drafts),
         targets,
         random: randomSource(context),
       });
@@ -696,13 +724,18 @@ export function executeShipOperation(operation, context) {
       break;
     case OPERATION_TYPES.SET_ROSTER: {
       const roster = request.payload.roster ?? request.payload;
-      const validated = validateRoster(source.config, roster, { occupiedIdentities: request.payload.occupiedIdentities ?? [] });
+      const validated = validateRoster(source.config, roster, {
+        occupiedIdentities: occupiedRosterIdentities(source, drafts),
+      });
       source.state.roster = { ...(source.state.roster ?? {}), command: validated.command, crew: validated.crew };
       result = validated;
       break;
     }
     case OPERATION_TYPES.REFRESH_RESOURCES:
-      result = refreshResources(source.config, source.state, request.payload);
+      result = refreshResources(source.config, source.state, {
+        ...request.payload,
+        occupiedIdentities: occupiedRosterIdentities(source, drafts),
+      });
       break;
     case OPERATION_TYPES.SPEND_RESOURCE:
       result = spend(source, request);
@@ -742,7 +775,8 @@ export function executeShipOperation(operation, context) {
         phase: source.state.phase,
         hasHelm: true,
         enginesPower: Number(source.state?.power?.engines ?? 0),
-        hardwareOperational: capabilities.rotation > 0 && Math.max(capabilities.port, capabilities.starboard) > 0,
+        hardwareOperational: Math.max(capabilities.forward, capabilities.retro) > 0
+          && capabilities.rotation > 0 && Math.max(capabilities.port, capabilities.starboard) > 0,
         maneuverCapability: Math.max(capabilities.forward, capabilities.retro, capabilities.port, capabilities.starboard),
         evasionReserve: reserve > 1 ? reserve / 100 : reserve,
         evasionAcBonus: source.config?.evasionAcBonus,
@@ -753,17 +787,31 @@ export function executeShipOperation(operation, context) {
       requireControl(source, "helm", request.payload.operatorId);
       result = disarmEvasion(source.state);
       break;
-    case OPERATION_TYPES.ROUTE_POWER:
+    case OPERATION_TYPES.ROUTE_POWER: {
       requireControl(source, "power", request.payload.operatorId);
-      result = commitPowerRoute(source.config, source.state, request.payload.staged ?? request.payload);
+      const route = commitPowerRoute(source.config, source.state, request.payload.staged ?? request.payload);
+      result = {
+        ...route,
+        evasion: evasionEligibility(source),
+        controlReleased: releaseControl(source, "power", request.payload.operatorId),
+      };
       break;
-    case OPERATION_TYPES.TOGGLE_WEAPON:
-      requireControl(source, "power", request.payload.operatorId);
-      result = toggleWeapon(source.config, source.state, request.payload);
+    }
+    case OPERATION_TYPES.TOGGLE_WEAPON: {
+      const eligibility = spendOperationResource(source.config, source.state, {
+        operatorId: request.payload.operatorId,
+        operation: operationMetadata(request),
+        free: true,
+      });
+      result = { ...toggleWeapon(source.config, source.state, request.payload), eligibility };
       break;
+    }
     case OPERATION_TYPES.ROUTE_DEFENSE:
       requireControl(source, "defense", request.payload.operatorId);
-      result = commitDefenseRoute(source.config, source.state, request.payload.staged ?? request.payload);
+      result = {
+        ...commitDefenseRoute(source.config, source.state, request.payload.staged ?? request.payload),
+        controlReleased: releaseControl(source, "defense", request.payload.operatorId),
+      };
       break;
     case OPERATION_TYPES.PING: {
       const targets = request.targetUuids.length
@@ -951,6 +999,7 @@ export function executeShipOperation(operation, context) {
   }
 
   changed.add(source.uuid);
+  for (const uuid of changed) applyImmediateConsequences(drafts.get(uuid));
   for (const ship of drafts.values()) {
     ship.state.revision = recordState(ship.source).revision;
   }

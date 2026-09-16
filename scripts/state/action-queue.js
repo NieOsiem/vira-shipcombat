@@ -70,8 +70,10 @@ function validateRequest(request) {
   return request;
 }
 
-async function normalizeManeuverParticipants(request) {
-  if (request.type !== "maneuver") return;
+const SCENE_SNAPSHOT_TYPES = new Set(["maneuver", "setRoster", "refreshResources", "phase.start", "startPhase"]);
+
+async function normalizeSceneParticipants(request) {
+  if (!SCENE_SNAPSHOT_TYPES.has(request.type)) return;
   const source = await resolveTokenDocument(request.sourceUuid);
   const sceneTokens = collectionValues(source.parent?.tokens)
     .filter((token) => token?.actor?.type === SHIP_TYPE && typeof token.uuid === "string")
@@ -495,7 +497,7 @@ async function processRequest(request, submitterId) {
       processed.set(request.id, persisted.response);
       return cloneDocumentData(persisted.response);
     }
-    await normalizeManeuverParticipants(request);
+    await normalizeSceneParticipants(request);
     const uuids = operationUuids(request);
     records = await loadShipRecords(uuids);
     validateExpectedRevisions(request, records);

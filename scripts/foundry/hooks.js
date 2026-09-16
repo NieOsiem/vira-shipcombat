@@ -10,9 +10,29 @@ const INTERNAL_UPDATE = "viraShipCombatInternal";
 const POSITION_FIELDS = Object.freeze(["x", "y", "rotation"]);
 let hooksRegistered = false;
 let hookWork = Promise.resolve();
+const INITIATIVE_PATCH = Symbol.for(`${MODULE_ID}.shipInitiativePatch`);
 
 function activeGm() {
   return isActiveGM();
+}
+
+function installShipInitiative() {
+  const CombatantClass = globalThis.CONFIG?.Combatant?.documentClass;
+  const prototype = CombatantClass?.prototype;
+  if (!prototype || prototype[INITIATIVE_PATCH]) return false;
+  const original = prototype.getInitiativeRoll;
+  if (typeof original !== "function") return false;
+  Object.defineProperty(prototype, INITIATIVE_PATCH, { value: original, configurable: false });
+  prototype.getInitiativeRoll = function getShipInitiativeRoll(formula) {
+    const config = this.actor?.system?.shipCombat?.config;
+    const modifier = Number(config?.initiative);
+    if (formula || this.actor?.type !== SHIP_TYPE || !Number.isFinite(modifier)) {
+      return original.call(this, formula);
+    }
+    const operator = modifier >= 0 ? "+" : "-";
+    return foundry.dice.Roll.create(`1d20 ${operator} ${Math.abs(modifier)}`, {});
+  };
+  return true;
 }
 
 function isShipToken(token) {
@@ -287,6 +307,7 @@ function initializeLoadedActors() {
 export function registerShipHooks() {
   if (hooksRegistered) return;
   hooksRegistered = true;
+  installShipInitiative();
 
   Hooks.on("viraShipCombatOperationCommitted", (fullResult, request) => {
     void publishOperationEvents(fullResult, request)

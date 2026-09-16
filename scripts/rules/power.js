@@ -366,6 +366,48 @@ function stagedWeaponInput(staged) {
     (staged?.weapons && typeof staged.weapons === "object" ? staged.weapons : null)
   );
 }
+function validatePriority(value, expected, field) {
+  if (!Array.isArray(value) || value.length !== expected.length
+    || new Set(value).size !== expected.length
+    || value.some((entry) => !expected.includes(entry))) {
+    violation("INVALID_POWER_PRIORITY", `${field} must contain every eligible entry exactly once`, {
+      field,
+      value,
+      expected,
+    });
+  }
+  return [...value];
+}
+
+function stagedPriorities(config, state, staged) {
+  const systems = systemNames();
+  const weaponIds = weaponConfigs(config).map((weapon) => weapon.id);
+  return {
+    sheddingPriority: validatePriority(
+      staged?.sheddingPriority ?? state?.sheddingPriority ?? config?.sheddingPriority ?? systems,
+      systems,
+      "sheddingPriority",
+    ),
+    weaponPriority: validatePriority(
+      staged?.weaponPriority ?? state?.weaponPriority ?? config?.weaponPriority ?? weaponIds,
+      weaponIds,
+      "weaponPriority",
+    ),
+  };
+}
+
+function stagedPreset(config, staged, allocation) {
+  if (staged?.powerPresetId == null || staged.powerPresetId === "") return null;
+  const preset = (config?.powerPresets ?? []).find((candidate) => candidate.id === staged.powerPresetId);
+  if (!preset) violation("UNKNOWN_POWER_PRESET", `Unknown Power preset: ${staged.powerPresetId}`, { powerPresetId: staged.powerPresetId });
+  if (systemNames().some((system) => allocation[system] !== preset.allocations?.[system])) {
+    violation("POWER_PRESET_MISMATCH", "The staged allocation does not match the selected Power preset.", {
+      powerPresetId: preset.id,
+      allocation,
+    });
+  }
+  return preset.id;
+}
 
 function enteringOverclockHeat(config, beforeAllocation, afterAllocation, beforeRedlining, afterRedlining) {
   const entries = [];
@@ -442,6 +484,8 @@ export function previewPowerRoute(config, state, staged) {
       maximum: ceilings.maximum,
     });
   }
+  const priorities = stagedPriorities(config, state, staged);
+  const powerPresetId = stagedPreset(config, staged, allocation);
   const beforeAllocation = currentAllocation(state);
   const beforeRedlining = state.power?.redlining ?? totalPower(beforeAllocation) > ceilings.nominal;
   const redlining = committed > ceilings.nominal;
@@ -464,6 +508,8 @@ export function previewPowerRoute(config, state, staged) {
     emission: emissionState(config, committed),
     heatAdded: entered.heat,
     overclockEntries: entered.entries,
+    powerPresetId,
+    ...priorities,
     tierChanges: systemNames()
       .filter((system) => beforeAllocation[system] !== allocation[system])
       .map((system) => ({ system, from: beforeAllocation[system], to: allocation[system] })),
@@ -480,20 +526,23 @@ export function commitPowerRoute(config, state, staged) {
     state.weapons[weaponId] ??= {};
     Object.assign(state.weapons[weaponId], next);
   }
+  state.powerPresetId = result.powerPresetId;
+  state.sheddingPriority = result.sheddingPriority;
+  state.weaponPriority = result.weaponPriority;
   if (result.heatAdded) state.heat = Math.max(0, (state.heat ?? 0) + result.heatAdded);
   return result;
 }
 
-function orderedSheddingSystems(config) {
+function orderedSheddingSystems(config, state) {
   const systems = systemNames();
-  const configured = (config.sheddingPriority ?? []).filter((system) => systems.includes(system));
+  const configured = (state?.sheddingPriority ?? config.sheddingPriority ?? []).filter((system) => systems.includes(system));
   const missing = systems.filter((system) => !configured.includes(system)).sort();
   return [...configured, ...missing].reverse();
 }
 
-function orderedWeaponIds(config) {
+function orderedWeaponIds(config, state) {
   const ids = weaponConfigs(config).map((weapon) => weapon.id);
-  const configured = (config.weaponPriority ?? []).filter((id) => ids.includes(id));
+  const configured = (state?.weaponPriority ?? config.weaponPriority ?? []).filter((id) => ids.includes(id));
   const missing = ids.filter((id) => !configured.includes(id)).sort();
   return [...configured, ...missing];
 }
@@ -501,7 +550,7 @@ function orderedWeaponIds(config) {
 function shedWeaponsToCapacity(config, state, capacity, events) {
   const states = mergedWeaponStates(config, state, null);
   let details = validateWeaponStates(config, state, states);
-  for (const weaponId of orderedWeaponIds(config).reverse()) {
+  for (const weaponId of orderedWeaponIds(config, state).reverse()) {
     if (details.reserved <= capacity) break;
     const weaponState = states[weaponId];
     if (weaponState.status === "off") continue;
@@ -532,7 +581,7 @@ export function applyPowerShedding(config, state) {
   const allocation = { ...before.allocation };
   const events = [];
   let committed = before.committed;
-  for (const system of orderedSheddingSystems(config)) {
+  for (const system of orderedSheddingSystems(config, state)) {
     while (committed > before.ceilings.maximum) {
       const lowered = lowerTier(config, system, allocation[system]);
       if (lowered == null) break;
