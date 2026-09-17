@@ -2,53 +2,48 @@
   <header class="ship-console-header">
     <div class="ship-console-portrait"><img src="{{actor.img}}" alt=""></div>
     <div class="ship-console-heading">
-      <div class="ship-console-title-row"><h1>{{actor.name}}</h1><span class="ship-phase ship-phase--{{phase}}">{{view.status.phaseLabel}}</span></div>
-      {{#if view.status.turnLabel}}<p>{{view.status.turnLabel}}</p>{{/if}}
+      <div class="ship-console-title-row"><h1>{{actor.name}}</h1></div>
+      <p class="ship-phase ship-phase--{{phase}}" role="status">{{view.combat.label}}</p>
     </div>
-    <button class="ship-icon-button" type="button" data-native-vehicle-sheet title="Open D&amp;D5e vehicle fields" aria-label="Open D&amp;D5e vehicle fields"><i class="fa-solid fa-file-shield" aria-hidden="true"></i></button>
+    <section class="ship-status-strip" aria-label="Ship resources">
+      <article class="ship-status-meter"><div><span>Hull</span><strong>{{view.status.hull.value}} / {{view.status.hull.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.hull.tone}}" style="{{view.status.hull.style}}"><span></span></div></article>
+      <article class="ship-status-meter"><div><span>Heat</span><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.heat.tone}}" style="{{view.status.heat.style}}"><span></span></div></article>
+      <article class="ship-status-meter"><div><span>Shields</span><strong>{{view.shields.total}} / {{view.shields.budget}}</strong></div><div class="ship-meter ship-meter--shield" style="{{view.shields.meter.style}}"><span></span></div></article>
+      <article class="ship-status-meter"><div><span>Reactor</span><strong>{{view.power.committed}} / {{view.power.ceilings.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.power.meter.tone}}" style="{{view.power.meter.style}}"><span></span></div></article>
+    </section>
   </header>
-
-  <section class="ship-status-strip" aria-label="Ship status">
-    <article class="ship-status-meter"><div><span>Hull</span><strong>{{view.status.hull.value}} / {{view.status.hull.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.hull.tone}}" style="{{view.status.hull.style}}"><span></span></div></article>
-    <article class="ship-status-meter"><div><span>Heat</span><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.heat.tone}}" style="{{view.status.heat.style}}"><span></span></div></article>
-    <article class="ship-status-meter"><div><span>Shields</span><strong>{{view.shields.total}} / {{view.shields.budget}}</strong></div><div class="ship-meter ship-meter--shield" style="{{view.shields.meter.style}}"><span></span></div></article>
-    <article class="ship-status-meter"><div><span>Reactor</span><strong>{{view.power.committed}} / {{view.power.ceilings.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.power.meter.tone}}" style="{{view.power.meter.style}}"><span></span></div></article>
-  </section>
 
   {{#if unavailableReason}}<p class="ship-console-notice" role="status"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{unavailableReason}}</p>{{/if}}
 
-  <nav class="ship-console-tabs" role="tablist" aria-label="Console sections">
-    {{#each tabs}}<button type="button" role="tab" data-tab-button="{{id}}" aria-selected="{{active}}" aria-controls="panel-{{id}}">{{label}}</button>{{/each}}
-  </nav>
+  <div class="ship-console-navigation">
+    <nav class="ship-console-tabs" role="tablist" aria-label="Combat sections">
+      {{#each tabs}}<button type="button" role="tab" data-tab-button="{{id}}" aria-selected="{{active}}" aria-controls="panel-{{id}}">{{label}}</button>{{/each}}
+    </nav>
+    <details class="ship-maintenance-menu">
+      <summary title="Maintenance and configuration" aria-label="Maintenance and configuration"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></summary>
+      <nav aria-label="Maintenance sections">
+        {{#each maintenanceTabs}}<button type="button" data-tab-button="{{id}}" aria-pressed="{{active}}" aria-controls="panel-{{id}}">{{label}}</button>{{/each}}
+        <button type="button" data-native-vehicle-sheet><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Vehicle configuration</button>
+      </nav>
+    </details>
+  </div>
 
   <div class="ship-console-panels">
-    <section id="panel-overview" class="ship-console-panel" role="tabpanel" data-tab-panel="overview" {{#unless tabState.overview.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Command summary</span><h2>Overview</h2></div><span class="ship-readout">Signature {{view.status.signature.value}}</span></div>
+    <section id="panel-overview" class="ship-console-panel" role="tabpanel" aria-label="Overview" data-tab-panel="overview" {{#unless tabState.overview.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Overview</h2><span class="ship-readout">Signature {{view.status.signature.value}}</span></div>
       {{#if view.hasConditions}}<section class="ship-alert-stack" aria-label="Active conditions">{{#each view.conditions}}<div class="ship-alert ship-alert--{{severity}}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><strong>{{label}}</strong><span>{{severity}}{{#if sector}} · {{sector}}{{/if}}</span></div>{{/each}}</section>{{/if}}
-      <div class="ship-dashboard-grid">
-        <article class="ship-card ship-card--emphasis">
-          <header><span class="ship-kicker">Flight state</span><strong>{{view.movement.speed}}</strong></header>
-          <dl class="ship-stat-grid"><div><dt>Velocity X</dt><dd>{{view.movement.velocityX}}</dd></div><div><dt>Velocity Y</dt><dd>{{view.movement.velocityY}}</dd></div><div><dt>Safe velocity</dt><dd>{{view.movement.safeVelocity}}</dd></div><div><dt>Evasion</dt><dd>{{#if view.movement.evasionArmed}}Armed{{else}}Standby{{/if}}</dd></div></dl>
-          {{#if view.status.overspeed}}<p class="ship-warning">Overspeed damage risk</p>{{/if}}
-        </article>
-        <article class="ship-card">
-          <header><span class="ship-kicker">Reactor</span><strong class="{{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</strong></header>
-          <dl class="ship-stat-grid"><div><dt>Committed</dt><dd>{{view.power.committed}}</dd></div><div><dt>Nominal</dt><dd>{{view.power.ceilings.nominal}}</dd></div><div><dt>Maximum</dt><dd>{{view.power.ceilings.maximum}}</dd></div><div><dt>Emission</dt><dd>{{view.power.emission.band}}</dd></div></dl>
-        </article>
-        <article class="ship-card">
-          <header><span class="ship-kicker">Sensors</span><strong>{{#if view.sensor.online}}ONLINE{{else}}OFFLINE{{/if}}</strong></header>
-          <dl class="ship-stat-grid"><div><dt>Passive</dt><dd>{{view.sensor.passiveRange}}</dd></div><div><dt>Active</dt><dd>{{view.sensor.activeRange}}</dd></div><div><dt>Contacts</dt><dd>{{view.liveContacts.length}}</dd></div><div><dt>Targets</dt><dd>{{view.targetedContacts.length}}</dd></div></dl>
-        </article>
-        <article class="ship-card">
-          <header><span class="ship-kicker">Phase control</span><strong>{{view.status.phaseLabel}}</strong></header>
-          <div class="ship-button-grid"><button type="button" data-ui-operation="enterCombat" {{#unless canEnterCombat}}disabled{{/unless}}>Enter combat</button><button type="button" data-ui-operation="startPhase" {{#unless canStartPhase}}disabled{{/unless}}>Start phase</button><button type="button" data-ui-operation="coast" {{#unless canCoast}}disabled{{/unless}}>Resolve coast</button><button type="button" data-ui-operation="endPhase" {{#unless canEndPhase}}disabled{{/unless}}>End phase</button><button type="button" data-ui-operation="leaveCombat" {{#unless canLeaveCombat}}disabled{{/unless}}>Leave combat</button><button type="button" data-ui-operation="refreshResources" {{#unless canRefreshResources}}disabled{{/unless}}>Refresh crew</button></div>
-          {{#if view.status.turnLabel}}<p class="ship-muted">{{view.status.turnLabel}}</p>{{/if}}
-        </article>
-      </div>
+      {{#each view.importantDamage}}<p class="ship-warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{label}} · {{statusLabel}}{{#if componentLabel}} · {{componentLabel}}{{/if}}</p>{{/each}}
+      <section class="ship-card ship-console-specifications" aria-label="Installed ship statistics">
+        <div class="ship-console-specification-groups">{{#each specGroups}}<section><h3>{{label}}</h3><dl>{{#each entries}}<div><dt>{{label}}</dt><dd>{{value}}</dd></div>{{/each}}</dl></section>{{/each}}</div>
+      </section>
+      <section class="ship-card ship-overview-weapons" aria-label="Installed weapons">
+        <header><h3>Weapons</h3></header>
+        {{#each view.weapons}}<div><strong>{{label}}</strong><span>{{statusLabel}} · {{damage}} · AP {{armorPiercing}} · {{range}} / {{arc}}°</span></div>{{else}}<p class="ship-empty">No weapons installed.</p>{{/each}}
+      </section>
     </section>
 
-    <section id="panel-crew" class="ship-console-panel" role="tabpanel" data-tab-panel="crew" {{#unless tabState.crew.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Personnel</span><h2>Crew</h2></div></div>
+    <section id="panel-crew" class="ship-console-panel" role="tabpanel" aria-label="Crew" data-tab-panel="crew" {{#unless tabState.crew.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Crew</h2></div>
       <div class="ship-operator-grid">
         {{#each view.operators}}
           <form class="ship-card ship-operator-card">
@@ -58,187 +53,201 @@
             <p class="ship-muted">Controls: {{controlsLabel}}</p>
             <div class="ship-segmented"><button type="button" data-ui-operation="takeControl" data-control="helm" {{#unless ../canAct}}disabled{{/unless}}>Helm</button><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless ../canAct}}disabled{{/unless}}>Power</button><button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless ../canAct}}disabled{{/unless}}>Defense</button></div>
           </form>
-        {{/each}}
+        {{else}}<p class="ship-empty">No assigned crew.</p>{{/each}}
       </div>
       {{#if isGM}}
-        <form class="ship-card ship-roster-editor" data-ui-operation="setRoster">
-          <header><div><span class="ship-kicker">GM assignment</span><h3>Roster</h3></div></header>
-          <div class="ship-form-grid">
-            {{#each view.roster.command}}<label>{{label}}<select name="{{field}}"><option value="">Unassigned</option>{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}
-            {{#each view.roster.crew}}<label>{{label}}<select name="{{field}}"><option value="">Unassigned</option>{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}
-          </div>
-          <button type="submit" {{#unless canAdmin}}disabled{{/unless}}>Commit roster</button>
-        </form>
+        <details class="ship-card ship-roster-editor">
+          <summary>GM roster assignment</summary>
+          <form data-ui-operation="setRoster">
+            <div class="ship-form-grid">
+              {{#each view.roster.command}}<label>{{label}}<select name="{{field}}"><option value="">Unassigned</option>{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}
+              {{#each view.roster.crew}}<label>{{label}}<select name="{{field}}"><option value="">Unassigned</option>{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}
+            </div>
+            <button type="submit" {{#unless canAdmin}}disabled{{/unless}}>Commit roster</button>
+          </form>
+        </details>
       {{/if}}
     </section>
 
-    <section id="panel-helm" class="ship-console-panel" role="tabpanel" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Flight operations</span><h2>Helm</h2></div><span class="ship-readout">{{view.movement.speed}} velocity</span></div>
-      <div class="ship-helm-layout">
-        <form class="ship-card ship-maneuver-card" data-ui-operation="maneuver" data-live-preview="maneuver">
-          <header><div><span class="ship-kicker">Maneuver timeline</span><h3>Burn vector</h3></div><strong>{{view.movement.timeline}} / 1</strong></header>
-          <div class="ship-meter ship-meter--timeline" style="{{view.movement.timelineStyle}}"><span></span></div>
-          <label>Helm operator<select name="operatorId" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
-          <div class="ship-vector-control"><label>Forward / Retro<input name="forward" type="number" step="0.5" value="0"></label><label>Port / Starboard<input name="lateral" type="number" step="0.5" value="0"></label><label>Rotation<input name="rotation" type="number" step="5" value="0"><span>degrees</span></label></div>
-          <p class="ship-preview-line" data-preview aria-live="polite"></p>
-          <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}>Take helm</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit maneuver</button></div>
-          <div class="ship-action-row">{{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled{{/unless}}>Disarm evasion</button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled{{/unless}}>Arm evasion</button>{{/if}}</div>
-        </form>
-        <aside class="ship-card ship-flight-instruments">
-          <header><span class="ship-kicker">Current vector</span><strong>{{view.movement.speed}}</strong></header>
-          <div class="ship-vector-dial"><i class="fa-solid fa-location-arrow" aria-hidden="true"></i><span>{{view.movement.velocityX}}, {{view.movement.velocityY}}</span></div>
-          <dl class="ship-stat-grid"><div><dt>Safe velocity</dt><dd>{{view.movement.safeVelocity}}</dd></div><div><dt>Rotation spent</dt><dd>{{view.movement.rotationSpent}}°</dd></div><div><dt>Evasion reserve</dt><dd>{{view.movement.evasionReserved}}</dd></div><div><dt>State</dt><dd>{{#if view.movement.evasionArmed}}Evasive{{else}}Nominal{{/if}}</dd></div></dl>
-        </aside>
-      </div>
-      {{#if isGM}}<details class="ship-card ship-admin-panel"><summary>GM reposition</summary><form data-ui-operation="reposition"><div class="ship-form-grid"><label>X position<input name="x" type="number" step="0.1" value="0"></label><label>Y position<input name="y" type="number" step="0.1" value="0"></label><label>Facing<input name="facing" type="number" step="1" value="0"></label><label class="ship-checkbox"><input name="resetVelocity" type="checkbox"> Reset velocity</label></div><button type="submit" {{#unless canAdmin}}disabled{{/unless}}>Reposition ship</button></form></details>{{/if}}
+    <section id="panel-helm" class="ship-console-panel" role="tabpanel" aria-label="Helm" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Helm</h2><span class="ship-readout">{{view.movement.speed}} velocity · Safe {{view.movement.safeVelocity}}</span></div>
+      <form class="ship-card ship-maneuver-card" data-ui-operation="maneuver" data-live-preview="maneuver">
+        <label class="ship-page-operator">Pilot<select name="operatorId" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <header><span class="ship-kicker">Maneuver timeline</span><strong>{{view.movement.timeline}} / 1</strong></header>
+        <div class="ship-meter ship-meter--timeline" style="{{view.movement.timelineStyle}}"><span></span></div>
+        <label class="ship-slider-row"><span>Main thrust <output data-slider-value="forward">0</output></span><span class="ship-slider-track"><input name="forward" type="range" value="0" aria-label="Main thrust: retro to forward"></span><small>Retro <span>0</span> Forward</small></label>
+        <label class="ship-slider-row"><span>Lateral thrust <output data-slider-value="lateral">0</output></span><span class="ship-slider-track"><input name="lateral" type="range" value="0" aria-label="Lateral thrust: port to starboard"></span><small>Port <span>0</span> Starboard</small></label>
+        <label class="ship-slider-row"><span>Rotation <output data-slider-value="rotation">0°</output></span><span class="ship-slider-track"><input name="rotation" type="range" value="0" aria-label="Rotation: counterclockwise to clockwise"></span><small>Left <span>0</span> Right</small></label>
+        <p class="ship-preview-line" data-preview aria-live="polite"></p>
+        <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}>Take helm</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit maneuver</button></div>
+        <div class="ship-action-row"><span class="ship-muted">Evasion reserve {{view.movement.evasionReserved}} · Rotation spent {{view.movement.rotationSpent}}°</span>{{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled{{/unless}}>Disarm evasion</button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled{{/unless}}>Arm evasion</button>{{/if}}</div>
+      </form>
+      {{#if view.status.overspeed}}<p class="ship-warning">Overspeed damage risk</p>{{/if}}
     </section>
 
-    <section id="panel-power-defense" class="ship-console-panel" role="tabpanel" data-tab-panel="power-defense" {{#unless tabState.power-defense.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Systems management</span><h2>Power &amp; Defense</h2></div><span class="ship-readout {{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</span></div>
+    <section id="panel-power-defense" class="ship-console-panel" role="tabpanel" aria-label="Power" data-tab-panel="power-defense" {{#unless tabState.power-defense.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Power</h2><span class="ship-readout {{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</span></div>
+      <label class="ship-page-operator">Engineer<select data-page-operator="power" data-default="{{view.defaults.power}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
       <div class="ship-systems-layout">
-        <form class="ship-card" data-ui-operation="routePower" data-live-preview="routePower">
-          <header><div><span class="ship-kicker">Reactor routing</span><h3>Power allocation</h3></div><strong>{{view.power.committed}} / {{view.power.ceilings.maximum}}</strong></header>
-          <label>Power operator<select name="operatorId" data-default="{{view.defaults.power}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
-          <label>Preset<select name="powerPresetId" data-power-preset><option value="">Custom allocation</option>{{#each view.power.presets}}<option value="{{id}}" data-allocation='{{allocation}}' {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-          <div class="ship-power-grid">{{#each view.power.systems}}<label><span>{{label}}{{#if reservation}} <small>{{reservation}} reserved</small>{{/if}}</span><select name="{{id}}" data-power-system>{{#each options}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div>
-          <details class="ship-power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
-          <p class="ship-preview-line" data-preview aria-live="polite"></p>
-          <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled{{/unless}}>Take power control</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
-        </form>
-        <form class="ship-card ship-shield-card" data-ui-operation="routeDefense" data-live-preview="routeDefense">
-          <header><div><span class="ship-kicker">Deflector control</span><h3>Shield allocation</h3></div><strong>{{view.shields.total}} / {{view.shields.budget}}</strong></header>
-          <label>Defense operator<select name="operatorId" data-default="{{view.defaults.defense}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
-          <div class="ship-shield-diagram {{#unless view.shields.directional}}ship-shield-diagram--bubble{{/unless}}">
-            <div class="ship-shield-core"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><strong>{{view.shields.total}}</strong><span>total charge</span></div>
-            {{#each view.shields.sectors}}<label class="ship-shield-sector" data-sector="{{id}}"><span>{{label}}</span><strong>{{charge}} / {{capacity}}</strong><div class="ship-meter ship-meter--shield" style="{{meter.style}}"><span></span></div><input name="charge-{{id}}" type="number" min="0" max="{{capacity}}" step="1" value="{{charge}}" aria-label="{{label}} shield charge"><small>Regen <input name="regen-{{id}}" type="number" min="0" max="100" step="1" value="{{allocation}}" aria-label="{{label}} regeneration percent">%</small>{{#if collapse}}<em>{{collapseLabel}}</em>{{/if}}</label>{{/each}}
-          </div>
-          <div class="ship-action-row"><button type="button" data-distribute="charge">Balance charge</button><button type="button" data-distribute="regen">Balance regeneration</button></div>
-          <p class="ship-preview-line" data-preview aria-live="polite"></p>
-          <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled{{/unless}}>Take defense control</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
-        </form>
+        <details class="ship-card" open>
+          <summary>Reactor allocation · {{view.power.committed}} / {{view.power.ceilings.maximum}}</summary>
+          <form data-ui-operation="routePower" data-live-preview="routePower">
+            <input type="hidden" name="powerPresetId" value="">
+            <div class="ship-segmented" aria-label="Power presets">{{#each view.power.presets}}<button type="button" data-power-preset="{{id}}" data-allocation='{{allocation}}' aria-pressed="{{selected}}">{{label}}</button>{{/each}}</div>
+            <div class="ship-power-grid">{{#each view.power.systems}}<div><span>{{label}}</span><input type="hidden" name="{{id}}" value="{{value}}" data-power-system><div data-power-blocks="{{id}}" role="group" aria-label="{{label}} power"></div><output data-power-effect="{{id}}">{{#if reservation}}{{reservation}} reserved{{/if}}</output></div>{{/each}}</div>
+            <details class="ship-power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
+            <p class="ship-preview-line" data-preview aria-live="polite"></p>
+            <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
+          </form>
+        </details>
+        {{#if view.shields.sectors.length}}
+          <details class="ship-card ship-shield-card">
+            <summary>Shield allocation · {{view.shields.total}} / {{view.shields.budget}}</summary>
+            <form data-ui-operation="routeDefense" data-live-preview="routeDefense">
+              <div class="ship-shield-diagram {{#unless view.shields.directional}}ship-shield-diagram--bubble{{/unless}}">
+                <div class="ship-shield-core"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><strong>{{view.shields.total}}</strong><span>total charge</span></div>
+                {{#each view.shields.sectors}}
+                  <div class="ship-shield-sector" data-sector="{{id}}">
+                    <span>{{label}}</span><strong><output data-shield-charge-value="{{id}}">{{charge}}</output> / {{capacity}}</strong>
+                    <div class="ship-meter ship-meter--shield" style="{{meter.style}}"><span></span></div>
+                    <input name="charge-{{id}}" type="hidden" min="0" max="{{capacity}}" value="{{charge}}">
+                    <div class="ship-shield-adjust"><button type="button" data-shield-charge="{{id}}" data-delta="-1" aria-label="Remove one {{label}} shield charge">−</button><button type="button" data-shield-charge="{{id}}" data-delta="+1" aria-label="Add one {{label}} shield charge">+</button></div>
+                    <label>Regen <output data-regen-value="{{id}}">0</output><input name="regen-{{id}}" type="range" value="{{allocation}}" aria-label="{{label}} regeneration units"></label>
+                    {{#if collapse}}<em>{{collapseLabel}}</em>{{/if}}
+                  </div>
+                {{/each}}
+              </div>
+              <p class="ship-readout">Unassigned charge: <output data-shield-unassigned>0</output></p>
+              <div class="ship-action-row"><button type="button" data-distribute="charge">Balance charge</button><button type="button" data-distribute="regen">Balance regen</button></div>
+              <p class="ship-preview-line" data-preview aria-live="polite"></p>
+              <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled{{/unless}}>Take defense</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
+            </form>
+          </details>
+        {{/if}}
       </div>
     </section>
 
-    <section id="panel-sensors" class="ship-console-panel" role="tabpanel" data-tab-panel="sensors" {{#unless tabState.sensors.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Tactical telemetry</span><h2>Sensors</h2></div><span class="ship-readout">{{#if view.sensor.online}}ONLINE · {{view.sensor.activeRange}} ACTIVE{{else}}OFFLINE{{/if}}</span></div>
+    <section id="panel-sensors" class="ship-console-panel" role="tabpanel" aria-label="Sensors" data-tab-panel="sensors" {{#unless tabState.sensors.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Sensors</h2><span class="ship-readout">{{#if view.sensor.online}}ONLINE · {{view.sensor.activeRange}} ACTIVE{{else}}OFFLINE{{/if}}</span></div>
       <div class="ship-sensor-layout">
-        <div class="ship-radar" aria-label="Relative contact radar"><span class="ship-radar-axis ship-radar-axis--vertical"></span><span class="ship-radar-axis ship-radar-axis--horizontal"></span><span class="ship-radar-heading">FORE</span><span class="ship-radar-center"><i class="fa-solid fa-location-arrow" aria-hidden="true"></i></span>{{#each view.contacts}}<span class="ship-radar-contact {{#if targeted}}is-targeted{{/if}} {{#if stale}}is-stale{{/if}}" style="{{style}}" title="{{label}} · {{stateLabel}}"><i class="fa-solid {{#if targeted}}fa-crosshairs{{else}}fa-diamond{{/if}}" aria-hidden="true"></i><small>{{label}}</small></span>{{/each}}<span class="ship-radar-range">{{view.sensor.activeRange}}</span></div>
+        <div class="ship-radar" role="group" aria-label="Select sensor focus; independent of weapon targeting">
+          <span class="ship-radar-axis ship-radar-axis--vertical"></span><span class="ship-radar-axis ship-radar-axis--horizontal"></span><span class="ship-radar-heading">FORE</span><span class="ship-radar-center"><i class="fa-solid fa-location-arrow" aria-hidden="true"></i></span>
+          {{#each view.contacts}}<button type="button" class="ship-radar-contact {{#if targeted}}is-targeted{{/if}} {{#if stale}}is-stale{{/if}}" data-sensor-focus="{{targetUuid}}" aria-pressed="false" aria-label="Focus {{label}} · {{stateLabel}}{{#if jammed}} · interference{{/if}}" style="{{style}}" title="{{label}} · {{stateLabel}}"><i class="fa-solid {{#if jammed}}fa-triangle-exclamation{{else}}{{#if targeted}}fa-crosshairs{{else}}fa-diamond{{/if}}{{/if}}" aria-hidden="true"></i><small>{{label}}</small></button>{{/each}}
+          <span class="ship-radar-range">{{view.sensor.activeRange}}</span>
+        </div>
         <form class="ship-card ship-sensor-controls">
-          <header><div><span class="ship-kicker">Sensor actions</span><h3>Contact control</h3></div></header>
-          <label>Sensor operator<select name="operatorId" data-default="{{view.defaults.sensors}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Sensors {{ratings.sensors}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
-          <label>Contact<select name="targetUuid"><option value="">Select contact</option>{{#each view.liveContacts}}<option value="{{targetUuid}}">{{label}} · {{stateLabel}}</option>{{/each}}</select></label>
+          <label class="ship-page-operator">Sensor operator<select name="operatorId" data-default="{{view.defaults.sensors}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Sensors {{ratings.sensors}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+          <input type="hidden" name="targetUuid" value="">
+          <section data-sensor-focus-panel aria-label="Focused contact telemetry" aria-live="polite"><p class="ship-empty">Select a radar contact to inspect it.</p></section>
           <details><summary>Acquisition check</summary><label>Optional DC<input name="dc" type="number" min="1" step="1" placeholder="Automatic when blank"></label></details>
-          <div class="ship-button-grid"><button type="button" data-ui-operation="ping" {{#unless canAct}}disabled{{/unless}}>Active ping</button><button type="button" data-ui-operation="acquire" {{#unless canAct}}disabled{{/unless}}>Acquire target</button><button type="button" data-ui-operation="analyze" {{#unless canAct}}disabled{{/unless}}>Analyze defenses</button><button type="button" data-ui-operation="deepScan" {{#unless canAct}}disabled{{/unless}}>Deep scan</button><button type="button" data-ui-operation="firingSolution" {{#unless canAct}}disabled{{/unless}}>Firing solution</button><button type="button" data-ui-operation="jam" {{#unless canAct}}disabled{{/unless}}>Jam</button><button type="button" data-ui-operation="breakLock" {{#unless canAct}}disabled{{/unless}}>Break lock</button><button type="button" data-ui-operation="burnThrough" {{#unless canAct}}disabled{{/unless}}>Burn through</button><button type="button" data-ui-operation="fade" {{#unless canAct}}disabled{{/unless}}>Fade track</button></div>
+          <div class="ship-button-grid">
+            <button type="button" data-ui-operation="ping" {{#unless canAct}}disabled{{/unless}}>Active ping</button>
+            <button type="button" data-ui-operation="fade" {{#unless canAct}}disabled{{/unless}}>Fade track</button>
+            <button type="button" data-ui-operation="acquire" hidden {{#unless canAct}}disabled{{/unless}}>Acquire target</button>
+            <button type="button" data-ui-operation="analyze" hidden {{#unless canAct}}disabled{{/unless}}>Analyze defenses</button>
+            <button type="button" data-ui-operation="deepScan" hidden {{#unless canAct}}disabled{{/unless}}>Deep scan</button>
+            <button type="button" data-ui-operation="firingSolution" hidden {{#unless canAct}}disabled{{/unless}}>Firing solution</button>
+            <button type="button" data-ui-operation="jam" hidden {{#unless canAct}}disabled{{/unless}}>Jam</button>
+            <button type="button" data-ui-operation="breakLock" hidden {{#unless canAct}}disabled{{/unless}}>Break lock</button>
+            <button type="button" data-ui-operation="burnThrough" hidden {{#unless canAct}}disabled{{/unless}}>Burn through</button>
+          </div>
         </form>
       </div>
-      <div class="ship-contact-list">{{#each view.contacts}}<article class="ship-contact-card {{#if targeted}}is-targeted{{/if}}"><header><h3>{{label}}</h3><span>{{stateLabel}}</span></header><dl class="ship-stat-grid"><div><dt>Bearing</dt><dd>{{bearing}}</dd></div><div><dt>Firing solution</dt><dd>{{#if firingSolution}}Ready{{else}}No{{/if}}</dd></div><div><dt>Defenses</dt><dd>{{#if defensesRevealed}}Revealed{{else}}Unknown{{/if}}</dd></div><div><dt>Systems</dt><dd>{{#if systemsRevealed}}Revealed{{else}}Unknown{{/if}}</dd></div></dl>{{#if jammed}}<p class="ship-warning">Electronic interference active</p>{{/if}}</article>{{else}}<p class="ship-empty">No sensor contacts.</p>{{/each}}</div>
     </section>
 
-    <section id="panel-weapons" class="ship-console-panel" role="tabpanel" data-tab-panel="weapons" {{#unless tabState.weapons.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Fire control</span><h2>Weapons</h2></div><span class="ship-readout">{{view.power.weaponReserved}} / {{view.power.allocation.weapons}} POWER RESERVED</span></div>
+    <section id="panel-weapons" class="ship-console-panel" role="tabpanel" aria-label="Weapons" data-tab-panel="weapons" {{#unless tabState.weapons.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Weapons</h2><span class="ship-readout">{{view.power.weaponReserved}} / {{view.power.allocation.weapons}} POWER</span></div>
+      <label class="ship-page-operator">Gunner<select data-page-operator="weapons" data-default="{{view.defaults.gunnery}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Gunnery {{ratings.gunnery}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+      <p data-target-lamp role="status" aria-live="polite">No Foundry target selected</p>
       <div class="ship-weapon-list">
         {{#each view.weapons}}
           <form class="ship-card ship-weapon-card" data-ui-operation="attack" data-live-preview="attack">
-            <input type="hidden" name="weaponId" value="{{id}}">
-            <header><div><span class="ship-kicker">{{hardpoint}}</span><h3>{{label}}</h3></div><span class="ship-status-chip ship-status-chip--{{status}}">{{statusLabel}}</span></header>
-            <div class="ship-weapon-stats"><div><span>Damage</span><strong>{{damage}}</strong></div><div><span>AP</span><strong>{{armorPiercing}}</strong></div><div><span>Accuracy</span><strong>{{accuracy}}</strong></div><div><span>Range</span><strong>{{range}}</strong></div><div><span>Arc</span><strong>{{arc}}°</strong></div><div><span>Heat</span><strong>{{heat}}</strong></div></div>
-            <div class="ship-readiness"><div><span>Readiness</span><strong>{{readiness}} / {{capacity}}</strong></div><div class="ship-meter ship-meter--weapon" style="{{readinessMeter.style}}"><span></span></div></div>
-            <div class="ship-form-grid"><label>Gunner<select name="operatorId" data-default="{{../view.defaults.gunnery}}">{{#each ../view.operators}}<option value="{{id}}">{{label}} · Gunnery {{ratings.gunnery}} · {{remaining}} {{resource}}</option>{{/each}}</select></label><label>Target<select name="targetUuid"><option value="">Select Targeted contact</option>{{#each ../view.targetedContacts}}<option value="{{targetUuid}}">{{label}}</option>{{/each}}</select></label><label>Barrage<select name="barrageRounds">{{#each barrageProfiles}}<option value="{{rounds}}" {{#if selected}}selected{{/if}}>{{rounds}} rounds · {{penalty}} attack · {{hits}} hit cap</option>{{/each}}</select></label><label>Aimed component<select name="aimedComponentId" disabled><option value="">Select a target first</option></select></label></div>
-            <div class="ship-form-grid ship-weapon-power-controls"><label>Status<select name="weaponStatus"><option value="off" {{#if off}}selected{{/if}}>Off</option><option value="online" {{#if powered}}selected{{/if}}>Powered{{#if booting}} · booting{{/if}}</option></select></label><label>Mode<select name="weaponMode"><option value="nominal" {{#if nominalMode}}selected{{/if}}>Nominal</option>{{#if overclockAvailable}}<option value="overclock" {{#if overclockMode}}selected{{/if}}>Overclock</option>{{/if}}</select></label><button type="button" data-ui-operation="toggleWeapon" {{#unless ../canAct}}disabled{{/unless}}>Apply power state</button></div>
-            {{#if manualReload}}<div class="ship-action-row">{{#if reloadWork}}<span>Reload {{reloadLabel}}</span><button type="button" data-ui-operation="reload" {{#unless ../canAct}}disabled{{/unless}}>Contribute reload Work</button><button type="button" data-ui-operation="cancelReload" {{#unless ../canAct}}disabled{{/unless}}>Cancel reload</button>{{else}}<button type="button" data-ui-operation="beginReload" {{#unless ../canAct}}disabled{{/unless}}>Begin reload</button>{{/if}}</div>{{/if}}
-            <div class="ship-weapon-footer"><p class="ship-preview-line" data-preview aria-live="polite"></p><button class="ship-primary ship-fire-button" type="submit" {{#unless ../canAttack}}disabled{{/unless}}><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> Fire</button></div>
+            <input type="hidden" name="weaponId" value="{{id}}"><input type="hidden" name="targetUuid" value="">
+            <div class="ship-weapon-row">
+              <span data-weapon-validity role="status" aria-label="Shot validity not evaluated">—</span>
+              <div><h3 title="{{hardpoint}}">{{label}}</h3><span class="ship-status-chip ship-status-chip--{{status}}">{{statusLabel}}</span><small>{{readiness}}/{{capacity}} ready · {{range}} / {{arc}}° · {{damage}} · AP {{armorPiercing}}</small></div>
+              <select name="weaponSetting" data-default="{{setting}}" aria-label="{{label}} power setting" {{#unless ../canAct}}disabled{{/unless}}><option value="off">Off</option><option value="nominal">Nominal</option>{{#if overclockAvailable}}<option value="overclock">Overclock</option>{{/if}}</select>
+              <button class="ship-primary ship-fire-button" type="submit" {{#unless ../canAttack}}disabled{{/unless}} aria-label="Fire {{label}}"><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> Fire</button>
+            </div>
+            <details class="ship-weapon-secondary">
+              <summary aria-label="{{label}} firing options and shot details">Firing options</summary>
+              <div class="ship-action-row"><label>Barrage<select name="barrageRounds" aria-label="{{label}} barrage rounds">{{#each barrageProfiles}}<option value="{{rounds}}" {{#if selected}}selected{{/if}} title="{{penalty}} attack · {{hits}} hit cap">×{{rounds}}</option>{{/each}}</select></label><label class="ship-checkbox"><input type="checkbox" data-aim-enabled> Aim component</label><span data-aim-slot></span></div>
+              <p class="ship-muted">{{hardpoint}} · Accuracy {{accuracy}} · Heat {{heat}}</p>
+              <p class="ship-preview-line" data-preview aria-live="polite"></p>
+              {{#if manualReload}}<div class="ship-action-row">{{#if reloadWork}}<span>Reload {{reloadLabel}}</span><button type="button" data-ui-operation="reload" {{#unless ../canAct}}disabled{{/unless}}>Contribute reload Work</button><button type="button" data-ui-operation="cancelReload" {{#unless ../canAct}}disabled{{/unless}}>Cancel reload</button>{{else}}<button type="button" data-ui-operation="beginReload" {{#unless ../canAct}}disabled{{/unless}}>Begin reload</button>{{/if}}</div>{{/if}}
+            </details>
           </form>
-        {{else}}
-          <p class="ship-empty">No weapons are installed. Open the Refit tab to inspect hardpoints and install compatible weapon Items.</p>
-        {{/each}}
+        {{else}}<p class="ship-empty">No weapons installed. Open Refit from the maintenance menu to inspect hardpoints.</p>{{/each}}
       </div>
     </section>
 
-    <section id="panel-damage" class="ship-console-panel" role="tabpanel" data-tab-panel="damage" {{#unless tabState.damage.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Engineering</span><h2>Damage Control</h2></div><span class="ship-readout">{{view.status.hull.value}} / {{view.status.hull.maximum}} HULL</span></div>
+    <section id="panel-damage" class="ship-console-panel" role="tabpanel" aria-label="Damage control" data-tab-panel="damage" {{#unless tabState.damage.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Damage Control</h2><span class="ship-readout">{{view.status.hull.value}} / {{view.status.hull.maximum}} HULL</span></div>
+      <label class="ship-page-operator">Engineer<select data-page-operator="damage" data-default="{{view.defaults.engineering}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Engineering {{ratings.engineering}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
       <div class="ship-damage-layout">
-        <form class="ship-card"><header><div><span class="ship-kicker">Thermal management</span><h3>Cooling</h3></div><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></header><div class="ship-meter ship-meter--heat" style="{{view.status.heat.style}}"><span></span></div><label>Engineer<select name="operatorId" data-default="{{view.defaults.engineering}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Engineering {{ratings.engineering}} · {{remaining}} {{resource}}</option>{{/each}}</select></label><div class="ship-button-grid"><button type="button" data-ui-operation="cooling" {{#unless canAct}}disabled{{/unless}}>Active cooling</button><button type="button" data-ui-operation="vent" {{#unless canAct}}disabled{{/unless}}>Emergency vent</button><button type="button" data-ui-operation="hullRepair" {{#unless canAct}}disabled{{/unless}}>Repair hull</button></div><p class="ship-muted">Emergency vent: {{view.cooling.ventCooldownLabel}}</p></form>
-        <section class="ship-condition-list">{{#each view.conditions}}<form class="ship-card ship-condition-card ship-condition-card--{{severity}}"><header><div><span class="ship-kicker">{{kind}}{{#if sector}} · {{sector}}{{/if}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{severity}}</span></header>{{#if componentLabel}}<p class="ship-muted">{{componentLabel}}</p>{{/if}}{{#if clock}}<p>Hazard clock: <strong>{{clock}}</strong></p>{{/if}}{{#if work}}<p>Recovery Work: <strong>{{workLabel}}</strong></p>{{/if}}<input type="hidden" name="conditionId" value="{{id}}"><label>Engineer<select name="operatorId" data-default="{{../view.defaults.engineering}}">{{#each ../view.operators}}<option value="{{id}}">{{label}} · Engineering {{ratings.engineering}} · {{remaining}} {{resource}}</option>{{/each}}</select></label><input type="hidden" name="rating" value="engineering">{{#if destroyed}}<button type="button" data-ui-operation="recoveryWork" {{#unless ../canAct}}disabled{{/unless}}>Contribute Recovery Work</button>{{else}}<button type="button" data-ui-operation="repair" {{#unless ../canAct}}disabled{{/unless}}>Attempt repair</button>{{/if}}</form>{{else}}<div class="ship-card ship-empty"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><strong>No active faults or hazards</strong></div>{{/each}}</section>
+        <form class="ship-card">
+          <header><h3>Thermal management</h3><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></header>
+          <div class="ship-meter ship-meter--heat" style="{{view.status.heat.style}}"><span></span></div>
+          <div class="ship-button-grid"><button type="button" data-ui-operation="cooling" {{#unless canAct}}disabled{{/unless}}>Active cooling</button><button type="button" data-ui-operation="vent" {{#unless canAct}}disabled{{/unless}}>Emergency vent</button><button type="button" data-ui-operation="hullRepair" {{#unless canAct}}disabled{{/unless}}>Repair hull</button></div>
+          <p class="ship-muted">Emergency vent: {{view.cooling.ventCooldownLabel}}</p>
+        </form>
+        <section class="ship-condition-list" aria-label="Faults and hazards">
+          {{#each view.conditions}}
+            <form class="ship-card ship-condition-card ship-condition-card--{{severity}}">
+              <header><div><span class="ship-kicker">{{kind}}{{#if sector}} · {{sector}}{{/if}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{severity}}</span></header>
+              {{#if componentLabel}}<p class="ship-muted">{{componentLabel}}</p>{{/if}}{{#if clock}}<p>Hazard clock: <strong>{{clock}}</strong></p>{{/if}}{{#if work}}<p>Recovery Work: <strong>{{workLabel}}</strong></p>{{/if}}
+              <input type="hidden" name="conditionId" value="{{id}}"><input type="hidden" name="rating" value="engineering">
+              {{#if destroyed}}<button type="button" data-ui-operation="recoveryWork" {{#unless ../canAct}}disabled{{/unless}}>Contribute Recovery Work</button>{{else}}<button type="button" data-ui-operation="repair" {{#unless ../canAct}}disabled{{/unless}}>Attempt repair</button>{{/if}}
+            </form>
+          {{else}}<div class="ship-card ship-empty"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><strong>No active faults or hazards</strong></div>{{/each}}
+        </section>
       </div>
     </section>
 
-    <section id="panel-refit" class="ship-console-panel ship-refit-layout" role="tabpanel" data-tab-panel="refit" {{#unless tabState.refit.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading">
-        <div><span class="ship-kicker">Hull integration</span><h2>Refit</h2></div>
-        <span class="ship-readout">{{view.status.phaseLabel}}</span>
-      </div>
-      {{#if refitDenial}}<p class="ship-console-notice ship-refit-denial" data-refit-denial role="status"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{refitDenial}}</p>{{else}}<p class="ship-muted">Drop a compatible ship component Item onto a mount. The ship receives a fresh embedded copy.</p>{{/if}}
-
+    <section id="panel-refit" class="ship-console-panel ship-refit-layout" role="tabpanel" aria-label="Refit" data-tab-panel="refit" {{#unless tabState.refit.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Refit</h2><span class="ship-readout">{{view.combat.label}}</span></div>
+      {{#if refitDenial}}<p class="ship-console-notice ship-refit-denial" data-refit-denial role="status"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{refitDenial}}</p>{{else}}<p class="ship-muted">Drop compatible component Items onto mounts. Drop onto an occupied row to replace its Item with a fresh embedded copy.</p>{{/if}}
       <section aria-labelledby="refit-slot-heading">
-        <div class="ship-panel-heading"><div><span class="ship-kicker">Hull systems</span><h3 id="refit-slot-heading">Component slots</h3></div></div>
+        <h3 id="refit-slot-heading">Component slots</h3>
         <div class="ship-refit-grid">
           {{#each refitSlots}}
-            <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-mount-id="{{id}}">
-              <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{status}}</span></header>
-              <dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div></dl>
-              {{#if installed}}
-                <button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" title="Open component Item sheet">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<span><small>Installed Item</small><strong>{{itemName}}</strong></span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
-              {{else}}
-                <div class="ship-empty"><strong>Empty mount</strong><span>Ship capability is degraded until compatible hardware is installed.</span></div>
-              {{/if}}
-              <div class="ship-refit-drop" data-refit-drop data-mount-id="{{id}}" {{#unless ../canRefit}}data-refit-disabled{{/unless}}><i class="fa-solid fa-download" aria-hidden="true"></i><span>{{dropLabel}}</span></div>
-              {{#if installed}}<div class="ship-action-row"><button type="button" data-refit-item="{{itemId}}">Open Item</button><button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove</button></div>{{/if}}
+            <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-refit-drop data-mount-id="{{id}}" {{#unless ../canRefit}}data-refit-disabled{{/unless}} aria-label="{{label}} · {{status}}">
+              <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span>{{size}}</span><span class="ship-status-chip">{{status}}</span></header>
+              {{#if installed}}<button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" aria-label="Open {{itemName}} component Item">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<strong>{{itemName}}</strong><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>{{else}}<div class="ship-refit-drop"><i class="fa-solid fa-download" aria-hidden="true"></i><span>Empty · {{dropLabel}}</span></div>{{/if}}
+              <details><summary>Mount details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div></dl>{{#if installed}}<button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove component</button>{{/if}}</details>
             </article>
           {{else}}<p class="ship-empty">This hull defines no component slots.</p>{{/each}}
         </div>
       </section>
-
       <section aria-labelledby="refit-hardpoint-heading">
-        <div class="ship-panel-heading"><div><span class="ship-kicker">Weapons integration</span><h3 id="refit-hardpoint-heading">Hardpoints</h3></div></div>
+        <h3 id="refit-hardpoint-heading">Hardpoints</h3>
         <div class="ship-refit-grid">
           {{#each refitHardpoints}}
-            <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-mount-id="{{id}}">
-              <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{status}}</span></header>
-              <dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div><div><dt>Traverse</dt><dd>{{traverse}}</dd></div></dl>
-              {{#if installed}}
-                <button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" title="Open component Item sheet">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<span><small>Installed Item</small><strong>{{itemName}}</strong></span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
-              {{else}}
-                <div class="ship-empty"><strong>Empty hardpoint</strong><span>No weapon is available from this mount.</span></div>
-              {{/if}}
-              <div class="ship-refit-drop" data-refit-drop data-mount-id="{{id}}" {{#unless ../canRefit}}data-refit-disabled{{/unless}}><i class="fa-solid fa-download" aria-hidden="true"></i><span>{{dropLabel}}</span></div>
-              {{#if installed}}<div class="ship-action-row"><button type="button" data-refit-item="{{itemId}}">Open Item</button><button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove</button></div>{{/if}}
+            <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-refit-drop data-mount-id="{{id}}" {{#unless ../canRefit}}data-refit-disabled{{/unless}} aria-label="{{label}} · {{status}}">
+              <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span>{{size}}</span><span class="ship-status-chip">{{status}}</span></header>
+              {{#if installed}}<button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" aria-label="Open {{itemName}} weapon Item">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<strong>{{itemName}}</strong><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>{{else}}<div class="ship-refit-drop"><i class="fa-solid fa-download" aria-hidden="true"></i><span>Empty · {{dropLabel}}</span></div>{{/if}}
+              <details><summary>Mount details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div><div><dt>Traverse</dt><dd>{{traverse}}</dd></div></dl>{{#if installed}}<button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove weapon</button>{{/if}}</details>
             </article>
           {{else}}<p class="ship-empty">This hull defines no hardpoints.</p>{{/each}}
         </div>
       </section>
-
-      <section aria-labelledby="refit-unreferenced-heading">
-        <div class="ship-panel-heading"><div><span class="ship-kicker">Retained hardware</span><h3 id="refit-unreferenced-heading">Unreferenced component Items</h3></div></div>
-        <p class="ship-muted">Advanced hull edits retain embedded component Items that are no longer referenced by a slot or hardpoint. These Items provide no ship capability while unreferenced. Open their structured Item sheets to inspect them.</p>
-        <div class="ship-refit-grid">
-          {{#each refitUnreferencedItems}}
-            <article class="ship-refit-card">
-              <header><h3>{{name}}</h3><span class="ship-status-chip">Unreferenced</span></header>
-              <dl class="ship-refit-meta"><div><dt>Class</dt><dd>{{componentClass}}</dd></div><div><dt>Size</dt><dd>{{size}}</dd></div></dl>
-              <button type="button" data-refit-item="{{id}}" aria-label="Open structured Item sheet for {{name}}">Open Item</button>
-            </article>
-          {{else}}<p class="ship-empty">No unreferenced component Items.</p>{{/each}}
-        </div>
-      </section>
-
+      <details class="ship-card">
+        <summary>Unreferenced component Items</summary>
+        <p class="ship-muted">Advanced hull edits retain Items no longer referenced by a mount. These Items provide no ship capability while unreferenced.</p>
+        <div class="ship-refit-grid">{{#each refitUnreferencedItems}}<article class="ship-refit-card"><header><h3>{{name}}</h3><span class="ship-status-chip">Unreferenced</span></header><span>{{componentClass}} · {{size}}</span><button type="button" data-refit-item="{{id}}" aria-label="Open structured Item sheet for {{name}}">Open Item</button></article>{{else}}<p class="ship-empty">No unreferenced component Items.</p>{{/each}}</div>
+      </details>
       <details class="ship-card ship-console-config">
         <summary>Advanced hull JSON</summary>
-        <p class="ship-muted">Hull structure only. Installed component definitions live in embedded Items and are never baked into this JSON. Removing a mount reference retains its Item in Unreferenced component Items above; it does not delete the Item.</p>
-        <form data-config data-revision="{{configRevision}}">
-          <fieldset {{#unless canRefit}}disabled{{/unless}}>
-            <label>Validated hull configuration JSON<textarea name="config" rows="20" spellcheck="false">{{configJson}}</textarea></label>
-            <div class="ship-action-row"><button type="submit">Validate and save hull</button><button type="button" data-canadensis>Reset hull and components to Canadensis…</button></div>
-          </fieldset>
-        </form>
+        <p class="ship-muted">Hull structure only. Installed component definitions live in embedded Items. Removing a mount reference retains its Item above; it does not delete the Item.</p>
+        <form data-config data-revision="{{configRevision}}"><fieldset {{#unless canRefit}}disabled{{/unless}}><label>Validated hull configuration JSON<textarea name="config" rows="20" spellcheck="false">{{configJson}}</textarea></label><div class="ship-action-row"><button type="submit">Validate and save hull</button><button type="button" data-canadensis>Reset hull and components to Canadensis…</button></div></fieldset></form>
       </details>
     </section>
 
-    <section id="panel-log-config" class="ship-console-panel" role="tabpanel" data-tab-panel="log-config" {{#unless tabState.log-config.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Administration</span><h2>Log &amp; Diagnostics</h2></div></div>
+    <section id="panel-log-config" class="ship-console-panel" role="tabpanel" aria-label="Log and diagnostics" data-tab-panel="log-config" {{#unless tabState.log-config.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading"><h2>Log &amp; Diagnostics</h2></div>
       {{#if isGM}}
-        <section class="ship-card"><header><div><span class="ship-kicker">Authority journal</span><h3>Recent operations</h3></div></header>{{#if log}}<ol class="ship-console-log">{{#each log}}<li class="{{#unless ok}}is-error{{/unless}}"><div><strong>{{type}}</strong><span>{{timestamp}}</span></div><details><summary>Operation detail</summary><pre>{{json}}</pre></details>{{#if rollback}}<button type="button" data-rollback="{{id}}">Roll back operation</button>{{/if}}</li>{{/each}}</ol>{{else}}<p class="ship-empty">No logged operations.</p>{{/if}}</section>
-        <section class="ship-card ship-console-specifications" aria-label="Installed ship configuration"><header><div><span class="ship-kicker">Reference data</span><h3>Installed configuration</h3></div></header><div class="ship-console-specification-groups">{{#each specGroups}}<section><h4>{{label}}</h4><dl>{{#each entries}}<div><dt>{{label}}</dt><dd>{{value}}</dd></div>{{/each}}</dl></section>{{/each}}</div></section>
-        <details class="ship-card ship-diagnostics"><summary>Raw operation console</summary><p class="ship-muted">Diagnostic escape hatch. Normal play should use the purpose-built controls in the other tabs.</p><div class="ship-console-actions">{{#each rawActions}}<form class="ship-operation" data-raw-operation="{{type}}"><fieldset {{#if disabled}}disabled{{/if}}><legend>{{group}} · {{type}}</legend>{{#if targeted}}<label>Target Token UUID(s)<input name="targets" type="text" placeholder="Scene.…Token.…"></label>{{/if}}<label>Payload JSON<textarea name="payload" rows="4" spellcheck="false">{}</textarea></label><p class="ship-console-help">{{help}}</p><details><summary>Raw preview</summary><pre data-preview aria-live="polite"></pre></details><button type="submit">Commit {{type}}</button>{{#if reason}}<p class="ship-console-reason">{{reason}}</p>{{/if}}</fieldset></form>{{/each}}</div></details>
+        <section class="ship-card"><header><h3>Recent operations</h3></header>{{#if log}}<ol class="ship-console-log">{{#each log}}<li class="{{#unless ok}}is-error{{/unless}}"><div><strong>{{type}}</strong><span>{{timestamp}}</span></div><details><summary>Operation detail</summary><pre>{{json}}</pre></details>{{#if rollback}}<button type="button" data-rollback="{{id}}">Roll back operation</button>{{/if}}</li>{{/each}}</ol>{{else}}<p class="ship-empty">No logged operations.</p>{{/if}}</section>
+        <details class="ship-card ship-diagnostics"><summary>Raw operation console</summary><p class="ship-muted">Diagnostic escape hatch. Normal play uses combat controls.</p><div class="ship-console-actions">{{#each rawActions}}<form class="ship-operation" data-raw-operation="{{type}}"><fieldset {{#if disabled}}disabled{{/if}}><legend>{{group}} · {{type}}</legend>{{#if targeted}}<label>Target Token UUID(s)<input name="targets" type="text" placeholder="Scene.…Token.…"></label>{{/if}}<label>Payload JSON<textarea name="payload" rows="4" spellcheck="false">{}</textarea></label><p class="ship-console-help">{{help}}</p><details><summary>Raw preview</summary><pre data-preview aria-live="polite"></pre></details><button type="submit">Commit {{type}}</button>{{#if reason}}<p class="ship-console-reason">{{reason}}</p>{{/if}}</fieldset></form>{{/each}}</div></details>
         <details class="ship-card ship-diagnostics"><summary>Raw ship state</summary><pre class="ship-console-state">{{stateJson}}</pre></details>
       {{else}}<p class="ship-empty">Operation history and diagnostics are available only to the GM.</p>{{/if}}
     </section>

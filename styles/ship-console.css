@@ -13,12 +13,14 @@
   --ship-amber: #ffbd52;
   --ship-orange: #ff7a45;
   --ship-red: #ff5267;
-  min-width: 680px;
+  min-width: 0;
+  max-width: 100%;
   color: var(--ship-text);
   color-scheme: dark;
 }
 
 .vira-shipcombat.ship-console .window-content {
+  min-width: 0;
   padding: 0;
   overflow: hidden;
   background:
@@ -35,9 +37,13 @@
 .ship-console-layout {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  container-type: inline-size;
+  container-name: ship-console;
   font-family: var(--font-body, sans-serif);
 }
 
@@ -45,6 +51,7 @@
 .ship-console-layout input,
 .ship-console-layout select,
 .ship-console-layout textarea {
+  max-width: 100%;
   border: 1px solid var(--ship-border);
   border-radius: 3px;
   color: var(--ship-text);
@@ -53,9 +60,10 @@
 }
 
 .ship-console-layout button {
-  min-height: 2rem;
-  padding: 0.35rem 0.65rem;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
   cursor: pointer;
+  font-size: 0.71rem;
   font-weight: 650;
   letter-spacing: 0.02em;
 }
@@ -65,7 +73,16 @@
   border-color: var(--ship-cyan);
   color: #fff;
   background: var(--ship-cyan-soft);
-  box-shadow: 0 0 0 1px rgb(62 232 208 / 20%), 0 0 18px rgb(62 232 208 / 10%);
+  box-shadow: 0 0 0 1px rgb(62 232 208 / 20%), 0 0 14px rgb(62 232 208 / 10%);
+}
+
+.ship-console-layout button:focus-visible,
+.ship-console-layout input:focus-visible,
+.ship-console-layout select:focus-visible,
+.ship-console-layout textarea:focus-visible,
+.ship-console-layout summary:focus-visible {
+  outline: 2px solid var(--ship-cyan);
+  outline-offset: 2px;
 }
 
 .ship-console-layout button:disabled {
@@ -77,22 +94,23 @@
 .ship-console-layout select,
 .ship-console-layout textarea {
   width: 100%;
-  min-height: 2rem;
-  padding: 0.35rem 0.45rem;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.72rem;
 }
 
 .ship-console-layout textarea {
   resize: vertical;
   font-family: var(--font-monospace, monospace);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
 .ship-console-layout label {
   display: grid;
-  gap: 0.3rem;
+  gap: 0.2rem;
   min-width: 0;
   color: var(--ship-muted);
-  font-size: 0.78rem;
+  font-size: 0.67rem;
   font-weight: 700;
   letter-spacing: 0.035em;
 }
@@ -106,21 +124,37 @@
   margin: 0;
 }
 
+.ship-console-heading h1,
+.ship-console-panel h2,
+.ship-console-panel h3,
+.ship-console-panel h4,
+.ship-refit-card h3,
+.ship-contact-card h3 {
+  font-family: var(--font-serif, Georgia, serif);
+  font-weight: 650;
+}
+
 .ship-console-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 2.55rem minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   flex: 0 0 auto;
-  padding: 0.7rem 0.85rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
   border-bottom: 1px solid var(--ship-border);
   background: linear-gradient(90deg, #101a22, #0b1218);
+}
+
+.ship-console-header > .ship-status-strip {
+  grid-column: 1 / -1;
 }
 
 .ship-console-portrait {
   display: grid;
   place-items: center;
-  width: 3.25rem;
-  height: 3.25rem;
+  width: 2.55rem;
+  height: 2.55rem;
   overflow: hidden;
   border: 1px solid var(--ship-border-bright);
   background: #05090c;
@@ -134,21 +168,22 @@
 }
 
 .ship-console-heading {
-  flex: 1;
   min-width: 0;
 }
 
 .ship-console-title-row {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  min-width: 0;
+  gap: 0.4rem;
 }
 
 .ship-console-heading h1 {
+  min-width: 0;
   overflow: hidden;
   color: #fff;
-  font-size: 1.35rem;
-  line-height: 1.1;
+  font-size: 1.08rem;
+  line-height: 1.05;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -156,7 +191,7 @@
 .ship-console-heading p,
 .ship-muted {
   color: var(--ship-muted);
-  font-size: 0.77rem;
+  font-size: 0.68rem;
 }
 
 .ship-phase,
@@ -164,16 +199,18 @@
 .ship-readout {
   display: inline-flex;
   align-items: center;
-  min-height: 1.45rem;
-  padding: 0.15rem 0.45rem;
+  min-height: 1.2rem;
+  max-width: 100%;
+  padding: 0.1rem 0.35rem;
+  overflow-wrap: anywhere;
   border: 1px solid var(--ship-border-bright);
   border-radius: 2px;
   color: var(--ship-cyan);
   background: var(--ship-cyan-soft);
   font-family: var(--font-monospace, monospace);
-  font-size: 0.7rem;
+  font-size: 0.59rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -192,9 +229,9 @@
 
 .ship-icon-button {
   flex: 0 0 auto;
-  width: 2.4rem;
+  width: 1.85rem;
   padding: 0;
-  font-size: 1rem;
+  font-size: 0.8rem;
 }
 
 .ship-status-strip {
@@ -202,37 +239,42 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   flex: 0 0 auto;
+  min-width: 0;
   border-bottom: 1px solid var(--ship-border);
   background: var(--ship-border);
 }
 
 .ship-status-meter {
   display: grid;
-  gap: 0.35rem;
-  padding: 0.5rem 0.7rem;
+  gap: 0.22rem;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
   background: #0c141a;
 }
 
-.ship-status-meter > div:first-child,
-.ship-readiness > div:first-child {
+.ship-status-meter > div:first-child {
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.25rem;
+  min-width: 0;
   color: var(--ship-muted);
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
+  font-size: 0.58rem;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
 }
 
-.ship-status-meter strong,
-.ship-readiness strong {
+.ship-status-meter strong {
+  min-width: 0;
+  overflow: hidden;
   color: var(--ship-text);
   font-family: var(--font-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ship-meter {
   position: relative;
-  height: 0.42rem;
+  height: 0.3rem;
   overflow: hidden;
   border-radius: 999px;
   background: #273139;
@@ -244,7 +286,7 @@
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #23885b, var(--ship-green));
-  box-shadow: 0 0 10px currentcolor;
+  box-shadow: 0 0 8px currentcolor;
   transition: width 160ms ease;
 }
 
@@ -258,43 +300,56 @@
 .ship-console-notice {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.35rem;
   flex: 0 0 auto;
+  min-width: 0;
   margin: 0;
-  padding: 0.45rem 0.85rem;
+  padding: 0.3rem 0.6rem;
   color: var(--ship-amber);
   border-bottom: 1px solid rgb(255 189 82 / 35%);
   background: rgb(255 189 82 / 10%);
-  font-size: 0.8rem;
+  font-size: 0.68rem;
 }
 
-.ship-console-tabs {
+.ship-console-navigation {
   display: flex;
   flex: 0 0 auto;
-  gap: 0;
-  padding: 0 0.5rem;
+  min-width: 0;
   border-bottom: 1px solid var(--ship-border);
   background: #0a1117;
 }
 
+.ship-console-tabs {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0;
+  padding: 0 0.2rem;
+}
+
 .ship-console-tabs button {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 2.45rem;
+  min-width: 0;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.1rem;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   color: var(--ship-muted);
   background: transparent;
-  font-size: 0.75rem;
+  font-size: clamp(0.5rem, 1.8vw, 0.63rem);
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .ship-console-tabs button::after {
   content: "";
   position: absolute;
-  right: 20%;
+  right: 18%;
   bottom: -1px;
-  left: 20%;
+  left: 18%;
   height: 2px;
   background: transparent;
 }
@@ -308,21 +363,74 @@
   right: 0;
   left: 0;
   background: var(--ship-cyan);
-  box-shadow: 0 0 10px var(--ship-cyan);
+  box-shadow: 0 0 8px var(--ship-cyan);
+}
+
+.ship-maintenance-menu {
+  position: relative;
+  flex: 0 0 1.9rem;
+  min-width: 1.9rem;
+  border-left: 1px solid var(--ship-border);
+}
+
+.ship-maintenance-menu summary {
+  display: grid;
+  min-height: 1.9rem;
+  place-items: center;
+  color: var(--ship-cyan);
+  cursor: pointer;
+  font-size: 1rem;
+  list-style: none;
+}
+
+.ship-maintenance-menu summary::-webkit-details-marker { display: none; }
+.ship-maintenance-menu summary::marker { content: ""; }
+
+.ship-maintenance-menu[open] summary {
+  background: var(--ship-cyan-soft);
+}
+
+.ship-maintenance-menu > :not(summary) {
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  min-width: 8.5rem;
+  padding: 0.25rem;
+  border: 1px solid var(--ship-border-bright);
+  background: var(--ship-panel-raised);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 35%);
+}
+
+.ship-maintenance-menu button {
+  width: 100%;
+  border: 0;
+  text-align: left;
+}
+
+.ship-maintenance-menu button[aria-pressed="true"] {
+  color: var(--ship-cyan);
+  background: var(--ship-cyan-soft);
 }
 
 .ship-console-panels {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
 
 .ship-console-panel {
+  width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
-  padding: 0.9rem;
+  padding: 0.55rem 0.6rem 0.75rem;
   overflow: auto;
+  overflow-x: hidden;
   scrollbar-color: var(--ship-border-bright) transparent;
+  overscroll-behavior: contain;
 }
 
 .ship-console-panel[hidden] { display: none; }
@@ -331,35 +439,55 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
+  gap: 0.5rem;
+  min-width: 0;
+  margin-bottom: 0.45rem;
+  padding-bottom: 0.3rem;
   border-bottom: 1px solid var(--ship-border);
 }
 
+.ship-panel-heading > div {
+  min-width: 0;
+}
+
 .ship-panel-heading h2 {
+  overflow: hidden;
   color: #fff;
-  font-size: 1.3rem;
+  font-size: 1.05rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ship-kicker {
   display: block;
-  margin-bottom: 0.15rem;
+  margin-bottom: 0.1rem;
   color: var(--ship-cyan);
   font-family: var(--font-monospace, monospace);
-  font-size: 0.62rem;
+  font-size: 0.55rem;
   font-weight: 800;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.105em;
   text-transform: uppercase;
 }
 
 .ship-card {
   min-width: 0;
-  padding: 0.75rem;
+  padding: 0.5rem;
   border: 1px solid var(--ship-border);
-  border-radius: 4px;
+  border-radius: 3px;
   background: linear-gradient(145deg, rgb(22 34 44 / 92%), rgb(12 20 26 / 94%));
   box-shadow: inset 0 1px rgb(255 255 255 / 3%);
+}
+
+.ship-console-layout details > summary {
+  color: var(--ship-cyan);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.ship-console-layout details[open] > summary {
+  margin-bottom: 0.3rem;
 }
 
 .ship-card--emphasis { border-color: var(--ship-border-bright); }
@@ -367,57 +495,80 @@
 
 .ship-card > header,
 .ship-contact-card > header,
-.ship-weapon-card > header,
 .ship-condition-card > header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.65rem;
+  gap: 0.45rem;
+  min-width: 0;
+  margin-bottom: 0.35rem;
+}
+
+.ship-panel-heading > .ship-readout {
+  min-width: 0;
+  white-space: normal;
+}
+
+.ship-card > header > div,
+.ship-contact-card > header > div,
+.ship-condition-card > header > div {
+  min-width: 0;
 }
 
 .ship-card h3,
 .ship-contact-card h3 {
+  overflow: hidden;
   color: #fff;
-  font-size: 0.98rem;
+  font-size: 0.82rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
 }
 
 .ship-dashboard-grid,
 .ship-operator-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem;
+  gap: 0.4rem;
 }
 
 .ship-stat-grid,
 .ship-rating-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem 0.8rem;
+  gap: 0.25rem 0.55rem;
 }
 
 .ship-stat-grid > div,
 .ship-rating-grid > div {
   display: flex;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.3rem;
   min-width: 0;
-  padding-bottom: 0.25rem;
+  padding-bottom: 0.15rem;
   border-bottom: 1px solid rgb(142 165 173 / 12%);
 }
 
 .ship-stat-grid dt,
 .ship-rating-grid dt {
+  min-width: 0;
+  overflow: hidden;
   color: var(--ship-muted);
-  font-size: 0.72rem;
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ship-stat-grid dd,
 .ship-rating-grid dd {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
   color: var(--ship-text);
   font-family: var(--font-monospace, monospace);
+  font-size: 0.68rem;
   font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ship-warning,
@@ -426,34 +577,40 @@
 }
 
 .ship-warning {
-  margin-top: 0.55rem !important;
-  font-size: 0.78rem;
+  margin-top: 0.35rem !important;
+  font-size: 0.67rem;
   font-weight: 750;
   text-transform: uppercase;
 }
 
 .ship-alert-stack {
   display: grid;
-  gap: 0.35rem;
-  margin-bottom: 0.7rem;
+  gap: 0.25rem;
+  margin-bottom: 0.4rem;
 }
 
 .ship-alert {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.55rem;
-  min-height: 2.1rem;
-  padding: 0.35rem 0.6rem;
-  border-left: 3px solid var(--ship-amber);
+  gap: 0.35rem;
+  min-width: 0;
+  min-height: 1.6rem;
+  padding: 0.25rem 0.4rem;
+  border-left: 2px solid var(--ship-amber);
   color: var(--ship-amber);
   background: rgb(255 189 82 / 12%);
-  font-size: 0.78rem;
+  font-size: 0.67rem;
 }
 
 .ship-alert--critical,
 .ship-alert--destroyed,
-.ship-alert--catastrophic { border-color: var(--ship-red); color: var(--ship-red); background: rgb(255 82 103 / 12%); }
+.ship-alert--catastrophic {
+  border-color: var(--ship-red);
+  color: var(--ship-red);
+  background: rgb(255 82 103 / 12%);
+}
+
 .ship-alert span { text-transform: uppercase; }
 
 .ship-button-grid,
@@ -461,12 +618,12 @@
 .ship-segmented {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.25rem;
 }
 
 .ship-button-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.ship-action-row { align-items: center; margin-top: 0.65rem; }
-.ship-action-row > button { flex: 1 1 10rem; }
+.ship-action-row { align-items: center; margin-top: 0.4rem; }
+.ship-action-row > button { flex: 1 1 8rem; }
 .ship-segmented > button { flex: 1 1 0; }
 
 .ship-primary {
@@ -478,124 +635,398 @@
 
 .ship-primary:hover:not(:disabled) { background: linear-gradient(180deg, #84ffe9, #3bd8c1) !important; }
 
-.ship-operator-grid { margin-bottom: 0.75rem; }
-.ship-operator-card { display: grid; gap: 0.6rem; }
-.ship-roster-editor { margin-top: 0.75rem; }
+.ship-operator-grid { margin-bottom: 0.45rem; }
+.ship-operator-card { display: grid; gap: 0.35rem; }
+.ship-roster-editor { margin-top: 0.45rem; }
+
+.ship-page-operator {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  margin-bottom: 0.35rem;
+  padding: 0.25rem 0.35rem;
+  border: 1px solid var(--ship-border);
+  background: rgb(0 0 0 / 12%);
+}
+
+.ship-page-operator select {
+  min-width: 0;
+}
 
 .ship-form-grid,
-.ship-vector-control,
 .ship-power-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem;
-  margin-top: 0.65rem;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
 }
 
-.ship-vector-control { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.ship-vector-control label { position: relative; }
-.ship-vector-control label > span { position: absolute; right: 0.45rem; bottom: 0.45rem; color: var(--ship-muted); font-size: 0.66rem; }
-.ship-power-grid { grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)); }
-.ship-power-grid label > span { display: flex; justify-content: space-between; gap: 0.25rem; }
+.ship-slider-row,
+.ship-slider-track {
+  min-width: 0;
+}
+
+.ship-slider-row {
+  display: grid;
+  grid-template-columns: minmax(3.1rem, auto) minmax(0, 1fr) minmax(2.2rem, auto);
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.ship-slider-row > :is(output, [data-slider-value]) {
+  color: var(--ship-text);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.ship-slider-row > span:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.ship-slider-row [data-slider-value] {
+  color: var(--ship-text);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ship-slider-row > small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ship-muted);
+  font: 0.52rem var(--font-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ship-slider-track {
+  position: relative;
+  display: grid;
+  align-items: center;
+  --zero-position: 50%;
+}
+
+.ship-slider-track::before {
+  position: absolute;
+  top: 50%;
+  left: var(--zero-position, 50%);
+  width: 2px;
+  height: 0.9rem;
+  content: "";
+  background: var(--ship-amber);
+  box-shadow: 0 0 5px rgb(255 189 82 / 65%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.ship-slider-track input[type="range"],
+.ship-slider-row input[type="range"] {
+  width: 100%;
+  min-height: 1.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--ship-cyan);
+  appearance: none;
+}
+
+.ship-console-layout input[type="range"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.ship-slider-track input[type="range"]::-webkit-slider-runnable-track,
+.ship-slider-row input[type="range"]::-webkit-slider-runnable-track {
+  height: 0.28rem;
+  border: 1px solid var(--ship-border-bright);
+  border-radius: 99px;
+  background: linear-gradient(90deg, #1b4963, var(--ship-cyan-soft), #1b4963);
+}
+
+.ship-slider-track input[type="range"]::-moz-range-track,
+.ship-slider-row input[type="range"]::-moz-range-track {
+  height: 0.28rem;
+  border: 1px solid var(--ship-border-bright);
+  border-radius: 99px;
+  background: linear-gradient(90deg, #1b4963, var(--ship-cyan-soft), #1b4963);
+}
+
+.ship-slider-track input[type="range"]::-webkit-slider-thumb,
+.ship-slider-row input[type="range"]::-webkit-slider-thumb {
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-top: -0.27rem;
+  border: 2px solid var(--ship-cyan);
+  border-radius: 50%;
+  background: var(--ship-bg);
+  box-shadow: 0 0 6px var(--ship-cyan);
+  appearance: none;
+}
+
+.ship-slider-track input[type="range"]::-moz-range-thumb,
+.ship-slider-row input[type="range"]::-moz-range-thumb {
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 2px solid var(--ship-cyan);
+  border-radius: 50%;
+  background: var(--ship-bg);
+  box-shadow: 0 0 6px var(--ship-cyan);
+}
+
+.ship-power-grid {
+  grid-template-columns: 1fr;
+  gap: 0.28rem;
+}
+
+.ship-power-grid > :is(label, div) {
+  display: grid;
+  grid-template-columns: minmax(5.2rem, 0.65fr) minmax(0, 1.35fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.ship-power-grid > :is(label, div) > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.25rem;
+  min-width: 0;
+  color: var(--ship-text);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+}
+
 .ship-power-grid small { color: var(--ship-amber); white-space: nowrap; }
+
+.vira-shipcombat.ship-console [data-power-blocks] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.vira-shipcombat.ship-console [data-power-blocks] button {
+  flex: 0 0 0.9rem;
+  min-width: 0.9rem;
+  min-height: 1.1rem;
+  padding: 0;
+  border-color: var(--ship-border-bright);
+  background: #0a151c;
+  font-size: 0.6rem;
+}
+
+.vira-shipcombat.ship-console [data-power-blocks] button[aria-pressed="true"] {
+  color: #051211;
+  border-color: var(--ship-cyan);
+  background: var(--ship-cyan);
+  box-shadow: 0 0 5px rgb(62 232 208 / 40%);
+}
+
+.vira-shipcombat.ship-console [data-power-blocks] button:disabled {
+  border-style: dotted;
+}
+
+.vira-shipcombat.ship-console [data-power-effect] {
+  min-width: 3.8rem;
+  color: var(--ship-muted);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.61rem;
+  text-align: right;
+}
+
+.vira-shipcombat.ship-console [data-power-effect][data-state="invalid"],
+.vira-shipcombat.ship-console [data-power-blocks][data-state="invalid"] {
+  color: var(--ship-red);
+  border-color: var(--ship-red);
+}
 
 .ship-helm-layout,
 .ship-systems-layout,
 .ship-sensor-layout,
 .ship-damage-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
-  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
   align-items: start;
+  min-width: 0;
 }
 
-.ship-systems-layout { grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); }
+.ship-systems-layout { grid-template-columns: 1fr; }
 
 .ship-maneuver-card,
 .ship-flight-instruments,
-.ship-sensor-controls { display: grid; gap: 0.65rem; }
-
-.ship-vector-dial {
+.ship-sensor-controls {
   display: grid;
-  place-items: center;
-  min-height: 12rem;
-  border: 1px solid var(--ship-border);
-  border-radius: 50%;
-  background: repeating-radial-gradient(circle, transparent 0 22px, rgb(62 232 208 / 12%) 23px 24px), linear-gradient(90deg, transparent 49.7%, rgb(62 232 208 / 18%) 50%, transparent 50.3%), linear-gradient(transparent 49.7%, rgb(62 232 208 / 18%) 50%, transparent 50.3%);
-  color: var(--ship-cyan);
+  gap: 0.35rem;
 }
 
-.ship-vector-dial i { font-size: 2.2rem; transform: rotate(-45deg); filter: drop-shadow(0 0 8px var(--ship-cyan)); }
-.ship-vector-dial span { color: var(--ship-muted); font-family: var(--font-monospace, monospace); }
-.ship-admin-panel { margin-top: 0.75rem; }
-.ship-admin-panel summary,
+
 .ship-diagnostics > summary,
-.ship-console-config > summary { cursor: pointer; color: var(--ship-cyan); font-weight: 750; }
+.ship-console-config > summary {
+  cursor: pointer;
+  color: var(--ship-cyan);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
 
 .ship-preview-line {
-  min-height: 1.4rem;
-  padding: 0.35rem 0.5rem;
+  min-height: 1.25rem;
+  min-width: 0;
+  padding: 0.25rem 0.35rem;
+  overflow-wrap: anywhere;
   border-left: 2px solid var(--ship-cyan);
   color: var(--ship-muted);
   background: rgb(62 232 208 / 6%);
   font-family: var(--font-monospace, monospace);
-  font-size: 0.72rem;
+  font-size: 0.63rem;
 }
 
-.ship-preview-line[data-error="true"] { border-color: var(--ship-red); color: var(--ship-red); background: rgb(255 82 103 / 7%); }
+.ship-preview-line[data-error="true"] {
+  border-color: var(--ship-red);
+  color: var(--ship-red);
+  background: rgb(255 82 103 / 7%);
+}
 
-.ship-shield-card { display: grid; gap: 0.55rem; }
+.ship-shield-card { padding-block: 0.25rem; }
+
 .ship-shield-diagram {
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: auto auto auto;
-  gap: 0.5rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, auto);
+  gap: 0.28rem;
   align-items: stretch;
-  margin: 0.25rem 0;
+  min-width: 0;
+  margin: 0.15rem 0;
 }
 
 .ship-shield-core {
   display: grid;
-  grid-column: 2;
-  grid-row: 2;
+  position: absolute;
+  z-index: 1;
+  grid-area: auto;
+  min-height: 0;
   place-items: center;
-  min-height: 8.5rem;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2rem;
+  height: 2rem;
   border: 1px solid rgb(62 232 208 / 45%);
   border-radius: 50%;
   background: radial-gradient(circle, rgb(62 232 208 / 13%), transparent 68%);
   color: var(--ship-cyan);
-  box-shadow: inset 0 0 25px rgb(62 232 208 / 8%);
+  box-shadow: inset 0 0 15px rgb(62 232 208 / 8%);
 }
 
-.ship-shield-core i { font-size: 1.5rem; }
-.ship-shield-core strong { font-size: 1.5rem; }
-.ship-shield-core span { color: var(--ship-muted); font-size: 0.65rem; text-transform: uppercase; }
+.ship-shield-core i { font-size: 0.9rem; }
+.ship-shield-core strong { font-size: 1rem; }
+.ship-shield-core span, .ship-shield-core strong { display: none; }
 
 .ship-shield-sector {
   display: grid !important;
   align-content: center;
-  gap: 0.25rem !important;
-  padding: 0.45rem;
+  gap: 0.15rem !important;
+  min-width: 0;
+  padding: 0.28rem;
   border: 1px solid rgb(62 232 208 / 28%);
   border-radius: 3px;
   background: rgb(62 232 208 / 5%);
   text-align: center;
 }
 
-.ship-shield-sector[data-sector="fore"] { grid-column: 2; grid-row: 1; }
+.ship-shield-sector[data-sector="fore"] { grid-column: 1; grid-row: 1; }
 .ship-shield-sector[data-sector="port"] { grid-column: 1; grid-row: 2; }
-.ship-shield-sector[data-sector="starboard"] { grid-column: 3; grid-row: 2; }
-.ship-shield-sector[data-sector="aft"] { grid-column: 2; grid-row: 3; }
-.ship-shield-sector[data-sector="bubble"] { grid-column: 1 / 4; grid-row: 1 / 4; }
-.ship-shield-sector > span { color: var(--ship-cyan); text-transform: uppercase; }
-.ship-shield-sector > strong { color: var(--ship-text); font-family: var(--font-monospace, monospace); }
-.ship-shield-sector input { display: inline-block; width: 4.2rem; min-height: 1.6rem; margin: auto; padding: 0.15rem; text-align: center; }
-.ship-shield-sector small { color: var(--ship-muted); }
-.ship-shield-sector em { color: var(--ship-red); font-size: 0.67rem; }
+.ship-shield-sector[data-sector="starboard"] { grid-column: 2; grid-row: 1; }
+.ship-shield-sector[data-sector="aft"] { grid-column: 2; grid-row: 2; }
+.ship-shield-sector[data-sector="bubble"] { grid-column: 1 / -1; grid-row: 1 / -1; }
+.ship-shield-sector > span { color: var(--ship-cyan); font-size: 0.62rem; text-transform: uppercase; }
+.ship-shield-sector > strong { color: var(--ship-text); font-family: var(--font-monospace, monospace); font-size: 0.68rem; }
+.ship-shield-sector input[type="range"] { width: 100%; min-height: 1rem; margin: 0; padding: 0; }
+.ship-shield-sector > label { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem; font-size: 0.58rem; }
+.ship-shield-sector > label input { grid-column: 1 / -1; }
+.ship-shield-sector small { color: var(--ship-muted); font-size: 0.58rem; }
+.ship-shield-sector em { color: var(--ship-red); font-size: 0.58rem; }
 .ship-shield-diagram--bubble .ship-shield-core { display: none; }
+
+.ship-shield-adjust {
+  display: flex;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.ship-shield-adjust [data-shield-charge] {
+  min-width: 1.3rem;
+  min-height: 1.3rem;
+  padding: 0;
+}
+
+.vira-shipcombat.ship-console [data-shield-charge-value],
+.vira-shipcombat.ship-console [data-shield-unassigned] {
+  color: var(--ship-text);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.vira-shipcombat.ship-console [data-shield-unassigned] {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--ship-amber);
+  text-align: right;
+}
+
+.vira-shipcombat.ship-console [data-regen-value] {
+  color: var(--ship-cyan);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.62rem;
+}
+
+.ship-shield-sector input[type="range"] {
+  height: 1rem;
+  min-height: 1rem;
+  padding: 0;
+  border: 0;
+  accent-color: var(--ship-cyan);
+  appearance: none;
+}
+
+.ship-shield-sector input[type="range"]::-webkit-slider-runnable-track,
+.ship-shield-sector input[type="range"]::-moz-range-track {
+  height: 0.22rem;
+  border: 1px solid var(--ship-border-bright);
+  background: linear-gradient(90deg, var(--ship-cyan-soft) 0 var(--regen-limit, 100%), rgb(255 189 82 / 18%) var(--regen-limit, 100%) 100%);
+}
+
+.ship-shield-sector input[type="range"]::-webkit-slider-thumb {
+  width: 0.65rem;
+  height: 0.65rem;
+  margin-top: -0.24rem;
+  border: 1px solid var(--ship-cyan);
+  border-radius: 50%;
+  background: var(--ship-bg);
+  appearance: none;
+}
+
+.ship-shield-sector input[type="range"]::-moz-range-thumb {
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1px solid var(--ship-cyan);
+  border-radius: 50%;
+  background: var(--ship-bg);
+}
 
 .ship-radar {
   position: relative;
-  width: min(100%, 33rem);
+  width: min(100%, 15rem);
   aspect-ratio: 1;
   margin: 0 auto;
   overflow: hidden;
@@ -606,15 +1037,15 @@
     repeating-radial-gradient(circle, transparent 0 11.5%, rgb(62 232 208 / 18%) 11.8% 12.1%),
     radial-gradient(circle, rgb(62 232 208 / 8%), transparent 68%),
     #071014;
-  box-shadow: inset 0 0 45px rgb(62 232 208 / 10%), 0 0 20px rgb(62 232 208 / 5%);
+  box-shadow: inset 0 0 25px rgb(62 232 208 / 10%), 0 0 14px rgb(62 232 208 / 5%);
 }
 
 .ship-radar-axis { position: absolute; background: rgb(62 232 208 / 18%); }
 .ship-radar-axis--vertical { top: 0; bottom: 0; left: 50%; width: 1px; }
 .ship-radar-axis--horizontal { top: 50%; right: 0; left: 0; height: 1px; }
-.ship-radar-heading { position: absolute; top: 0.5rem; left: 50%; color: var(--ship-cyan); font: 700 0.62rem var(--font-monospace, monospace); transform: translateX(-50%); }
-.ship-radar-range { position: absolute; right: 8%; bottom: 8%; color: var(--ship-muted); font: 0.65rem var(--font-monospace, monospace); }
-.ship-radar-center { position: absolute; top: 50%; left: 50%; color: var(--ship-cyan); transform: translate(-50%, -50%) rotate(-45deg); filter: drop-shadow(0 0 6px var(--ship-cyan)); }
+.ship-radar-heading { position: absolute; top: 0.35rem; left: 50%; color: var(--ship-cyan); font: 700 0.52rem var(--font-monospace, monospace); transform: translateX(-50%); }
+.ship-radar-range { position: absolute; right: 8%; bottom: 8%; color: var(--ship-muted); font: 0.55rem var(--font-monospace, monospace); }
+.ship-radar-center { position: absolute; top: 50%; left: 50%; color: var(--ship-cyan); transform: translate(-50%, -50%) rotate(-45deg); filter: drop-shadow(0 0 5px var(--ship-cyan)); }
 
 .ship-radar-contact {
   position: absolute;
@@ -622,68 +1053,241 @@
   left: var(--contact-x);
   display: grid;
   place-items: center;
+  min-width: 1.2rem;
+  min-height: 1.2rem;
+  padding: 0;
   color: var(--ship-amber);
   transform: translate(-50%, -50%);
   filter: drop-shadow(0 0 5px currentcolor);
 }
 
-.ship-radar-contact.is-targeted { color: var(--ship-red); }
+.ship-radar-contact[aria-pressed="true"] {
+  border-color: var(--ship-cyan);
+  color: var(--ship-cyan);
+  background: rgb(62 232 208 / 18%);
+}
+
+.ship-radar-contact[data-foundry-targeted="true"],
+.ship-radar-contact.is-targeted {
+  color: var(--ship-red);
+}
+
 .ship-radar-contact.is-stale { color: var(--ship-muted); opacity: 0.65; }
-.ship-radar-contact small { position: absolute; top: 1rem; width: max-content; max-width: 8rem; overflow: hidden; font-size: 0.62rem; text-overflow: ellipsis; white-space: nowrap; }
+.vira-shipcombat.ship-console .ship-sensor-focus,
+.vira-shipcombat.ship-console [data-sensor-focus-panel] {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.35rem;
+  border: 1px solid var(--ship-border-bright);
+  background: rgb(62 232 208 / 5%);
+}
+
+.vira-shipcombat.ship-console [data-sensor-focus-panel] p {
+  color: var(--ship-muted);
+  font-size: 0.62rem;
+}
+
+.vira-shipcombat.ship-console [data-sensor-focus-panel] pre {
+  max-width: 100%;
+  max-height: 7rem;
+  margin: 0;
+  overflow: auto;
+  color: var(--ship-text);
+  font: 0.6rem var(--font-monospace, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vira-shipcombat.ship-console [data-sensor-focus-panel][hidden] { display: none; }
 
 .ship-contact-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 0.55rem;
-  margin-top: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.45rem;
 }
 
 .ship-contact-card {
-  padding: 0.65rem;
+  min-width: 0;
+  padding: 0.4rem;
   border: 1px solid var(--ship-border);
-  border-left: 3px solid var(--ship-amber);
+  border-left: 2px solid var(--ship-amber);
   background: var(--ship-panel);
 }
 
 .ship-contact-card.is-targeted { border-left-color: var(--ship-red); }
-.ship-contact-card header span { color: var(--ship-amber); font-size: 0.68rem; text-transform: uppercase; }
+.ship-contact-card header span { color: var(--ship-amber); font-size: 0.59rem; text-transform: uppercase; }
 
 .ship-weapon-list,
 .ship-condition-list {
   display: grid;
-  gap: 0.65rem;
-}
-
-.ship-weapon-list {
-  grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr));
-  align-items: start;
+  gap: 0.3rem;
+  min-width: 0;
 }
 
 .ship-weapon-card {
   position: relative;
   display: grid;
-  gap: 0.4rem;
-  padding: 0.6rem 0.65rem;
+  gap: 0;
+  min-width: 0;
+  min-height: 2.55rem;
+  padding: 0;
+  overflow: visible;
+}
+
+.ship-weapon-row {
+  position: relative;
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  min-height: 2.1rem;
+  padding: 0.1rem 0.35rem 0.1rem 0.45rem;
   overflow: hidden;
 }
-.ship-weapon-card::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--ship-amber); }
-.ship-weapon-card > header { margin-bottom: 0.15rem; }
-.ship-weapon-stats { display: grid; grid-template-columns: 2fr repeat(5, 1fr); gap: 0.25rem; }
-.ship-weapon-stats > div { display: grid; gap: 0.05rem; min-width: 0; padding: 0.25rem 0.3rem; border: 1px solid rgb(142 165 173 / 14%); background: rgb(0 0 0 / 12%); }
-.ship-weapon-stats span { color: var(--ship-muted); font-size: 0.57rem; text-transform: uppercase; }
-.ship-weapon-stats strong { overflow: hidden; color: var(--ship-text); font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
-.ship-readiness { display: grid; gap: 0.15rem; }
-.ship-weapon-card .ship-form-grid { gap: 0.35rem; margin-top: 0.15rem; }
-.ship-weapon-card label { gap: 0.15rem; font-size: 0.63rem; }
+
+.ship-weapon-card::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  content: "";
+  background: var(--ship-amber);
+}
+
+
+.ship-weapon-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
+.ship-weapon-row > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.03rem 0.3rem;
+  min-width: 0;
+}
+
+.ship-weapon-row > div > h3 {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.ship-weapon-row > div > .ship-status-chip {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.ship-weapon-row > div > small {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ship-muted);
+  font: 0.55rem var(--font-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ship-weapon-row > select {
+  width: auto;
+  min-width: 3.8rem;
+  max-width: 5rem;
+  padding-inline: 0.25rem;
+}
+
+.ship-weapon-row > .ship-fire-button {
+  width: auto;
+  min-width: 4.2rem;
+}
+
+.ship-weapon-card label,
+.ship-weapon-row label { gap: 0.1rem; font-size: 0.58rem; }
 .ship-weapon-card input,
 .ship-weapon-card select,
-.ship-weapon-card button { min-height: 1.8rem; }
-.ship-weapon-power-controls { grid-template-columns: 1fr 1fr auto; align-items: end; }
-.ship-weapon-footer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 0.4rem; }
-.ship-weapon-footer .ship-preview-line { min-height: 1.8rem; }
-.ship-fire-button { width: auto; min-width: 10rem; min-height: 1.8rem !important; color: #1b1100 !important; background: linear-gradient(180deg, #ffd069, #d79026) !important; border-color: #ffd06b !important; }
+.ship-weapon-card button,
+.ship-weapon-row input,
+.ship-weapon-row select,
+.ship-weapon-row button { min-height: 1.55rem; }
 
-.ship-condition-card { border-left: 3px solid var(--ship-amber); }
+.ship-weapon-secondary {
+  min-width: 0;
+  margin-top: 0;
+  border-top: 1px solid rgb(142 165 173 / 12%);
+}
+
+.ship-weapon-secondary > summary {
+  min-height: 1rem;
+  padding: 0.08rem 0;
+  color: var(--ship-cyan);
+  cursor: pointer;
+  font: 700 0.53rem/1 var(--font-monospace, monospace);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ship-fire-button { width: auto; min-width: 4.4rem; min-height: 1.55rem !important; color: #1b1100 !important; background: linear-gradient(180deg, #ffd069, #d79026) !important; border-color: #ffd06b !important; }
+
+.vira-shipcombat.ship-console [data-target-lamp] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.35rem;
+  margin-bottom: 0.35rem;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid var(--ship-border);
+  color: var(--ship-muted);
+  background: rgb(0 0 0 / 15%);
+  font: 700 0.58rem var(--font-monospace, monospace);
+  text-transform: uppercase;
+}
+
+
+.vira-shipcombat.ship-console [data-target-lamp]::before {
+  width: 0.55rem;
+  height: 0.55rem;
+  content: "";
+  border: 1px solid currentcolor;
+  border-radius: 50%;
+  background: currentcolor;
+  box-shadow: 0 0 5px currentcolor;
+}
+
+.vira-shipcombat.ship-console [data-target-lamp][data-state="none"] { color: var(--ship-red); }
+.vira-shipcombat.ship-console [data-target-lamp][data-state="one"] { color: var(--ship-green); }
+.vira-shipcombat.ship-console [data-target-lamp][data-state="multiple"] { color: #c38cff; }
+.vira-shipcombat.ship-console [data-target-lamp][data-state="multiple"]::before { border-radius: 2px; transform: rotate(45deg); }
+
+.vira-shipcombat.ship-console [data-weapon-validity] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  min-width: 0;
+  color: var(--ship-muted);
+  font: 700 0.56rem var(--font-monospace, monospace);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.vira-shipcombat.ship-console [data-weapon-validity][data-state="valid"] { color: var(--ship-green); }
+.vira-shipcombat.ship-console [data-weapon-validity][data-state="invalid"] { color: var(--ship-red); }
+.vira-shipcombat.ship-console [data-weapon-validity][data-state="pending"] { color: var(--ship-amber); }
+
+.vira-shipcombat.ship-console [data-aim-slot] {
+  display: none;
+  min-width: 7rem;
+  flex: 1 1 9rem;
+}
+
+.vira-shipcombat.ship-console [data-aim-slot] select {
+  width: 100%;
+}
+.vira-shipcombat.ship-console .ship-weapon-card:has([data-aim-enabled]:checked) [data-aim-slot],
+.vira-shipcombat.ship-console .ship-weapon-row:has([data-aim-enabled]:checked) [data-aim-slot] { display: grid; }
+
+.ship-condition-card { border-left: 2px solid var(--ship-amber); }
 .ship-condition-card--critical,
 .ship-condition-card--destroyed,
 .ship-condition-card--catastrophic { border-left-color: var(--ship-red); }
@@ -692,242 +1296,388 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  min-height: 4rem;
+  gap: 0.35rem;
+  min-height: 2.6rem;
   color: var(--ship-muted);
+  font-size: 0.68rem;
   text-align: center;
 }
 
+.vira-shipcombat.ship-console #panel-refit,
+.vira-shipcombat.ship-console #panel-log-config { overflow-y: auto; }
+
 .ship-console-log {
   display: grid;
-  gap: 0.45rem;
-  max-height: 24rem;
+  gap: 0.3rem;
+  max-height: 20rem;
   margin: 0;
   padding: 0;
   overflow: auto;
   list-style: none;
 }
 
-.ship-console-log li { padding: 0.5rem; border-left: 2px solid var(--ship-cyan); background: rgb(0 0 0 / 15%); }
+.ship-console-log li { padding: 0.35rem; border-left: 2px solid var(--ship-cyan); background: rgb(0 0 0 / 15%); }
 .ship-console-log li.is-error { border-color: var(--ship-red); }
-.ship-console-log li > div { display: flex; justify-content: space-between; gap: 0.5rem; }
-.ship-console-log li span { color: var(--ship-muted); font-size: 0.7rem; }
+.ship-console-log li > div { display: flex; justify-content: space-between; gap: 0.35rem; }
+.ship-console-log li span { color: var(--ship-muted); font-size: 0.6rem; }
 .ship-console-log pre,
 .ship-console-state,
-.ship-operation pre { max-width: 100%; max-height: 20rem; padding: 0.5rem; overflow: auto; border: 1px solid var(--ship-border); background: #070b0f; color: #b9d1d8; font: 0.72rem var(--font-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
-.ship-console-log button { margin-top: 0.4rem; }
+.ship-operation pre { max-width: 100%; max-height: 16rem; padding: 0.35rem; overflow: auto; border: 1px solid var(--ship-border); background: #070b0f; color: #b9d1d8; font: 0.65rem var(--font-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ship-console-log button { margin-top: 0.25rem; }
 
 .ship-console-specifications,
 .ship-diagnostics,
-.ship-console-config { margin-top: 0.65rem; }
-.ship-console-specification-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
-.ship-console-specification-groups h4 { margin-bottom: 0.4rem; color: var(--ship-cyan); }
-.ship-console-specification-groups dl > div { display: grid; grid-template-columns: minmax(6.5rem, 0.8fr) minmax(0, 1.2fr); gap: 0.4rem; padding: 0.15rem 0; border-bottom: 1px solid rgb(142 165 173 / 10%); }
-.ship-console-specification-groups dt { color: var(--ship-muted); font-size: 0.7rem; }
-.ship-console-specification-groups dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.72rem; }
+.ship-console-config { margin-top: 0.45rem; }
 
-.ship-console-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.55rem; margin-top: 0.65rem; }
-.ship-operation fieldset { display: grid; gap: 0.4rem; margin: 0; border: 1px solid var(--ship-border); }
+.ship-console-specification-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.ship-console-specification-groups :is(h3, h4) {
+  margin-bottom: 0.25rem;
+  color: var(--ship-cyan);
+  font-size: 0.68rem;
+}
+
+.ship-console-specification-groups dl > div {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.3rem;
+  padding: 0.1rem 0;
+  border-bottom: 1px solid rgb(142 165 173 / 10%);
+}
+
+.vira-shipcombat.ship-console .ship-refit-card > details {
+  grid-area: meta;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.vira-shipcombat.ship-console .ship-refit-card > details > summary {
+  color: var(--ship-cyan);
+  cursor: pointer;
+  font: 700 0.56rem var(--font-monospace, monospace);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ship-console-specification-groups dt { color: var(--ship-muted); font-size: 0.6rem; }
+.ship-console-specification-groups dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.62rem; }
+
+.ship-overview-weapons {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+
+.ship-overview-weapons > header { margin-bottom: 0.1rem; }
+.ship-overview-weapons > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.6fr);
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgb(142 165 173 / 12%);
+}
+.ship-overview-weapons > div strong,
+.ship-overview-weapons > div span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ship-overview-weapons > div strong { color: var(--ship-text); font-family: var(--font-serif, Georgia, serif); font-size: 0.7rem; }
+
+.ship-overview-weapons > div span { color: var(--ship-muted); font-size: 0.61rem; }
+
+.ship-console-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.35rem; margin-top: 0.45rem; }
+.ship-operation fieldset { display: grid; gap: 0.3rem; margin: 0; border: 1px solid var(--ship-border); }
 .ship-operation legend { color: var(--ship-cyan); }
 .ship-console-help,
-.ship-console-reason { color: var(--ship-muted); font-size: 0.7rem; overflow-wrap: anywhere; }
+.ship-console-reason { color: var(--ship-muted); font-size: 0.62rem; overflow-wrap: anywhere; }
 .ship-console-reason { color: var(--ship-amber); }
-.ship-checkbox { display: flex !important; align-items: center; gap: 0.45rem !important; }
+.ship-checkbox { display: flex !important; align-items: center; gap: 0.35rem !important; }
 .ship-checkbox input { width: auto; }
 
-@media (max-width: 900px) {
-  .vira-shipcombat.ship-console { min-width: 560px; }
-  .ship-systems-layout,
-  .ship-sensor-layout,
-  .ship-damage-layout { grid-template-columns: 1fr; }
-  .ship-power-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .ship-weapon-stats { grid-template-columns: repeat(3, 1fr); }
-  .ship-console-specification-groups { grid-template-columns: 1fr; }
-}
-
-@media (max-width: 680px) {
-  .vira-shipcombat.ship-console { min-width: 360px; }
-  .ship-status-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .ship-console-tabs { overflow-x: auto; }
-  .ship-console-tabs button { flex: 0 0 auto; }
-  .ship-dashboard-grid,
-  .ship-operator-grid,
-  .ship-helm-layout { grid-template-columns: 1fr; }
-  .ship-form-grid,
-  .ship-vector-control,
-  .ship-power-grid { grid-template-columns: 1fr 1fr; }
-  .ship-shield-diagram { grid-template-columns: 1fr 1fr; grid-template-rows: auto; }
-  .ship-shield-core { display: none; }
-  .ship-shield-sector[data-sector] { grid-column: auto; grid-row: auto; }
-  .ship-weapon-stats { grid-template-columns: repeat(2, 1fr); }
-  .ship-weapon-power-controls { grid-template-columns: 1fr; }
-}
-
-/* Ship builder and structured component editor */
-.ship-refit-layout,
-.ship-refit-layout *,
-.ship-component-editor,
-.ship-component-editor * {
+/* Compact slot rows keep maintenance readable without affecting component sheets. */
+.vira-shipcombat.ship-console .ship-refit-layout,
+.vira-shipcombat.ship-console .ship-refit-layout * {
   box-sizing: border-box;
 }
 
-.ship-refit-layout {
+.vira-shipcombat.ship-console .ship-refit-layout {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.55rem;
   min-width: 0;
 }
 
-.ship-refit-grid {
+.vira-shipcombat.ship-console .ship-refit-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.25rem;
   align-items: stretch;
 }
 
-.ship-refit-card {
+.vira-shipcombat.ship-console .ship-refit-grid {
+  align-content: start;
+  align-self: start;
+  height: max-content;
+}
+
+.vira-shipcombat.ship-console .ship-refit-card {
+  position: relative;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 0.55rem;
+  grid-template-columns: minmax(6.25rem, 0.78fr) minmax(0, 1.65fr) auto;
+  grid-template-areas:
+    "head head actions"
+    "meta installed drop";
+  align-items: center;
+  align-content: start;
+  gap: 0.25rem 0.5rem;
   min-width: 0;
-  padding: 0.7rem;
+  padding: 0.35rem 0.45rem;
   border: 1px solid var(--ship-border);
-  border-radius: 4px;
+  border-radius: 3px;
   background: linear-gradient(145deg, rgb(255 255 255 / 3%), transparent 70%), var(--ship-panel);
 }
 
-.ship-refit-card > header {
+.vira-shipcombat.ship-console .ship-refit-card > header {
+  grid-area: head;
   display: flex;
-  align-items: flex-start;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.55rem;
-  padding-bottom: 0.45rem;
-  border-bottom: 1px solid rgb(142 165 173 / 14%);
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
 }
 
-.ship-refit-card > header h3,
-.ship-refit-card > header p,
-.ship-refit-card > p {
+.vira-shipcombat.ship-console .ship-refit-card > header h3,
+.vira-shipcombat.ship-console .ship-refit-card > header p,
+.vira-shipcombat.ship-console .ship-refit-card > p {
   margin: 0;
 }
 
-.ship-refit-card--empty {
+.vira-shipcombat.ship-console .ship-refit-card--empty {
   border-style: dashed;
   background: rgb(62 232 208 / 3%);
 }
 
-.ship-refit-card--empty > header {
-  color: var(--ship-muted);
-}
+.vira-shipcombat.ship-console .ship-refit-card--empty > header { color: var(--ship-muted); }
 
-.ship-refit-meta {
+.vira-shipcombat.ship-console .ship-refit-meta {
+  grid-area: meta;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem 0.6rem;
+  gap: 0.15rem 0.35rem;
+  min-width: 0;
   margin: 0;
   color: var(--ship-muted);
-  font-size: 0.72rem;
+  font-size: 0.58rem;
 }
 
-.ship-refit-meta > div {
+.vira-shipcombat.ship-console .ship-refit-meta > div {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.25rem;
+  gap: 0.15rem;
 }
 
-.ship-refit-meta dt {
+.vira-shipcombat.ship-console .ship-refit-meta dt {
   color: var(--ship-muted);
   text-transform: uppercase;
-  letter-spacing: 0.055em;
+  letter-spacing: 0.045em;
 }
 
-.ship-refit-meta dd {
+.vira-shipcombat.ship-console .ship-refit-meta dd {
   min-width: 0;
   margin: 0;
   color: var(--ship-text);
   overflow-wrap: anywhere;
 }
 
-.ship-refit-drop {
+.vira-shipcombat.ship-console .ship-refit-drop {
+  grid-area: drop;
   display: grid;
   place-items: center;
-  min-height: 5rem;
-  padding: 0.8rem;
+  min-height: 1.5rem;
+  min-width: 5.5rem;
+  padding: 0.2rem 0.35rem;
   border: 1px dashed var(--ship-border-bright);
-  border-radius: 4px;
+  border-radius: 3px;
   color: var(--ship-muted);
   background: rgb(0 0 0 / 14%);
+  font-size: 0.58rem;
   text-align: center;
   transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
 }
 
-.ship-refit-drop:is(:hover, :focus-within),
-.ship-refit-drop.is-dragover,
-[data-refit-drop].is-dragover {
+.vira-shipcombat.ship-console .ship-refit-card:not(.ship-refit-card--empty) > .ship-refit-drop {
+  display: none;
+}
+
+.vira-shipcombat.ship-console .ship-refit-card[data-refit-drop].is-dragover {
+  border-color: var(--ship-cyan);
+  background: var(--ship-cyan-soft);
+  box-shadow: inset 0 0 0 1px rgb(62 232 208 / 25%);
+}
+
+.vira-shipcombat.ship-console .ship-refit-card[data-refit-drop].is-dragover::after {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.2rem;
+  color: var(--ship-cyan);
+  content: "REPLACE";
+  font: 800 0.53rem var(--font-monospace, monospace);
+  letter-spacing: 0.08em;
+}
+
+.vira-shipcombat.ship-console .ship-refit-card--empty[data-refit-drop] {
+  border-color: var(--ship-border-bright);
+}
+
+.vira-shipcombat.ship-console .ship-refit-card--empty[data-refit-drop]:is(:hover, :focus-within),
+.vira-shipcombat.ship-console .ship-refit-card--empty[data-refit-drop].is-dragover,
+.vira-shipcombat.ship-console .ship-refit-drop:is(:hover, :focus-within),
+.vira-shipcombat.ship-console .ship-refit-drop.is-dragover {
   border-color: var(--ship-cyan);
   color: var(--ship-text);
   background: var(--ship-cyan-soft);
 }
 
-.ship-refit-layout [data-refit-item] {
-  min-width: 0;
-}
-
-.ship-refit-installed {
+.vira-shipcombat.ship-console .ship-refit-installed {
+  grid-area: installed;
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr);
-  gap: 0.55rem;
+  grid-template-columns: 1.7rem minmax(0, 1fr) auto;
+  gap: 0.3rem;
   align-items: center;
   width: 100%;
   min-width: 0;
-  padding: 0.45rem;
+  padding: 0.2rem;
   text-align: left;
 }
 
-.ship-refit-installed img {
-  width: 2.5rem;
-  height: 2.5rem;
+.vira-shipcombat.ship-console .ship-refit-installed img {
+  width: 1.7rem;
+  height: 1.7rem;
   border: 1px solid var(--ship-border-bright);
-  border-radius: 3px;
+  border-radius: 2px;
   object-fit: cover;
   background: #060a0e;
 }
 
-.ship-refit-installed :is(span, strong) {
+.vira-shipcombat.ship-console .ship-refit-installed :is(span, strong) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ship-refit-layout [data-refit-remove],
-.ship-refit-layout .ship-refit-remove,
-.ship-component-remove {
+.vira-shipcombat.ship-console .ship-refit-card > .ship-action-row {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.2rem;
+  margin: 0;
+}
+
+.vira-shipcombat.ship-console .ship-refit-card > .ship-action-row button {
+  min-height: 1.45rem;
+  padding: 0.15rem 0.3rem;
+  white-space: nowrap;
+}
+
+.vira-shipcombat.ship-console .ship-refit-layout [data-refit-remove] {
   border-color: rgb(255 82 103 / 55%) !important;
   color: var(--ship-red) !important;
   background: rgb(255 82 103 / 8%) !important;
 }
 
-.ship-refit-layout [data-refit-remove]:is(:hover, :focus-visible):not(:disabled),
-.ship-refit-layout .ship-refit-remove:is(:hover, :focus-visible):not(:disabled),
-.ship-component-remove:is(:hover, :focus-visible):not(:disabled) {
+.vira-shipcombat.ship-console .ship-refit-layout [data-refit-remove]:is(:hover, :focus-visible):not(:disabled) {
   border-color: var(--ship-red) !important;
   color: #fff !important;
   background: rgb(255 82 103 / 18%) !important;
 }
 
-.ship-refit-denial,
-[data-refit-denial],
-.ship-component-denial {
+.vira-shipcombat.ship-console .ship-refit-denial,
+.vira-shipcombat.ship-console [data-refit-denial] {
   margin: 0;
-  padding: 0.6rem 0.7rem;
+  padding: 0.4rem 0.5rem;
   border: 1px solid rgb(255 189 82 / 45%);
-  border-left: 3px solid var(--ship-amber);
+  border-left: 2px solid var(--ship-amber);
   border-radius: 3px;
   color: var(--ship-amber);
   background: rgb(255 189 82 / 8%);
   overflow-wrap: anywhere;
 }
 
+.vira-shipcombat.ship-console .ship-refit-card[data-refit-disabled] {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+@container ship-console (max-width: 430px) {
+  .ship-console-header {
+    grid-template-columns: 2.3rem minmax(0, 1fr) auto;
+    gap: 0.35rem;
+    padding-inline: 0.45rem;
+  }
+
+  .ship-console-portrait {
+    width: 2.3rem;
+    height: 2.3rem;
+  }
+
+  .ship-console-heading h1 { font-size: 0.98rem; }
+  .ship-status-meter { padding-inline: 0.28rem; }
+  .ship-status-meter > div:first-child { font-size: 0.52rem; }
+  .ship-console-panel { padding-inline: 0.45rem; }
+  .ship-dashboard-grid,
+  .ship-operator-grid,
+  .ship-helm-layout,
+  .ship-systems-layout,
+  .ship-damage-layout { grid-template-columns: 1fr; }
+
+  .ship-shield-diagram {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, auto);
+  }
+
+  .ship-shield-core { display: none; }
+  .ship-shield-sector[data-sector] { grid-column: auto; grid-row: auto; }
+  .ship-shield-sector[data-sector="bubble"] { grid-column: 1 / -1; grid-row: 1 / -1; }
+  .ship-contact-list { grid-template-columns: 1fr; }
+  .ship-console-specification-groups { grid-template-columns: 1fr; }
+  .ship-power-grid > :is(label, div) { grid-template-columns: minmax(4.5rem, 0.6fr) minmax(0, 1.4fr); }
+  .vira-shipcombat.ship-console [data-power-effect] { grid-column: 2; text-align: left; }
+  .vira-shipcombat.ship-console .ship-refit-card {
+    grid-template-columns: minmax(5rem, 0.8fr) minmax(0, 1.2fr);
+    grid-template-areas:
+      "head head"
+      "installed installed"
+      "meta meta"
+      "drop drop";
+  }
+}
+
+@media (min-width: 700px) {
+  .ship-console-panel { padding-inline: 0.8rem; }
+  .ship-weapon-list { gap: 0.35rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ship-console-layout *,
+  .ship-console-layout *::before,
+  .ship-console-layout *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
 .vira-shipcombat.ship-component-sheet {
   --ship-bg: #080d12;
   --ship-panel: #101820;

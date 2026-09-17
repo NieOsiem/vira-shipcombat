@@ -579,6 +579,18 @@ export async function submitShipOperation(request) {
   return requestRemoteShipOperation(canonical, globalThis.game?.user?.id);
 }
 
+/** Build a GM automation request at the queue head, against the latest document revisions. */
+export async function submitAutomaticShipOperation(buildRequest) {
+  if (!isActiveGM()) return null;
+  if (!initialized) await initializeShipAuthority();
+  return enqueue(async () => {
+    if (!isActiveGM()) return null;
+    const request = await buildRequest();
+    if (!request) return null;
+    return processRequest(cloneDocumentData(request), globalThis.game.user.id);
+  });
+}
+
 function rollbackRequestId(operationId, suppliedId) {
   return suppliedId || `rollback:${operationId}`;
 }

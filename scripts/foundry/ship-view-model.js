@@ -1,7 +1,7 @@
 import { getPowerState } from "../rules/power.js";
 import { FAULT_CHANNELS, HAZARD_CHANNELS } from "../rules/conditions.js";
 import { getCurrentSignature, getSensorStats, sanitizeTrack, TRACK_STATUS } from "../rules/sensors.js";
-import { previewDefenseRoute } from "../rules/shields.js";
+import { previewDefenseRoute, allocateRegeneration } from "../rules/shields.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
 
 const POWER_SYSTEMS = Object.freeze([
@@ -23,6 +23,17 @@ const PHASE_LABELS = new Map([
   ["active", "Active Phase"],
   ["end", "End Phase"],
 ]);
+
+// Priorities are permutations of installed hardware, never of stale state keys.
+export function powerPriorities(config, state, staged = {}) {
+  const order = (eligible, preferred) => [...new Set([
+    ...(preferred ?? []).filter((id) => eligible.includes(id)), ...eligible,
+  ])];
+  return {
+    sheddingPriority: order(POWER_SYSTEMS.map(([id]) => id), staged.sheddingPriority ?? state?.sheddingPriority ?? config?.sheddingPriority),
+    weaponPriority: order((config?.components?.weapons ?? []).map((weapon) => weapon.id), staged.weaponPriority ?? state?.weaponPriority ?? config?.weaponPriority),
+  };
+}
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -178,8 +189,7 @@ function powerView(config, state) {
     label: `${index + 1}`,
     options: entries.map((entry) => ({ ...entry, selected: entry.id === selectedId })),
   }));
-  const sheddingPriority = state?.sheddingPriority ?? config?.sheddingPriority ?? systems.map(({ id }) => id);
-  const weaponPriority = state?.weaponPriority ?? config?.weaponPriority ?? weapons.map(({ id }) => id);
+  const { sheddingPriority, weaponPriority } = powerPriorities(config, state);
   return {
     ...powerState,
     meter: meter(powerState.committed, powerState.ceilings.maximum, powerState.redlining ? "danger" : "power"),
@@ -211,16 +221,21 @@ function shieldView(config, state) {
       sectors: [],
       total: 0,
       budget: 0,
+      regeneration: 0,
       meter: meter(0, 0, "shield"),
     };
   }
   const route = previewDefenseRoute(config, state, {});
+  const regeneration = whole(shield.tiers?.find((tier) => tier.power === state?.power?.shields)?.regeneration);
+  const assigned = allocateRegeneration(regeneration, route.regenerationAllocation);
   const sectors = Object.keys(route.charge).map((id) => ({
     id,
     label: SECTOR_LABELS[id] ?? id,
     charge: whole(route.charge[id]),
     capacity: whole(route.capacities[id]),
-    allocation: whole(state?.shields?.regenerationAllocation?.[id], id === "bubble" ? 100 : 0),
+    allocation: route.regenerationAllocation[id],
+    regeneration: assigned[id],
+    canReceive: whole(state?.shields?.collapse?.[id]) === 0 && route.capacities[id] > 0,
     collapse: whole(state?.shields?.collapse?.[id]),
     collapseLabel: availabilityLabel(state?.shields?.collapse?.[id]),
     meter: meter(route.charge[id], route.capacities[id], state?.shields?.collapse?.[id] > 0 ? "danger" : "shield"),
@@ -228,6 +243,7 @@ function shieldView(config, state) {
   return {
     topology: shield.topology ?? "directional",
     directional: shield.topology !== "bubble",
+    regeneration,
     sectors,
     total: whole(route.totalCharge),
     budget: whole(shield.totalBudget),
@@ -258,6 +274,7 @@ function weaponViews(config, state, powerState) {
       label: weapon.label ?? weapon.id,
       hardpoint: hardpoint?.label ?? weapon.regions?.join(" / ") ?? "Hardpoint",
       status,
+      setting: status === "off" ? "off" : current.mode ?? "nominal",
       statusLabel: status === "booting" ? `Booting · ${availabilityLabel(current.bootCounter)}` : status,
       online: status === "online",
       off: status === "off",
@@ -407,10 +424,29 @@ export function buildShipConsoleView(config, state, { token = null, targetLabels
   };
   const contacts = contactViews(state, token, sensor, targetLabels);
   const conditions = conditionViews(config, state);
+  const combat = globalThis.game?.combat;
+  const combatants = Array.isArray(combat?.combatants) ? combat.combatants : combat?.combatants?.contents ?? Array.from(combat?.combatants?.values?.() ?? []);
+  const inCombat = Boolean(token && combatants.some((entry) => entry.tokenId === token.id || entry.token?.uuid === token.uuid));
+  const active = inCombat && (combat?.combatant?.tokenId === token.id || combat?.combatant?.token?.uuid === token.uuid);
   const speed = Math.hypot(finite(state?.velocity?.x), finite(state?.velocity?.y));
   const heat = meter(state?.heat, config?.heatCapacity, finite(state?.heat) > finite(config?.heatCapacity) ? "danger" : "heat");
   const hull = meter(state?.hull, config?.maxHull, finite(state?.hull) <= finite(config?.maxHull) * 0.25 ? "danger" : "hull");
   return {
+    combat: {
+      inCombat, active, round: inCombat ? whole(combat.round) : 0,
+      label: inCombat ? `COMBAT · ROUND ${whole(combat.round)} · ${active ? "ACTIVE" : "WAITING"}` : "OUTSIDE COMBAT",
+    },
+    importantDamage: [
+      ...(config?.components?.weapons ?? []).filter((weapon) => state?.weapons?.[weapon.id]?.status !== "online").map((weapon) => ({
+        label: weapon.label ?? weapon.id, componentLabel: "Weapon", statusLabel: state?.weapons?.[weapon.id]?.status ?? "off",
+      })),
+      ...[["shields", config?.components?.shield], ["sensors", config?.components?.sensor], ["cooling", config?.components?.cooling]].filter(([system, component]) => !component || finite(state?.power?.[system]) === 0).map(([system, component]) => ({
+        label: component?.label ?? system, componentLabel: "System", statusLabel: component ? "Offline" : "Not installed",
+      })),
+      ...Object.entries(config?.components?.drives ?? {}).filter(() => finite(state?.power?.engines) === 0).map(([role, component]) => ({
+        label: component.label ?? role, componentLabel: "Drive", statusLabel: "Offline",
+      })),
+    ],
     status: {
       hull,
       heat,

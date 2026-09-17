@@ -4,7 +4,7 @@ import { materializeShipConfig } from "../model/equipment.js";
 import { validateComponentItem, validateEffectiveLoadout } from "../model/validation.js";
 import { nativeVehicleFieldChanges } from "../model/native-vehicle.js";
 
-import { submitShipOperation } from "../state/action-queue.js";
+import { submitAutomaticShipOperation, submitShipOperation } from "../state/action-queue.js";
 import { isActiveGM } from "../socket.js";
 import { createGmEventMessages, publishOperationEvents } from "./chat.js";
 import { isInternalComponentMutation, initializeShipActor } from "./initialization.js";
@@ -15,6 +15,19 @@ let hooksRegistered = false;
 let hookWork = Promise.resolve();
 const INITIATIVE_PATCH = Symbol.for(`${MODULE_ID}.shipInitiativePatch`);
 let activeGmAuthority = false;
+let consoleRefreshPending = false;
+const deletedCombats = new WeakSet();
+const removedCombatants = new WeakSet();
+
+function refreshConsoles() {
+  if (consoleRefreshPending) return;
+  consoleRefreshPending = true;
+  setTimeout(() => {
+    consoleRefreshPending = false;
+    // No snapshots cross this hook: each console rebuilds its own sanitized view.
+    Hooks.callAll?.("viraShipCombatConsoleRefresh");
+  }, 0);
+}
 
 function activeGm() {
   return isActiveGM();
@@ -241,9 +254,11 @@ function combatantToken(combatant) {
   return isShipToken(token) ? token : null;
 }
 
-function combatantByState(combat, state) {
-  if (!state?.combatantId) return null;
-  return combat.combatants.get(state.combatantId) ?? null;
+function combatState(combat) {
+  return {
+    round: combat.round ?? 0,
+    combatantId: combat.combatant?.id ?? combat.current?.combatantId ?? null,
+  };
 }
 
 function turnKey(combat, state, combatant) {
@@ -279,18 +294,32 @@ async function submitLifecycle(combat, combatant, type, key) {
   const token = combatantToken(combatant);
   if (!token) return null;
   const targetTokens = operationTargetTokens(combat, token, type);
-  for (const involved of [token, ...targetTokens]) await initializeTokenShipData(involved);
-  const expectedRevisions = Object.fromEntries([token, ...targetTokens].map((involved) => [
-    involved.uuid,
-    Number(involved.actor.system.shipCombat?.state?.revision ?? 0),
-  ]));
-  const response = await submitShipOperation({
-    id: operationId(combat, combatant, key, type),
-    type,
-    sourceUuid: token.uuid,
-    targetUuids: targetTokens.map((target) => target.uuid),
-    expectedRevisions,
-    payload: lifecyclePayload(type, key),
+  const response = await submitAutomaticShipOperation(async () => {
+    if (["combat.enter", "phase.start"].includes(type)
+      && (deletedCombats.has(combat) || removedCombatants.has(combatant))) return null;
+    for (const involved of [token, ...targetTokens]) await initializeTokenShipData(involved);
+    const state = token.actor.system.shipCombat.state;
+    // These guards run inside the operation queue, not against a stale hook snapshot.
+    if (type === "combat.enter" && state.phase !== "outsideCombat") return null;
+    if (type === "combat.leave" && state.phase === "outsideCombat") return null;
+    if (type === "phase.start" && (state.phase !== "start" || state.turnKey === key)) return null;
+    if (type === "phase.coast" && (state.phase !== "active" || state.turnKey !== key)) return null;
+    if (type === "phase.end" && (state.phase !== "end" || state.turnKey !== key)) return null;
+    const expectedRevisions = Object.fromEntries([token, ...targetTokens].map((involved) => [
+      involved.uuid,
+      Number(involved.actor.system.shipCombat?.state?.revision ?? 0),
+    ]));
+    // Revision-scoped IDs allow legitimate re-entry after a combat reset, while
+    // the queue-head phase/turn guards suppress duplicate hooks and handoffs.
+    const idKey = `${key}:${state.revision}`;
+    return {
+      id: operationId(combat, combatant, idKey, type),
+      type,
+      sourceUuid: token.uuid,
+      targetUuids: targetTokens.map((target) => target.uuid),
+      expectedRevisions,
+      payload: lifecyclePayload(type, key),
+    };
   });
   if (!response?.ok && response?.error) {
     await createGmEventMessages([{
@@ -298,20 +327,46 @@ async function submitLifecycle(combat, combatant, type, key) {
       title: "Ship combat phase failed",
       message: response.error.message,
     }]);
+    throw new Error(response.error.message);
   }
   return response;
 }
 
-async function enterCombatants(combat) {
-  for (const combatant of combat.combatants) {
-    if (!combatantToken(combatant)) continue;
+async function reconcileCombat(combat, combatants, current) {
+  if (deletedCombats.has(combat)) return;
+  combatants = combatants.filter((entry) => !removedCombatants.has(entry));
+  if (!current.round) {
+    for (const combatant of combatants) await leaveCombatant(combat, combatant);
+    return;
+  }
+  for (const combatant of combatants) {
+    const token = combatantToken(combatant);
+    if (!token) continue;
+    const state = token.actor.system.shipCombat?.state;
+    const key = turnKey(combat, current, combatant);
+    if (["active", "end"].includes(state?.phase)
+      && (combatant.id !== current.combatantId || state.turnKey !== key)) {
+      await finishTurn(combat, combatant, state);
+    }
     await submitLifecycle(combat, combatant, "combat.enter", "combat");
   }
+  const currentCombatant = combatants.find((entry) => entry.id === current.combatantId);
+  if (currentCombatant) await beginTurn(combat, currentCombatant, current);
+}
+
+function scheduleCombat(combat) {
+  // V14's updateCombat hook runs in super._onUpdate, before current/turns are
+  // rebuilt. Capture after that synchronous stack, never retain mutable history.
+  queueMicrotask(() => {
+    const combatants = collectionValues(combat.combatants);
+    const current = combatState(combat);
+    schedule("Failed to synchronize ship combat", () => reconcileCombat(combat, combatants, current));
+  });
 }
 
 async function finishTurn(combat, combatant, state) {
   if (!combatantToken(combatant)) return;
-  const key = turnKey(combat, state, combatant);
+  const key = state?.turnKey ?? turnKey(combat, state, combatant);
   await submitLifecycle(combat, combatant, "phase.coast", key);
   await submitLifecycle(combat, combatant, "phase.end", key);
 }
@@ -325,15 +380,10 @@ async function leaveCombatant(combat, combatant) {
   const token = combatantToken(combatant);
   if (!token) return;
   const state = token.actor.system.shipCombat?.state;
-  const key = typeof state?.turnKey === "string" && state.turnKey
-    ? state.turnKey
-    : turnKey(combat, { round: combat.round }, combatant);
-  if (state?.phase === "active") {
-    await submitLifecycle(combat, combatant, "phase.coast", key);
-    await submitLifecycle(combat, combatant, "phase.end", key);
-  } else if (state?.phase === "end") {
-    await submitLifecycle(combat, combatant, "phase.end", key);
-  }
+  if (state?.phase === "outsideCombat") return;
+  const key = state?.turnKey ?? turnKey(combat, { round: combat.round }, combatant);
+  await submitLifecycle(combat, combatant, "phase.coast", key);
+  await submitLifecycle(combat, combatant, "phase.end", key);
   await submitLifecycle(combat, combatant, "combat.leave", "combat");
 }
 
@@ -432,6 +482,7 @@ function sweepWhenActiveGm() {
   activeGmAuthority = true;
   initializeLoadedActors();
   initializeLoadedTokens();
+  for (const combat of game.combats ?? []) scheduleCombat(combat);
 }
 
 
@@ -441,9 +492,26 @@ export function registerShipHooks() {
   hooksRegistered = true;
   installShipInitiative();
 
+  // Ordinary synchronization is read-only. refreshResources is a turn reset,
+  // not a refresh API: calling it here would replenish spent actions and orders.
+  for (const event of [
+    "createActor", "updateActor", "deleteActor", "createItem", "updateItem", "deleteItem",
+    "createToken", "updateToken", "deleteToken", "updateActorDelta",
+    "createActiveEffect", "updateActiveEffect", "deleteActiveEffect",
+    "createCombat", "updateCombat", "deleteCombat", "combatTurnChange",
+    "createCombatant", "updateCombatant", "deleteCombatant",
+    "updateUser", "userConnected", "canvasReady",
+  ]) Hooks.on(event, refreshConsoles);
+
   Hooks.on("viraShipCombatOperationCommitted", (fullResult, request) => {
     void publishOperationEvents(fullResult, request)
       .catch((error) => console.error(`${MODULE_ID} | Failed to publish ship operation events`, error));
+    if (request.type === "setRoster") {
+      schedule("Failed to synchronize assigned operator ownership", async () => {
+        const token = await globalThis.fromUuid?.(request.sourceUuid);
+        if (token) await enforceOperatorOwnership(token);
+      });
+    }
   });
 
   Hooks.on("createActor", (actor) => {
@@ -488,37 +556,30 @@ export function registerShipHooks() {
     return false;
   });
 
-  Hooks.on("combatStart", (combat) => {
-    schedule("Failed to enter ship combat", () => enterCombatants(combat));
-  });
-
-  Hooks.on("combatTurnChange", (combat, previous, current) => {
-    schedule("Failed to advance ship combat phase", async () => {
-      const previousCombatant = combatantByState(combat, previous);
-      const currentCombatant = combatantByState(combat, current);
-      if (previousCombatant) await finishTurn(combat, previousCombatant, previous);
-      if (currentCombatant) await beginTurn(combat, currentCombatant, current);
-    });
-  });
-
+  // combatStart fires before the update, only on the initiating client. V14's
+  // persisted update is the reliable entry point, including the initial turn.
+  Hooks.on("updateCombat", (combat) => scheduleCombat(combat));
+  Hooks.on("combatTurnChange", (combat) => scheduleCombat(combat));
   Hooks.on("createCombatant", (combatant) => {
-    const combat = combatant.parent;
-    if (!combat?.started || !combatantToken(combatant)) return;
-    schedule("Failed to enter added ship combatant", async () => {
-      await submitLifecycle(combat, combatant, "combat.enter", "combat");
-      if (combat.combatant?.id === combatant.id) await beginTurn(combat, combatant, combat.current);
-    });
+    if (combatant.parent) scheduleCombat(combatant.parent);
+  });
+  Hooks.on("updateCombatant", (combatant) => {
+    if (combatant.parent) scheduleCombat(combatant.parent);
   });
 
   Hooks.on("deleteCombatant", (combatant) => {
     const combat = combatant.parent;
-    if (!combat || !combatantToken(combatant)) return;
+    if (!combat) return;
+    removedCombatants.add(combatant);
     schedule("Failed to leave removed ship combatant", () => leaveCombatant(combat, combatant));
+    scheduleCombat(combat);
   });
 
   Hooks.on("deleteCombat", (combat) => {
+    deletedCombats.add(combat);
+    const combatants = collectionValues(combat.combatants);
     schedule("Failed to leave ended ship combat", async () => {
-      for (const combatant of combat.combatants) {
+      for (const combatant of combatants) {
         if (combatantToken(combatant)) await leaveCombatant(combat, combatant);
       }
     });
