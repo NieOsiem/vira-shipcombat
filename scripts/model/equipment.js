@@ -115,10 +115,10 @@ function componentFromSlot(slot, item) {
     fail("INSTALLED_COMPONENT_REGIONS_REQUIRED", `Occupied slot '${slot.id}' requires at least one region.`);
   }
   return {
+    ...clone(item.system.definition),
     id: item.id,
     label: item.name,
     class: slot.class,
-    ...clone(item.system.definition),
     slotId: slot.id,
     ...(slot.class === "drive" ? { driveRole: slot.driveRole } : {}),
     regions: clone(slot.regions),
@@ -239,10 +239,10 @@ export function materializeShipConfig(hullConfig, items = []) {
     if (item.system.size !== hardpoint.mountSize) fail("HARDPOINT_INCOMPATIBLE", `Weapon '${item.id}' size does not match hardpoint '${hardpoint.id}'.`);
     if (item.system.definition.category !== hardpoint.category) fail("HARDPOINT_INCOMPATIBLE", `Weapon '${item.id}' category does not match hardpoint '${hardpoint.id}'.`);
     const weapon = {
+      ...clone(item.system.definition),
       id: item.id,
       label: item.name,
       class: "weapon",
-      ...clone(item.system.definition),
       hardpointId: hardpoint.id,
       mountSize: hardpoint.mountSize,
       regions: clone(hardpoint.regions),
@@ -264,7 +264,6 @@ export function materializeShipConfig(hullConfig, items = []) {
 
   const installedDrives = Object.values(components.drives);
   const engineTiers = commonEngineTiers(installedDrives);
-  for (const drive of installedDrives) delete drive.tiers;
   const capabilityProfile = clone(hull.capabilityProfile ?? {});
   capabilityProfile.evasionHardware = (hull.capabilityProfile?.evasionHardware ?? []).flatMap((entry, index) => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry) || typeof entry.slotId !== "string" || entry.slotId === "") {

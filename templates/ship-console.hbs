@@ -224,7 +224,7 @@
       <details class="ship-card ship-console-config">
         <summary>Advanced hull JSON</summary>
         <p class="ship-muted">Hull structure only. Installed component definitions live in embedded Items and are never baked into this JSON. Removing a mount reference retains its Item in Unreferenced component Items above; it does not delete the Item.</p>
-        <form data-config>
+        <form data-config data-revision="{{configRevision}}">
           <fieldset {{#unless canRefit}}disabled{{/unless}}>
             <label>Validated hull configuration JSON<textarea name="config" rows="20" spellcheck="false">{{configJson}}</textarea></label>
             <div class="ship-action-row"><button type="submit">Validate and save hull</button><button type="button" data-canadensis>Reset hull and components to Canadensis…</button></div>

@@ -7,7 +7,7 @@ import {
   normalizeShipData,
 } from "../scripts/model/defaults.js";
 import { materializeShipConfig } from "../scripts/model/equipment.js";
-import { validateHullConfig, validateShipConfig } from "../scripts/model/validation.js";
+import { validateComponentItem, validateHullConfig, validateShipConfig } from "../scripts/model/validation.js";
 import { nativeVehicleFieldValues } from "../scripts/model/native-vehicle.js";
 
 
@@ -100,6 +100,80 @@ describe("ship configuration validation", () => {
   });
 });
 
+describe("component Item identity", () => {
+  test("rejects a reactor definition identity while materializing the embedded identity without prior validation", () => {
+    const defaults = createDefaultShipData();
+    const reactor = defaults.items.find(({ _id }) => _id === CANADENSIS_IDS.reactor);
+    const slot = defaults.hull.slots.find(({ itemId }) => itemId === reactor._id);
+    Object.assign(reactor.system.definition, {
+      id: "forged-reactor",
+      label: "Forged Reactor",
+      class: "sensor",
+      slotId: "forged-slot",
+      regions: ["fore"],
+    });
+
+    const effective = materializeShipConfig(defaults.hull, defaults.items);
+    expect(effective.components.reactor).toMatchObject({
+      id: reactor._id,
+      label: reactor.name,
+      class: "reactor",
+      slotId: slot.id,
+      regions: slot.regions,
+    });
+    const result = validateComponentItem(reactor);
+    expect(result.valid).toBe(false);
+    expect(result.errors.map(({ code, path }) => ({ code, path }))).toEqual(
+      ["id", "label", "class", "slotId", "regions"].map((key) => ({
+        code: "RESERVED_COMPONENT_FIELD", path: `system.definition.${key}`,
+      })),
+    );
+  });
+
+  test("rejects weapon definition identity and placement fields without letting them override the mount", () => {
+    const defaults = createDefaultShipData();
+    const item = defaults.items.find(({ _id }) => _id === CANADENSIS_IDS.railgun);
+    const hardpoint = defaults.hull.hardpoints.find(({ weaponId }) => weaponId === item._id);
+    const reserved = {
+      id: "forged-weapon", label: "Forged Weapon", class: "reactor", slotId: "forged-slot",
+      hardpointId: "forged-hardpoint", regions: [], driveRole: "main", mountSize: "invalid",
+    };
+    Object.assign(item.system.definition, reserved);
+
+    const effective = materializeShipConfig(defaults.hull, defaults.items);
+    expect(effective.components.weapons.find(({ id }) => id === item._id)).toMatchObject({
+      id: item._id, label: item.name, class: "weapon", hardpointId: hardpoint.id,
+      regions: hardpoint.regions, mountSize: hardpoint.mountSize,
+    });
+    const result = validateComponentItem(item);
+    expect(result.valid).toBe(false);
+    expect(result.errors.map(({ code, path }) => ({ code, path }))).toEqual(
+      Object.keys(reserved).map((key) => ({ code: "RESERVED_COMPONENT_FIELD", path: `system.definition.${key}` })),
+    );
+  });
+
+  test("independent copies with the same stats keep their own embedded identities", () => {
+    const first = createDefaultShipData();
+    const second = createDefaultShipData();
+    const reactor = second.items.find(({ _id }) => _id === CANADENSIS_IDS.reactor);
+    second.hull.slots.find(({ itemId }) => itemId === reactor._id).itemId = "copied-reactor";
+    reactor._id = "copied-reactor";
+    reactor.name = "Copied Reactor";
+
+    const firstConfig = materializeShipConfig(first.hull, first.items);
+    const secondConfig = materializeShipConfig(second.hull, second.items);
+    expect(firstConfig.components.reactor.id).toBe(CANADENSIS_IDS.reactor);
+    expect(secondConfig.components.reactor).toMatchObject({ id: "copied-reactor", label: "Copied Reactor" });
+    expect(firstConfig.components.reactor.nominalOutput).toBe(secondConfig.components.reactor.nominalOutput);
+    for (const defaults of [first, second]) {
+      for (const item of defaults.items) expect(validateComponentItem(item)).toMatchObject({ valid: true, errors: [] });
+    }
+    for (const config of [firstConfig, secondConfig]) {
+      expect(validateShipConfig(config, { tokenWidth: 1 })).toMatchObject({ valid: true, errors: [] });
+    }
+  });
+});
+
 describe("ship data defaults", () => {
   test("returns independent mutable configs, Items, and states without modifying the frozen reference", () => {
     const first = createDefaultShipData();
@@ -120,6 +194,7 @@ describe("ship data defaults", () => {
 
     first.config.label = "Mutable Test Ship";
     first.config.components.drives.main.base.thrust = 99;
+    first.config.components.drives.main.tiers[0].multiplier = 99;
     firstMainDriveItem.system.definition.base.thrust = 77;
     first.state.hull = 1;
     first.state.history.push({ type: "test-event" });
@@ -131,6 +206,9 @@ describe("ship data defaults", () => {
     expect(first.state.history).toEqual([{ type: "test-event" }]);
     expect(second.config.label).toBe("Canadensis Training Corvette");
     expect(second.config.components.drives.main.base.thrust).toBe(6);
+    expect(firstMainDriveItem.system.definition.tiers[0].multiplier).toBe(0);
+    expect(second.config.components.drives.main.tiers[0].multiplier).toBe(0);
+    expect(CANADENSIS_CONFIG.components.drives.main.tiers[0].multiplier).toBe(0);
     expect(secondMainDriveItem.system.definition.base.thrust).toBe(6);
     expect(second.state.hull).toBe(50);
     expect(second.state.history).toEqual([]);

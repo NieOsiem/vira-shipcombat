@@ -129,6 +129,16 @@ function allowComponentUpdate(item, changes, options, userId) {
     return false;
   }
   if (item?.type !== COMPONENT_ITEM_TYPE) return true;
+  // Foundry pre-update hooks are synchronous: a Promise cannot veto the original write.
+  // Installed definitions must be saved together with their reconciled Actor state.
+  const changesDefinition = Object.keys(changes ?? {}).some((key) =>
+    ["system", "type"].includes(key.split(".")[0].replace(/^-=/, "")));
+  if (embeddedShipComponent(item) && componentIsReferenced(item) && changesDefinition) {
+    if (userId === game.user?.id) {
+      ui.notifications.error("Edit installed ship component definitions through their Ship Component sheet so ship state is reconciled safely.");
+    }
+    return false;
+  }
   let denial;
   try {
     denial = validateProspectiveComponentUpdate(item, changes);

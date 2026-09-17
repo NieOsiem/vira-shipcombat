@@ -849,6 +849,11 @@ export function validateComponentItem(value) {
     error("COMPONENT_DEFINITION_REQUIRED", "system.definition", "Component item requires a definition.");
     return validation.result();
   }
+  for (const key of ["id", "label", "class", "slotId", "hardpointId", "regions", "driveRole", "mountSize"]) {
+    if (Object.hasOwn(definition, key)) {
+      error("RESERVED_COMPONENT_FIELD", `system.definition.${key}`, "Component identity and placement cannot be defined in component stats.");
+    }
+  }
   const requireNumber = (number, path, { min = -Infinity, strict = false, integer = false } = {}) => {
     if (!isFiniteNumber(number) || (strict ? number <= min : number < min) || (integer && !Number.isInteger(number))) {
       error("INVALID_NUMBER", path, "Component definition contains an invalid numeric value.");
@@ -882,7 +887,7 @@ export function validateComponentItem(value) {
     validateTiers(definition, path, "cooling", error);
     validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
   } else if (system.componentClass === "weapon") {
-    const weapon = { id: id ?? "", ...definition, mountSize: system.size, hardpointId: "component-preview" };
+    const weapon = { ...definition, id: id ?? "", mountSize: system.size, hardpointId: "component-preview" };
     const hardpoints = new Map([["component-preview", { id: "component-preview", category: "hardpoint", mountSize: system.size, weaponId: id }]]);
     validateWeapon(weapon, path, hardpoints, error, requireNumber);
   }

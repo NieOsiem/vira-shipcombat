@@ -73,6 +73,20 @@ function emitterFault(config, sector, severity = "destroyed") {
   };
 }
 
+function driveFault(config, role, severity = "destroyed") {
+  const componentId = config.components.drives[role].id;
+  return {
+    id: `drive-fault:${componentId}`,
+    kind: "fault",
+    channelId: role === "portLateral" || role === "starboardLateral"
+      ? "maneuveringThrusterFailure"
+      : "driveFailure",
+    componentId,
+    targetId: componentId,
+    severity,
+  };
+}
+
 describe("Power routing and weapon lifecycle", () => {
   test("Power routing accepts only installed integer tiers and fails atomically", () => {
     const { config, state } = freshShip();
@@ -164,6 +178,88 @@ describe("Power routing and weapon lifecycle", () => {
       redlining: true,
     });
     expect(state.heat).toBe(14);
+  });
+
+  test("a Destroyed Main Drive contributes no entry or maintained Heat at Engines 4", () => {
+    const { config, state } = freshShip();
+    state.conditions.main = driveFault(config, "main");
+    const before = clone(state);
+    const staged = { allocation: { engines: 4 } };
+
+    const preview = previewPowerRoute(config, state, staged);
+    expect(preview.heatAdded).toBe(6);
+    expect(preview.overclockEntries).toEqual([
+      { system: "engines", heat: 2 },
+      { system: "reactor", heat: 4 },
+    ]);
+    expect(state).toEqual(before);
+
+    const committed = commitPowerRoute(config, state, staged);
+    expect(committed.heatAdded).toBe(preview.heatAdded);
+    expect(committed.overclockEntries).toEqual(preview.overclockEntries);
+    expect(state.heat).toBe(6);
+    expect(commitPowerRoute(config, state, staged).heatAdded).toBe(0);
+
+    const maintained = applyMaintainedOverclockHeat(config, state);
+    expect(maintained.heatAdded).toBe(6);
+    expect(maintained.sources).toEqual(preview.overclockEntries);
+    expect(state.heat).toBe(12);
+  });
+
+  test("all Destroyed Drives generate zero Heat without suppressing reactor Redline Heat", () => {
+    const { config, state } = freshShip();
+    for (const role of Object.keys(config.components.drives)) {
+      state.conditions[role] = driveFault(config, role);
+    }
+    const staged = { allocation: { engines: 4 } };
+    const preview = previewPowerRoute(config, state, staged);
+    expect(preview.heatAdded).toBe(4);
+    expect(preview.overclockEntries).toEqual([{ system: "reactor", heat: 4 }]);
+    expect(commitPowerRoute(config, state, staged).heatAdded).toBe(4);
+    expect(applyMaintainedOverclockHeat(config, state)).toEqual({
+      heatAdded: 4,
+      sources: [{ system: "reactor", heat: 4 }],
+      redlining: true,
+    });
+    expect(state.heat).toBe(8);
+
+    commitPowerRoute(config, state, { allocation: { cooling: 0 } });
+    expect(applyMaintainedOverclockHeat(config, state)).toEqual({
+      heatAdded: 0,
+      sources: [],
+      redlining: false,
+    });
+    expect(state.heat).toBe(8);
+  });
+
+  test("lateral Heat follows each installed Drive's tier and independent operational state", () => {
+    const { config, state } = freshShip((candidate) => {
+      delete candidate.components.drives.main;
+      delete candidate.components.drives.reverse;
+      candidate.components.drives.starboardLateral.tiers.find(({ power }) => power === 4).overclockHeat = 2;
+    });
+    state.conditions.port = driveFault(config, "portLateral");
+    state.conditions.starboard = driveFault(config, "starboardLateral", "critical");
+    const staged = { allocation: { engines: 4, cooling: 0 } };
+
+    const preview = previewPowerRoute(config, state, staged);
+    expect(preview.heatAdded).toBe(2);
+    expect(preview.overclockEntries).toEqual([{ system: "engines", heat: 2 }]);
+    expect(commitPowerRoute(config, state, staged).heatAdded).toBe(2);
+    expect(applyMaintainedOverclockHeat(config, state)).toEqual({
+      heatAdded: 2,
+      sources: [{ system: "engines", heat: 2 }],
+      redlining: false,
+    });
+
+    state.conditions.port.severity = "major";
+    state.conditions.starboard.severity = "destroyed";
+    expect(applyMaintainedOverclockHeat(config, state)).toEqual({
+      heatAdded: 1,
+      sources: [{ system: "engines", heat: 1 }],
+      redlining: false,
+    });
+    expect(state.heat).toBe(5);
   });
 
   test("reactor degradation sheds deterministic reverse-priority tiers and weapons", () => {

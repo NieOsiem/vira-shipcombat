@@ -4,6 +4,7 @@ import {
   WEAPON_MODES,
   WEAPON_STATUSES,
 } from "../constants.js";
+import { getFaultEffects } from "./conditions.js";
 
 const FALLBACK_POWER_SYSTEMS = Object.freeze([
   "engines",
@@ -443,18 +444,36 @@ function stagedPreset(config, staged, allocation) {
   return preset.id;
 }
 
-function enteringOverclockHeat(config, beforeAllocation, afterAllocation, beforeRedlining, afterRedlining) {
+function systemOverclockHeat(config, state, system, power, beforePower = null) {
+  if (system === "engines") {
+    let heat = 0;
+    for (const [role, drive] of Object.entries(config?.components?.drives ?? {})) {
+      if (!drive) continue;
+      const tier = drive.tiers?.find((candidate) => candidate.power === power);
+      if (!tier?.overclock) continue;
+      if (beforePower !== null && drive.tiers?.find((candidate) => candidate.power === beforePower)?.overclock) continue;
+      const channel = role === "portLateral" || role === "starboardLateral"
+        ? "maneuveringThrusterFailure"
+        : "driveFailure";
+      if (!getFaultEffects(config, state, { componentId: drive.id, channel }).operational) continue;
+      heat += tier.overclockHeat ?? drive.overclockHeat ?? 0;
+    }
+    return heat;
+  }
+  const tier = tierFor(config, system, power, { passive: true });
+  if (!tier.overclock) return 0;
+  if (beforePower !== null && tierFor(config, system, beforePower, { passive: true }).overclock) return 0;
+  return tier.overclockHeat ?? componentForSystem(config, system)?.overclockHeat ?? 0;
+}
+
+function enteringOverclockHeat(config, state, beforeAllocation, afterAllocation, beforeRedlining, afterRedlining) {
   const entries = [];
   let heat = 0;
   for (const system of ["engines", "shields", "sensors", "cooling"]) {
-    const before = tierFor(config, system, beforeAllocation[system], { passive: true });
-    const after = tierFor(config, system, afterAllocation[system]);
-    if (!before.overclock && after.overclock) {
-      const amount = after.overclockHeat ?? componentForSystem(config, system)?.overclockHeat ?? 0;
-      if (amount > 0) {
-        heat += amount;
-        entries.push({ system, heat: amount });
-      }
+    const amount = systemOverclockHeat(config, state, system, afterAllocation[system], beforeAllocation[system]);
+    if (amount > 0) {
+      heat += amount;
+      entries.push({ system, heat: amount });
     }
   }
   if (!beforeRedlining && afterRedlining) {
@@ -528,6 +547,7 @@ export function previewPowerRoute(config, state, staged) {
   const redlining = committed > ceilings.nominal;
   const entered = enteringOverclockHeat(
     config,
+    state,
     beforeAllocation,
     allocation,
     beforeRedlining,
@@ -744,9 +764,7 @@ export function applyMaintainedOverclockHeat(config, state) {
   const sources = [];
   let heatAdded = 0;
   for (const system of ["engines", "shields", "sensors", "cooling"]) {
-    const tier = tierFor(config, system, power.allocation[system], { passive: true });
-    if (!tier.overclock) continue;
-    const amount = tier.overclockHeat ?? componentForSystem(config, system)?.overclockHeat ?? 0;
+    const amount = systemOverclockHeat(config, state, system, power.allocation[system]);
     if (amount > 0) {
       heatAdded += amount;
       sources.push({ system, heat: amount });

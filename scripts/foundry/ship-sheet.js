@@ -672,6 +672,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   };
 
   static PARTS = { console: { template: `modules/${MODULE_ID}/templates/ship-console.hbs` } };
+  #hullDraft = null;
+
   get title() {
     return `${this.actor?.name ?? this.document?.name ?? "Ship"} · Ship Console`;
   }
@@ -681,9 +683,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const actor = this.actor ?? this.document;
     const token = actorToken(actor);
     const data = actor.system?.shipCombat ?? {};
-    const hullConfig = data.config ?? {};
-    const config = await materializeActorConfig(actor);
+    const hullConfig = clone(data.config);
     const state = clone(data.state);
+    this.#hullDraft ??= { json: pretty(hullConfig), revision: state.revision };
+    const config = await materializeActorConfig(actor);
     const isGM = game.user.isGM;
     const observer = CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;
     const canInspect = isGM || actor.testUserPermission(game.user, observer);
@@ -789,12 +792,14 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       turnKey: state.turnKey ?? "—",
       specGroups: configurationSummary(config, state),
       stateJson: pretty(escapeSecrets(state, isGM)),
-      configJson: pretty(hullConfig),
+      configJson: this.#hullDraft.json,
+      configRevision: this.#hullDraft.revision,
       log: visibleLog,
     }, { inplace: false });
   }
 
   async close(options = {}) {
+    this.#hullDraft = null;
     const token = actorToken(this.actor);
     if (token) clearMovementPreview(token.uuid);
     return super.close(options);
@@ -855,7 +860,14 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       });
       form.addEventListener("submit", (event) => this.#submitRaw(event, form));
     });
-    html.querySelector("form[data-config]")?.addEventListener("submit", (event) => this.#saveConfig(event));
+    const configForm = html.querySelector("form[data-config]");
+    configForm?.addEventListener("input", () => {
+      this.#hullDraft = {
+        json: configForm.elements.config.value,
+        revision: Number(configForm.dataset.revision),
+      };
+    });
+    configForm?.addEventListener("submit", (event) => this.#saveConfig(event));
     html.querySelector("[data-canadensis]")?.addEventListener("click", () => this.#resetCanadensis());
     html.querySelectorAll("[data-refit-drop]").forEach((drop) => {
       drop.addEventListener("dragover", (event) => {
@@ -1168,7 +1180,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const denial = getRefitDenial(this.actor);
       if (denial) throw new Error(denial);
       const hullConfig = parseObject(event.currentTarget.elements.config.value, "Hull configuration");
-      await saveShipHull(this.actor, hullConfig);
+      await saveShipHull(this.actor, hullConfig, Number(event.currentTarget.dataset.revision));
+      this.#hullDraft = null;
       ui.notifications.info("Hull configuration saved and installed components rematerialized.");
       await this.render();
     } catch (error) {
@@ -1182,6 +1195,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       if (denial) throw new Error(denial);
       if (!globalThis.confirm("Replace this hull and its installed component copies with the Canadensis configuration?")) return;
       await resetShipToCanadensis(this.actor);
+      this.#hullDraft = null;
       ui.notifications.info("Canadensis hull and fresh component copies restored.");
       await this.render();
     } catch (error) {

@@ -13,6 +13,7 @@ import {
 import { materializeShipConfig } from "../model/equipment.js";
 import { validateComponentItem, validateEffectiveLoadout } from "../model/validation.js";
 import { isActiveGM } from "../socket.js";
+import { saveInstalledShipComponent } from "./refit.js";
 
 const FIRING_HEAT_UNITS = Object.freeze(["shot", "physicalRound"]);
 const SHIELD_TOPOLOGIES = Object.freeze(["directional", "bubble"]);
@@ -49,6 +50,16 @@ function validationError(label, validation) {
   return new TypeError(`${label}: ${details}${remaining > 0 ? ` (+${remaining} more)` : ""}`);
 }
 
+function isInstalledComponent(item) {
+  const actor = item?.parent;
+  const itemId = item?.id ?? item?._id;
+  const hull = actor?.system?.shipCombat?.config;
+  return actor?.documentName === "Actor"
+    && typeof itemId === "string"
+    && ((hull?.slots ?? []).some((slot) => slot?.itemId === itemId)
+      || (hull?.hardpoints ?? []).some((hardpoint) => hardpoint?.weaponId === itemId));
+}
+
 function validateProspectiveComponent(item, source) {
   const componentValidation = validateComponentItem(source);
   if (!componentValidation.valid) throw validationError("Invalid ship component", componentValidation);
@@ -56,11 +67,7 @@ function validateProspectiveComponent(item, source) {
   const actor = item?.parent;
   const itemId = item?.id ?? item?._id;
   const hull = actor?.system?.shipCombat?.config;
-  const installed = actor?.documentName === "Actor"
-    && typeof itemId === "string"
-    && ((hull?.slots ?? []).some((slot) => slot?.itemId === itemId)
-      || (hull?.hardpoints ?? []).some((hardpoint) => hardpoint?.weaponId === itemId));
-  if (!installed) return;
+  if (!isInstalledComponent(item)) return;
 
   const items = collectionValues(actor.items)
     .filter((candidate) => candidate?.type === COMPONENT_ITEM_TYPE)
@@ -446,21 +453,29 @@ export class ShipComponentSheet extends HandlebarsApplicationMixin(ItemSheetV2) 
   static PARTS = { component: { template: `modules/${MODULE_ID}/templates/ship-component.hbs` } };
 
   #draft = null;
+  #draftRevision = null;
   #draftFingerprint = null;
+  #formDraft = null;
 
   #clearDraft() {
     this.#draft = null;
+    this.#draftRevision = null;
+    this.#formDraft = null;
     this.#draftFingerprint = null;
   }
 
   #setDraft(draft) {
     this.#draft = draft;
-    this.#draftFingerprint = sourceFingerprint(this.item ?? this.document);
+    this.#formDraft = null;
   }
 
   #draftSource(item) {
-    if (this.#draft && this.#draftFingerprint !== sourceFingerprint(item)) this.#clearDraft();
-    return this.#draft ?? itemSource(item);
+    if (!this.#draft) {
+      this.#draft = itemSource(item);
+      this.#draftRevision = isInstalledComponent(item) ? item.parent.system.shipCombat.state.revision : null;
+      this.#draftFingerprint = sourceFingerprint(item);
+    }
+    return this.#draft;
   }
 
   static async #handleSubmit(_event, form) {
@@ -514,6 +529,18 @@ export class ShipComponentSheet extends HandlebarsApplicationMixin(ItemSheetV2) 
     const root = html.matches("[data-component-form]") ? html : html.querySelector("[data-component-form]");
     const form = this.form;
     if (!root || !form) return;
+    const controls = Array.from(root.querySelectorAll("input, select, textarea"));
+    if (this.#formDraft) {
+      for (const [index, input] of controls.entries()) {
+        const saved = this.#formDraft[index];
+        if (!saved) continue;
+        if (input.type === "checkbox") input.checked = saved.checked;
+        else input.value = saved.value;
+      }
+    }
+    root.addEventListener("input", () => {
+      this.#formDraft = controls.map((input) => ({ value: input.value, checked: input.checked }));
+    });
     root.querySelector("[name='system.componentClass']")?.addEventListener("change", (event) => void this.#changeClass(form, root, event.currentTarget.value));
     root.querySelector("[name='definition.topology']")?.addEventListener("change", (event) => void this.#changeShieldTopology(form, event.currentTarget.value));
     root.querySelectorAll("[data-row-action]").forEach((button) => {
@@ -590,23 +617,36 @@ export class ShipComponentSheet extends HandlebarsApplicationMixin(ItemSheetV2) 
     try {
       this.#assertEditable();
       const item = this.item ?? this.document;
+      if (this.#draftFingerprint !== sourceFingerprint(item)) {
+        throw new Error("This component changed after this edit was staged. Close and reopen the component sheet to reload it.");
+      }
+      if (this.#draftRevision !== null && this.#draftRevision !== item?.parent?.system?.shipCombat?.state?.revision) {
+        throw new Error("Ship state changed after this edit was staged. Close and reopen the component sheet to reload it.");
+      }
       const update = normalizeForm(form, null, this.#draftSource(item));
       const persistedSource = typeof item?.toObject === "function" ? item.toObject(false) : item;
-      validateProspectiveComponent(item, {
+      const source = {
         ...clone(persistedSource),
         name: update.name,
         img: update.img,
         system: clone(update.system),
-      });
-      await item.update({
-        name: update.name,
-        img: update.img,
-        "system.schemaVersion": update.system.schemaVersion,
-        "system.componentClass": update.system.componentClass,
-        "system.size": update.system.size,
-        "system.driveRole": update.system.driveRole,
-        "system.definition": foundry.data.operators.ForcedReplacement.create(update.system.definition),
-      }, { diff: false });
+      };
+      validateProspectiveComponent(item, source);
+      const actor = item.parent;
+      const itemId = item.id ?? item._id;
+      if (isInstalledComponent(item)) {
+        await saveInstalledShipComponent(actor, itemId, source, this.#draftRevision);
+      } else {
+        await item.update({
+          name: update.name,
+          img: update.img,
+          "system.schemaVersion": update.system.schemaVersion,
+          "system.componentClass": update.system.componentClass,
+          "system.size": update.system.size,
+          "system.driveRole": update.system.driveRole,
+          "system.definition": foundry.data.operators.ForcedReplacement.create(update.system.definition),
+        }, { diff: false });
+      }
       this.#clearDraft();
       ui.notifications.info("Ship component saved.");
       await this.render();
