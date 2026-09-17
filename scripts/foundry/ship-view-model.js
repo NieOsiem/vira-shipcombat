@@ -1,4 +1,5 @@
 import { getPowerState } from "../rules/power.js";
+import { FAULT_CHANNELS, HAZARD_CHANNELS } from "../rules/conditions.js";
 import { getCurrentSignature, getSensorStats, sanitizeTrack, TRACK_STATUS } from "../rules/sensors.js";
 import { previewDefenseRoute } from "../rules/shields.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
@@ -12,6 +13,16 @@ const POWER_SYSTEMS = Object.freeze([
 ]);
 const SECTORS = Object.freeze(["fore", "port", "starboard", "aft"]);
 const SECTOR_LABELS = Object.freeze({ fore: "Fore", port: "Port", starboard: "Starboard", aft: "Aft", bubble: "Bubble" });
+const CONDITION_LABELS = new Map([...FAULT_CHANNELS, ...HAZARD_CHANNELS].map((channel) => [
+  channel,
+  channel.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (letter) => letter.toUpperCase()),
+]));
+const PHASE_LABELS = new Map([
+  ["outsideCombat", "Outside Combat"],
+  ["start", "Start Phase"],
+  ["active", "Active Phase"],
+  ["end", "End Phase"],
+]);
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -279,10 +290,31 @@ function weaponViews(config, state, powerState) {
   });
 }
 
-function conditionViews(state) {
+function conditionViews(config, state) {
+  const components = config?.components ?? {};
+  const namedComponents = new Map([
+    components.reactor, components.shield, components.sensor, components.cooling,
+    ...Object.values(components.drives ?? {}), ...(components.weapons ?? []),
+  ].filter((component) => component?.id && component?.label).map((component) => [component.id, component.label]));
+  const shieldLabel = components.shield?.label ?? "Shields";
+  for (const emitter of components.shield?.emitters ?? []) {
+    const sectorLabel = Object.hasOwn(SECTOR_LABELS, emitter.sector) ? SECTOR_LABELS[emitter.sector] : "Shield";
+    namedComponents.set(emitter.id, emitter.label || `${shieldLabel} · ${sectorLabel} emitter`);
+  }
   return Object.entries(state?.conditions ?? {}).map(([key, condition]) => {
-    const kind = condition?.kind ?? (condition?.clock == null ? "fault" : "hazard");
-    const label = condition?.label ?? condition?.name ?? condition?.channelId ?? condition?.conditionId ?? condition?.id ?? key;
+    const channel = condition?.channelId ?? condition?.conditionId;
+    const kind = condition?.kind ?? (HAZARD_CHANNELS.includes(channel) || condition?.clock != null ? "hazard" : "fault");
+    const label = condition?.label || condition?.name || CONDITION_LABELS.get(channel) || "Unknown condition";
+    const componentId = condition?.componentId ?? condition?.targetId ?? "";
+    let componentLabel = namedComponents.get(componentId) ?? "Unknown component";
+    if (kind === "hazard") {
+      const region = condition?.region ?? condition?.sector ?? condition?.targetId;
+      componentLabel = region === "ship" || (!region && ["electricalCascade", "reactorInstability"].includes(channel))
+        ? "Ship"
+        : SECTORS.includes(region) ? SECTOR_LABELS[region] : "Unknown region";
+    } else if (channel === "shieldEmitterDamage" && componentId === components.shield?.id && Object.hasOwn(SECTOR_LABELS, condition?.sector)) {
+      componentLabel = `${shieldLabel} · ${SECTOR_LABELS[condition.sector]} emitter`;
+    }
     const destroyed = condition?.severity === "destroyed";
     const work = state?.work?.[`recovery:${key}`];
     return {
@@ -291,13 +323,23 @@ function conditionViews(state) {
       severity: condition?.severity ?? "unknown",
       kind,
       sector: condition?.sector ?? condition?.region ?? "",
-      componentId: condition?.componentId ?? condition?.targetId ?? "",
+      componentId,
+      componentLabel,
       clock: condition?.clock,
       destroyed,
       work,
       workLabel: work ? `${whole(work.current)} / ${whole(work.required)}` : "",
     };
   }).sort((left, right) => left.severity.localeCompare(right.severity) || left.label.localeCompare(right.label));
+}
+
+function turnLabel(turnKey) {
+  if (typeof turnKey !== "string") return "";
+  const parts = /^([^:\s]+):(\d+):(\d+)$/.exec(turnKey);
+  if (!parts) return "";
+  const round = Number(parts[2]);
+  const turn = Number(parts[3]) + 1;
+  return Number.isSafeInteger(round) && Number.isSafeInteger(turn) ? `Round ${round} / Turn ${turn}` : "";
 }
 
 function tokenPosition(token) {
@@ -364,7 +406,7 @@ export function buildShipConsoleView(config, state, { token = null, targetLabels
     engineering: bestOperator(operators, "engineering"),
   };
   const contacts = contactViews(state, token, sensor, targetLabels);
-  const conditions = conditionViews(state);
+  const conditions = conditionViews(config, state);
   const speed = Math.hypot(finite(state?.velocity?.x), finite(state?.velocity?.y));
   const heat = meter(state?.heat, config?.heatCapacity, finite(state?.heat) > finite(config?.heatCapacity) ? "danger" : "heat");
   const hull = meter(state?.hull, config?.maxHull, finite(state?.hull) <= finite(config?.maxHull) * 0.25 ? "danger" : "hull");
@@ -379,7 +421,9 @@ export function buildShipConsoleView(config, state, { token = null, targetLabels
       overspeed: speed > finite(config?.safeVelocity),
       signature,
       phase: state?.phase ?? "outsideCombat",
+      phaseLabel: PHASE_LABELS.get(state?.phase ?? "outsideCombat") ?? "Unknown phase",
       turnKey: state?.turnKey ?? "—",
+      turnLabel: turnLabel(state?.turnKey),
       revision: whole(state?.revision),
     },
     operators,

@@ -259,6 +259,34 @@ describe("sensor signatures and tracks", () => {
     expect(target.state).toEqual(targetBefore);
   });
 
+  test("deep scan reveals named subsystem choices without retaining private component fields", () => {
+    const observer = freshShip();
+    observer.state.tracks.target = { targetUuid: "target", state: TRACK_STATUS.TARGETED, remembered: {} };
+    const input = {
+      config: observer.config,
+      targetUuid: "target",
+      distance: 10,
+      sensorLineOfSight: true,
+      identifiedSubsystems: [{ id: "sensor", label: "Longview Array", class: "sensor", regions: ["fore"], secret: "private" }],
+    };
+    observer.state.tracks.target.systems = { installedWeapons: input.identifiedSubsystems };
+
+    expect(sanitizeTrack({ observerState: observer.state, targetUuid: "target" }).remembered?.identifiedSubsystems).toBeUndefined();
+    expect(sanitizeTrack({ observerState: observer.state, targetUuid: "target" }).systems).toBeUndefined();
+    deepScan(observer.state, input);
+    const scanned = sanitizeTrack({ observerState: observer.state, targetUuid: "target" });
+    expect(scanned.remembered.identifiedSubsystems).toEqual([
+      { id: "sensor", label: "Longview Array", class: "sensor", regions: ["fore"] },
+    ]);
+    expect(scanned.systemsRevealed).toBe(true);
+
+    deepScan(observer.state, { ...input, identifiedSubsystems: ["sensor", "legacy-drive"] });
+    expect(sanitizeTrack({ observerState: observer.state, targetUuid: "target" }).remembered.identifiedSubsystems).toEqual([
+      { id: "sensor", label: "Longview Array", class: "sensor", regions: ["fore"] },
+      "legacy-drive",
+    ]);
+  });
+
   test("active Ping rolls once for the whole declared target set", () => {
     const source = freshShip();
     const first = freshShip();

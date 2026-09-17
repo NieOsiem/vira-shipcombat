@@ -719,14 +719,20 @@ export function deepScan(state, input) {
   const identified = input?.identifiedSubsystems
     ?? input?.telemetry?.systems?.identifiedSubsystems
     ?? [];
-  const existing = Array.from(track.remembered.identifiedSubsystems ?? []);
-  const ids = new Set(existing.map(String));
-  for (const subsystem of Array.from(identified)) {
+  const subsystems = new Map();
+  for (const subsystem of [...(track.remembered.identifiedSubsystems ?? []), ...Array.from(identified)]) {
     const id = subsystem?.id ?? subsystem?.componentId ?? subsystem;
-    if (id != null && String(id)) ids.add(String(id));
+    if (id == null || typeof id === "object" || !String(id)) continue;
+    const key = String(id);
+    if (typeof subsystem === "object") {
+      subsystems.set(key, { ...pick(subsystem, ["label", "name", "class", "regions"]), id: key });
+    } else if (!subsystems.has(key)) {
+      subsystems.set(key, key);
+    }
   }
-  if (ids.size) track.remembered.identifiedSubsystems = Array.from(ids);
-  return { ...result, identifiedSubsystems: Array.from(ids) };
+  const identifiedSubsystems = Array.from(subsystems.values());
+  if (identifiedSubsystems.length) track.remembered.identifiedSubsystems = identifiedSubsystems;
+  return { ...result, identifiedSubsystems };
 }
 
 export function calculateFiringSolution(state, input) {

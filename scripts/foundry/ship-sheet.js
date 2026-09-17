@@ -59,6 +59,8 @@ function truthyFormValue(value) {
 function elementFormData(element) {
   const form = element.matches?.("form") ? element : element.closest?.("form");
   const values = form ? Object.fromEntries(new FormData(form).entries()) : {};
+  const aimedComponent = form?.elements?.namedItem("aimedComponentId");
+  if (aimedComponent && aimedComponent.dataset.targetUuid !== values.targetUuid) delete values.aimedComponentId;
   return { ...values, ...(element?.dataset ?? {}) };
 }
 
@@ -512,6 +514,26 @@ function trackForTarget(state, targetUuid) {
   return Object.values(state?.tracks ?? {}).find((track) => String(track?.targetUuid) === String(targetUuid));
 }
 
+function namedAimedComponents(contact, components = []) {
+  const remembered = contact.remembered?.identifiedSubsystems ?? [];
+  const knownIds = new Set(remembered.map((component) => String(component?.id ?? component?.componentId ?? component)));
+  const revealed = contact.systemsRevealed === true;
+  const candidates = [
+    ...remembered,
+    ...collectionValues(contact.systems?.installedWeapons),
+    ...collectionValues(contact.systems?.weapons),
+    ...components.filter((component) => revealed || knownIds.has(String(component.id))),
+  ];
+  const options = new Map();
+  for (const component of candidates) {
+    const id = component?.id ?? component?.componentId;
+    const label = component?.label ?? component?.name;
+    if (id == null || typeof id === "object" || typeof label !== "string" || !label.trim() || label.trim() === String(id)) continue;
+    options.set(String(id), { id: String(id), label: label.trim() });
+  }
+  return Array.from(options.values()).sort((left, right) => left.label.localeCompare(right.label));
+}
+
 function liveTrack(state, targetUuid) {
   const track = trackForTarget(state, targetUuid);
   return track?.state === TRACK_STATUS.CONTACT || track?.state === TRACK_STATUS.TARGETED;
@@ -673,6 +695,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 
   static PARTS = { console: { template: `modules/${MODULE_ID}/templates/ship-console.hbs` } };
   #hullDraft = null;
+  #aimedComponents = new Map();
 
   get title() {
     return `${this.actor?.name ?? this.document?.name ?? "Ship"} · Ship Console`;
@@ -698,6 +721,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         : !isGM && !assigned ? "No ship operator is assigned to your user." : "";
 
     const targetLabels = {};
+    const targetComponents = new Map();
     if (isGM) {
       for (const track of Object.values(state.tracks ?? {})) {
         const uuid = track?.targetUuid;
@@ -705,6 +729,13 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         try {
           const document = await fromUuid(uuid);
           targetLabels[uuid] = document?.name ?? document?.actor?.name;
+          if (track.state === TRACK_STATUS.TARGETED && document?.actor) {
+            const components = (await materializeActorConfig(document.actor)).components ?? {};
+            targetComponents.set(uuid, [
+              components.reactor, components.shield, components.sensor, components.cooling,
+              ...Object.values(components.drives ?? {}), ...(components.weapons ?? []),
+            ].filter(Boolean));
+          }
         } catch (_error) {
           // A stale contact remains usable as last-known telemetry without its deleted Document.
         }
@@ -716,6 +747,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       targetLabels,
       operatorUserId: isGM ? null : game.user.id,
     });
+    this.#aimedComponents = new Map(view.targetedContacts.map((contact) => [
+      contact.targetUuid,
+      namedAimedComponents(contact, targetComponents.get(contact.targetUuid)),
+    ]));
     const tabIds = TABS.map((label) => label.toLowerCase().replace(/[^a-z0-9]+/g, "-"));
     const activeTab = selectedTabs.get(actor.uuid) ?? tabIds[0];
     const rawActions = TABS.flatMap((tab) => (GROUPS[tab] ?? []).map((type) => {
@@ -813,6 +848,28 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     html.querySelectorAll("select[data-default]").forEach((select) => {
       const preferred = select.dataset.default;
       if (preferred && Array.from(select.options).some((option) => option.value === preferred)) select.value = preferred;
+    });
+    html.querySelectorAll("form[data-ui-operation='attack']").forEach((form) => {
+      const target = form.elements.namedItem("targetUuid");
+      const aimed = form.elements.namedItem("aimedComponentId");
+      const refreshAimed = () => {
+        const components = this.#aimedComponents.get(target.value) ?? [];
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = !target.value ? "Select a target first"
+          : components.length ? "No aimed shot" : "No named revealed hardware";
+        aimed.replaceChildren(placeholder);
+        for (const component of components) {
+          const option = document.createElement("option");
+          option.value = component.id;
+          option.textContent = component.label;
+          aimed.append(option);
+        }
+        aimed.dataset.targetUuid = target.value;
+        aimed.disabled = components.length === 0;
+      };
+      target.addEventListener("change", refreshAimed);
+      refreshAimed();
     });
     html.querySelectorAll("select[data-power-preset]").forEach((select) => {
       select.addEventListener("change", () => {

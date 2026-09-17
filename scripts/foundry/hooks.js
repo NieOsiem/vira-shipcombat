@@ -294,9 +294,9 @@ async function submitLifecycle(combat, combatant, type, key) {
   });
   if (!response?.ok && response?.error) {
     await createGmEventMessages([{
-      title: `${type} failed`,
+      type: "operation.rejected",
+      title: "Ship combat phase failed",
       message: response.error.message,
-      details: { code: response.error.code, details: response.error.details, requestId: response.id },
     }]);
   }
   return response;
@@ -384,9 +384,9 @@ async function submitAdministrativeReposition(token, proposed, options) {
   });
   if (!response?.ok && response?.error) {
     await createGmEventMessages([{
+      type: "operation.rejected",
       title: "Administrative reposition failed",
       message: response.error.message,
-      details: { code: response.error.code, details: response.error.details, requestId: response.id },
     }]);
   }
 }

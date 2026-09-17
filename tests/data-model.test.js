@@ -9,6 +9,7 @@ import {
 import { materializeShipConfig } from "../scripts/model/equipment.js";
 import { validateComponentItem, validateHullConfig, validateShipConfig } from "../scripts/model/validation.js";
 import { nativeVehicleFieldValues } from "../scripts/model/native-vehicle.js";
+import { buildShipConsoleView } from "../scripts/foundry/ship-view-model.js";
 
 
 const clone = (value) => structuredClone(value);
@@ -392,5 +393,73 @@ describe("native D&D5e vehicle mirrors", () => {
       "system.traits.size": "med",
       "system.details.type": "space",
     });
+  });
+});
+
+describe("ship console display identities", () => {
+  test("shows installed component names and fault labels while retaining recovery identities", () => {
+    const defaults = createDefaultShipData();
+    const names = new Map([
+      [CANADENSIS_IDS.reactor, "Heart of the ship"],
+      [CANADENSIS_IDS.mainDrive, "Longstride"],
+      [CANADENSIS_IDS.railgun, "Needle"],
+      [CANADENSIS_IDS.shield, "Guardian"],
+    ]);
+    for (const item of defaults.items) if (names.has(item._id)) item.name = names.get(item._id);
+    const config = materializeShipConfig(defaults.hull, defaults.items);
+    const emitter = config.components.shield.emitters.find(({ sector }) => sector === "fore");
+    defaults.state.conditions = {
+      reactorRecovery: { channelId: "reactorFault", componentId: CANADENSIS_IDS.reactor, severity: "minor" },
+      driveRecovery: { channelId: "driveFailure", componentId: CANADENSIS_IDS.mainDrive, severity: "minor" },
+      weaponRecovery: { channelId: "weaponMalfunction", componentId: CANADENSIS_IDS.railgun, severity: "minor" },
+      emitterRecovery: { channelId: "shieldEmitterDamage", componentId: emitter.id, severity: "minor" },
+      shieldRecovery: { channelId: "shieldEmitterDamage", componentId: CANADENSIS_IDS.shield, sector: "aft", severity: "major" },
+    };
+    const before = clone({ config, state: defaults.state });
+    const conditions = new Map(buildShipConsoleView(config, defaults.state).conditions.map((condition) => [condition.id, condition]));
+    expect(conditions.get("reactorRecovery")).toMatchObject({ componentLabel: "Heart of the ship", label: "Reactor Fault", componentId: CANADENSIS_IDS.reactor });
+    expect(conditions.get("driveRecovery")).toMatchObject({ componentLabel: "Longstride", label: "Drive Failure", componentId: CANADENSIS_IDS.mainDrive });
+    expect(conditions.get("weaponRecovery")).toMatchObject({ componentLabel: "Needle", label: "Weapon Malfunction", componentId: CANADENSIS_IDS.railgun });
+    expect(conditions.get("emitterRecovery")).toMatchObject({ componentLabel: "Guardian · Fore emitter", label: "Shield Emitter Damage", componentId: emitter.id });
+    expect(conditions.get("shieldRecovery")).toMatchObject({ componentLabel: "Guardian · Aft emitter", componentId: CANADENSIS_IDS.shield });
+    expect({ config, state: defaults.state }).toEqual(before);
+  });
+
+  test("names hazard regions without exposing unresolved condition or target identifiers", () => {
+    const { config, state } = createDefaultShipData();
+    state.conditions = {
+      foreFire: { kind: "hazard", channelId: "fire", targetId: "fore", region: "fore", severity: "minor" },
+      cascade: { kind: "hazard", channelId: "electricalCascade", targetId: "ship", severity: "minor" },
+      missingRegion: { kind: "hazard", channelId: "breach", targetId: "opaque-region-id", severity: "minor" },
+      missingComponent: { kind: "fault", channelId: "opaque-channel-id", componentId: "opaque-item-id", severity: "minor" },
+      missingChannel: { id: "opaque-condition-id", componentId: "another-item-id", severity: "minor" },
+    };
+    const conditions = new Map(buildShipConsoleView(config, state).conditions.map((condition) => [condition.id, condition]));
+    expect(conditions.get("foreFire")).toMatchObject({ label: "Fire", componentLabel: "Fore", componentId: "fore" });
+    expect(conditions.get("cascade")).toMatchObject({ label: "Electrical Cascade", componentLabel: "Ship", componentId: "ship" });
+    expect(conditions.get("missingRegion")).toMatchObject({ label: "Breach", componentLabel: "Unknown region", componentId: "opaque-region-id" });
+    expect(conditions.get("missingComponent")).toMatchObject({ label: "Unknown condition", componentLabel: "Unknown component", componentId: "opaque-item-id" });
+    expect(conditions.get("missingChannel")).toMatchObject({ label: "Unknown condition", componentLabel: "Unknown component", componentId: "another-item-id" });
+  });
+
+  test("formats combat phases and zero-based turns without displaying malformed bookkeeping", () => {
+    const { config, state } = createDefaultShipData();
+    expect(buildShipConsoleView(config, state).status).toMatchObject({ phaseLabel: "Outside Combat", turnLabel: "" });
+    state.phase = "start";
+    state.turnKey = "private-combat-id:0:0";
+    state.revision = 17;
+    expect(buildShipConsoleView(config, state).status).toMatchObject({
+      phase: "start", phaseLabel: "Start Phase", turnKey: "private-combat-id:0:0", turnLabel: "Round 0 / Turn 1", revision: 17,
+    });
+    state.phase = "active";
+    state.turnKey = "private-combat-id:12:4";
+    expect(buildShipConsoleView(config, state).status).toMatchObject({ phaseLabel: "Active Phase", turnLabel: "Round 12 / Turn 5" });
+    state.phase = "end";
+    expect(buildShipConsoleView(config, state).status.phaseLabel).toBe("End Phase");
+    state.phase = "opaque-phase-id";
+    for (const turnKey of [null, "private-combat-id", ":2:0", "private-combat-id:2:-1", "private-combat-id:2:0.5", "private-combat-id:2:9007199254740991", "private-combat-id:2:0:extra"]) {
+      state.turnKey = turnKey;
+      expect(buildShipConsoleView(config, state).status).toMatchObject({ phaseLabel: "Unknown phase", turnLabel: "" });
+    }
   });
 });

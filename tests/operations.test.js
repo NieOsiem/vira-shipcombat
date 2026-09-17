@@ -4,6 +4,7 @@ import { CANADENSIS_IDS } from "../scripts/data/canadensis.js";
 import { createDefaultShipData, createInitialState } from "../scripts/model/defaults.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 import { trackKey } from "../scripts/rules/sensors.js";
+import { publishOperationEvents } from "../scripts/foundry/chat.js";
 
 const SOURCE = "Scene.test.Token.source";
 const TARGET_A = "Scene.test.Token.target-a";
@@ -63,6 +64,28 @@ function errorCode(callback) {
 
 function json(value) {
   return JSON.stringify(value);
+}
+
+async function withChat(callback) {
+  const previousFoundry = globalThis.foundry;
+  const previousGame = globalThis.game;
+  const created = [];
+  globalThis.foundry = {
+    utils: {
+      escapeHTML: (value) => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]),
+    },
+    documents: { ChatMessage: { implementation: {
+      getSpeaker: () => ({ alias: "Ship combat" }),
+      createDocuments: async (messages) => { created.push(...messages); return messages; },
+    } } },
+  };
+  globalThis.game = { users: [{ id: "gm", isGM: true }, { id: "player", isGM: false }] };
+  try {
+    await callback(created);
+  } finally {
+    globalThis.foundry = previousFoundry;
+    globalThis.game = previousGame;
+  }
 }
 
 function assignedUser(record, operatorId, userId) {
@@ -352,7 +375,7 @@ describe("authority invariants", () => {
 });
 
 describe("multi-ship replacement scope and event privacy", () => {
-  test("an attack replaces source and target while separating public from GM detail", () => {
+  test("an attack replaces both ships and presents readable, visibility-isolated outcomes", async () => {
     const source = ship(SOURCE);
     const target = ship(TARGET_A);
     source.state.phase = "active";
@@ -375,9 +398,28 @@ describe("multi-ship replacement scope and event privacy", () => {
     expect(result.publicEvents[0]).toMatchObject({ type: "attack", sourceUuid: SOURCE, targetUuids: [TARGET_A] });
     expect(result.gmEvents[0]).toMatchObject({ type: "attack", sourceUuid: SOURCE, targetUuids: [TARGET_A] });
     expect(result.publicEvents[0].detail).not.toEqual(result.gmEvents[0].detail);
+    const before = clone(result);
+    await withChat(async () => {
+      const { publicMessages, gmMessages } = await publishOperationEvents(result);
+      const publicCard = publicMessages[0];
+      const gmCard = gmMessages[0];
+      expect(publicCard.content).toMatch(/[Hh]it!/);
+      expect(publicCard.content).toContain(`total ${result.publicEvents[0].detail.roll.total}`);
+      expect(publicCard.content).not.toContain("Hull damage:");
+      expect(gmCard.content).toContain(`Hull damage: ${result.gmEvents[0].detail.damage.totals.hullDamage}`);
+      expect(publicCard.whisper).toBeUndefined();
+      expect(gmCard.whisper).toEqual(["gm"]);
+      for (const card of [publicCard, gmCard]) {
+        expect(card.content).not.toContain("<pre");
+        expect(card.content).not.toContain("commitment");
+        expect(card.content).not.toContain("sourceUuid");
+        expect(card.content).not.toContain("{");
+      }
+    });
+    expect(result).toEqual(before);
   });
 
-  test("ship collision emits replacement state and token transforms for both participants", () => {
+  test("ship collisions keep damage notices while replacing both participants", async () => {
     const source = ship(SOURCE);
     const target = ship(TARGET_A);
     source.state.phase = "active";
@@ -395,6 +437,14 @@ describe("multi-ship replacement scope and event privacy", () => {
     expect(result.shipStates[SOURCE].tracks[trackKey(TARGET_A)]?.targetUuid).toBe(TARGET_A);
     expect(result.shipStates[TARGET_A].tracks[trackKey(SOURCE)]?.targetUuid).toBe(SOURCE);
     expect(result.gmEvents[0].detail.collisions[0].obstacleId).toBe(TARGET_A);
+    await withChat(async () => {
+      const { publicMessages, gmMessages } = await publishOperationEvents(result);
+      expect(publicMessages).toEqual([]);
+      expect(gmMessages[0].content).toContain("Collision!");
+      expect(gmMessages[0].content).toContain("hull damage:");
+      expect(gmMessages[0].content).not.toContain("obstacleId");
+      expect(gmMessages[0].whisper).toEqual(["gm"]);
+    });
   });
 });
 
@@ -418,5 +468,45 @@ describe("administrative reposition", () => {
       expect(result.publicEvents).toEqual([]);
       expect(result.gmEvents[0].detail.velocityReset).toBe(resetVelocity);
     }
+  });
+
+  test("rotation and routine reposition retain audit events without creating chat", async () => {
+    const source = ship(SOURCE);
+    const result = executeShipOperation(
+      request("admin.reposition", SOURCE, [], { position: { x: 0, y: 0 }, facing: 45 }),
+      context([[SOURCE, source]]),
+    );
+    const before = clone(result);
+    await withChat(async (created) => {
+      expect(await publishOperationEvents(result)).toEqual({ publicMessages: [], gmMessages: [] });
+      await publishOperationEvents({ publicEvents: [], gmEvents: [
+        { type: "rotate", detail: { facing: 90 } },
+        { type: "maneuver", detail: { collisions: [] } },
+        { type: "startPhase", detail: { state: { revision: 20 } } },
+      ] });
+      expect(created).toEqual([]);
+    });
+    expect(result).toEqual(before);
+    expect(result.gmEvents[0].detail.facing).toBe(45);
+  });
+
+  test("GM failures are escaped prose without diagnostic payloads or public fallback", async () => {
+    const result = { publicEvents: [], gmEvents: [{
+      type: "operation.rejected",
+      message: '<img src=x onerror="alert(1)"> failed',
+      details: { secret: "hidden diagnostic", requestId: "technical-id" },
+    }] };
+    await withChat(async (created) => {
+      const messages = await publishOperationEvents(result);
+      expect(messages.publicMessages).toEqual([]);
+      expect(messages.gmMessages[0].whisper).toEqual(["gm"]);
+      expect(messages.gmMessages[0].content).toContain("&lt;img");
+      expect(messages.gmMessages[0].content).not.toContain("<img");
+      expect(messages.gmMessages[0].content).not.toContain("hidden diagnostic");
+      expect(messages.gmMessages[0].content).not.toContain("technical-id");
+      globalThis.game.users = [{ id: "player", isGM: false }];
+      expect(await publishOperationEvents(result)).toEqual({ publicMessages: [], gmMessages: [] });
+      expect(created).toHaveLength(1);
+    });
   });
 });
