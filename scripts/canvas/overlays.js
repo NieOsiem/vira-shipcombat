@@ -17,6 +17,7 @@ const COLORS = Object.freeze({
   pathShadow: 0x071521,
   facing: 0xffffff,
   arc: 0x84d681,
+  extendedArc: 0xffbd45,
   collision: 0xff6b55,
   overspeed: 0xffbd45,
   wall: 0xff5c72,
@@ -30,12 +31,17 @@ const COLORS = Object.freeze({
 
 function finitePoint(value) {
   const point = value?.position ?? value?.point ?? value;
-  if (!point || !Number.isFinite(Number(point.x)) || !Number.isFinite(Number(point.y))) return null;
+  if (
+    !point || !Number.isFinite(Number(point.x)) ||
+    !Number.isFinite(Number(point.y))
+  ) return null;
   return { x: Number(point.x), y: Number(point.y) };
 }
 
 function pointsFrom(value) {
-  const entries = Array.isArray(value) ? value : value?.path ?? value?.points ?? [];
+  const entries = Array.isArray(value)
+    ? value
+    : value?.path ?? value?.points ?? [];
   return Array.isArray(entries) ? entries.map(finitePoint).filter(Boolean) : [];
 }
 
@@ -43,11 +49,18 @@ function trajectoryPaths(preview) {
   const explicitPowered = preview?.poweredPath ?? preview?.burnPath;
   const explicitCoast = preview?.coastPath ?? preview?.coast;
   if (explicitPowered || explicitCoast) {
-    return { powered: pointsFrom(explicitPowered), coast: pointsFrom(explicitCoast) };
+    return {
+      powered: pointsFrom(explicitPowered),
+      coast: pointsFrom(explicitCoast),
+    };
   }
-  const path = Array.isArray(preview?.path) ? preview.path : preview?.path?.path;
+  const path = Array.isArray(preview?.path)
+    ? preview.path
+    : preview?.path?.path;
   if (!Array.isArray(path)) return { powered: [], coast: [] };
-  if (path[0]?.phase === "deliberateCoast") return { powered: [], coast: pointsFrom(path) };
+  if (path[0]?.phase === "deliberateCoast") {
+    return { powered: [], coast: pointsFrom(path) };
+  }
   const coastIndex = path.findIndex((entry) => entry?.phase === "coast");
   if (coastIndex < 0) return { powered: pointsFrom(path), coast: [] };
   return {
@@ -62,23 +75,41 @@ function degreesToRadians(degrees) {
 
 function headingPoint(origin, heading, distance) {
   const radians = degreesToRadians(heading);
-  return { x: origin.x + (Math.sin(radians) * distance), y: origin.y - (Math.cos(radians) * distance) };
+  return {
+    x: origin.x + (Math.sin(radians) * distance),
+    y: origin.y - (Math.cos(radians) * distance),
+  };
 }
 
 function gridSize() {
-  return Number(globalThis.canvas?.dimensions?.size ?? globalThis.canvas?.grid?.size ?? 100) || 100;
+  return Number(
+    globalThis.canvas?.dimensions?.size ?? globalThis.canvas?.grid?.size ?? 100,
+  ) || 100;
 }
 
 function useModernGraphics(graphics) {
   return typeof graphics?.stroke === "function";
 }
 
-function strokePath(graphics, points, { color, width = 3, alpha = 1, dashed = false, cap = "round", join = "round" } = {}) {
+function strokePath(
+  graphics,
+  points,
+  {
+    color,
+    width = 3,
+    alpha = 1,
+    dashed = false,
+    cap = "round",
+    join = "round",
+  } = {},
+) {
   if (points.length < 2) return;
   if (!useModernGraphics(graphics)) graphics.lineStyle(width, color, alpha);
   if (!dashed) {
     graphics.moveTo(points[0].x, points[0].y);
-    for (let index = 1; index < points.length; index += 1) graphics.lineTo(points[index].x, points[index].y);
+    for (let index = 1; index < points.length; index += 1) {
+      graphics.lineTo(points[index].x, points[index].y);
+    }
   } else {
     const dash = Math.max(8, gridSize() * 0.12);
     const gap = dash * 0.65;
@@ -92,14 +123,24 @@ function strokePath(graphics, points, { color, width = 3, alpha = 1, dashed = fa
       for (let cursor = 0; cursor < length; cursor += dash + gap) {
         const segmentEnd = Math.min(length, cursor + dash);
         graphics.moveTo(start.x + (dx * cursor), start.y + (dy * cursor));
-        graphics.lineTo(start.x + (dx * segmentEnd), start.y + (dy * segmentEnd));
+        graphics.lineTo(
+          start.x + (dx * segmentEnd),
+          start.y + (dy * segmentEnd),
+        );
       }
     }
   }
-  if (useModernGraphics(graphics)) graphics.stroke({ color, width, alpha, cap, join });
+  if (useModernGraphics(graphics)) {
+    graphics.stroke({ color, width, alpha, cap, join });
+  }
 }
 
-function drawCircle(graphics, point, radius, { color, alpha = 1, width = 2, fillAlpha = 0 }) {
+function drawCircle(
+  graphics,
+  point,
+  radius,
+  { color, alpha = 1, width = 2, fillAlpha = 0 },
+) {
   if (useModernGraphics(graphics)) {
     graphics.circle(point.x, point.y, radius);
     if (fillAlpha > 0) graphics.fill({ color, alpha: fillAlpha });
@@ -122,7 +163,6 @@ function fillCircle(graphics, point, radius, color, alpha = 1) {
   graphics.endFill();
 }
 
-
 function tokenShieldCenter(token) {
   return {
     x: Number(token?.w ?? 0) / 2,
@@ -133,7 +173,9 @@ function tokenShieldCenter(token) {
 function tokenShieldRadius(token) {
   const document = token?.document ?? token;
   const width = Number(token?.w ?? (Number(document?.width ?? 1) * gridSize()));
-  const height = Number(token?.h ?? (Number(document?.height ?? document?.width ?? 1) * gridSize()));
+  const height = Number(
+    token?.h ?? (Number(document?.height ?? document?.width ?? 1) * gridSize()),
+  );
   return Math.hypot(width, height) / 2 + Math.max(6, gridSize() * 0.06);
 }
 
@@ -152,7 +194,14 @@ function shieldAppearance(charge, capacity, collapsed) {
   return { color: COLORS.shield, ratio };
 }
 
-function strokeArc(graphics, center, radius, start, end, { color, width, alpha }) {
+function strokeArc(
+  graphics,
+  center,
+  radius,
+  start,
+  end,
+  { color, width, alpha },
+) {
   const startPoint = {
     x: center.x + (Math.cos(start) * radius),
     y: center.y + (Math.sin(start) * radius),
@@ -169,22 +218,37 @@ function strokeArc(graphics, center, radius, start, end, { color, width, alpha }
 }
 
 function drawShieldArc(graphics, center, radius, start, end, appearance) {
-  strokeArc(graphics, center, radius, start, end, { color: COLORS.shieldEdge, width: 4, alpha: 0.25 });
-  strokeArc(graphics, center, radius, start, end, { color: COLORS.shieldEmpty, width: 3, alpha: 0.3 });
+  strokeArc(graphics, center, radius, start, end, {
+    color: COLORS.shieldEdge,
+    width: 4,
+    alpha: 0.25,
+  });
+  strokeArc(graphics, center, radius, start, end, {
+    color: COLORS.shieldEmpty,
+    width: 3,
+    alpha: 0.3,
+  });
   if (appearance.ratio <= 0) return;
   const middle = (start + end) / 2;
   const half = (end - start) * appearance.ratio / 2;
   strokeArc(graphics, center, radius, middle - half, middle + half, {
-    color: appearance.color, width: 3, alpha: 0.95,
+    color: appearance.color,
+    width: 3,
+    alpha: 0.95,
   });
 }
 
 function hasVisibleShields(token) {
   const actor = token?.actor ?? token?.document?.actor;
   const document = token?.document ?? token;
-  if (actor?.type !== SHIP_TYPE || document?.hidden || token?.visible === false) return false;
+  if (
+    actor?.type !== SHIP_TYPE || document?.hidden || token?.visible === false
+  ) return false;
   if (!globalThis.game?.user?.isGM && !actor?.isOwner) return false;
-  return Boolean(actor?.system?.shipCombat?.config?.components?.shield && actor?.system?.shipCombat?.state?.shields);
+  return Boolean(
+    actor?.system?.shipCombat?.config?.components?.shield &&
+      actor?.system?.shipCombat?.state?.shields,
+  );
 }
 
 function shieldLabel(text, color, heading, radius) {
@@ -195,8 +259,19 @@ function shieldLabel(text, color, heading, radius) {
     fill: color,
   };
   const label = Number.parseInt(globalThis.PIXI?.VERSION, 10) >= 8
-    ? new PIXI.Text({ text, style: { ...style, stroke: { color: COLORS.shieldEdge, width: 0.75, join: "round" } } })
-    : new PIXI.Text(text, { ...style, stroke: COLORS.shieldEdge, strokeThickness: 0.75, lineJoin: "round" });
+    ? new PIXI.Text({
+      text,
+      style: {
+        ...style,
+        stroke: { color: COLORS.shieldEdge, width: 0.75, join: "round" },
+      },
+    })
+    : new PIXI.Text(text, {
+      ...style,
+      stroke: COLORS.shieldEdge,
+      strokeThickness: 0.75,
+      lineJoin: "round",
+    });
   label.anchor.set(0.5);
   label.resolution = Math.max(2, globalThis.devicePixelRatio ?? 1);
   label.eventMode = "none";
@@ -212,21 +287,43 @@ function drawTokenShields(entry, token) {
   const center = tokenShieldCenter(token);
   const radius = tokenShieldRadius(token);
   const bubble = shield.topology === "bubble";
-  const sectors = bubble ? [shield.sectors?.[0] ?? "bubble"] : ["fore", "starboard", "aft", "port"];
+  const sectors = bubble
+    ? [shield.sectors?.[0] ?? "bubble"]
+    : ["fore", "starboard", "aft", "port"];
   const headings = { fore: 0, starboard: 90, aft: 180, port: 270 };
   const halfArc = degreesToRadians(bubble ? 170 : 32);
 
   entry.graphics.clear();
   drawDestinationFacing(entry.graphics, center, 0, Number(token.h ?? token.w));
-  entry.labels.removeChildren().forEach((child) => child.destroy?.({ children: true }));
+  entry.labels.removeChildren().forEach((child) =>
+    child.destroy?.({ children: true })
+  );
   for (const sector of sectors) {
     const charge = Number(state.charge?.[sector] ?? 0);
     const collapsed = Number(state.collapse?.[sector] ?? 0) > 0;
-    const appearance = shieldAppearance(charge, shieldSectorCapacity(shield, sector), collapsed);
+    const appearance = shieldAppearance(
+      charge,
+      shieldSectorCapacity(shield, sector),
+      collapsed,
+    );
     const heading = bubble ? 0 : headings[sector];
     const middle = degreesToRadians(bubble ? 90 : heading - 90);
-    drawShieldArc(entry.graphics, center, radius, middle - halfArc, middle + halfArc, appearance);
-    entry.labels.addChild(shieldLabel(collapsed ? "×" : String(charge), appearance.color, heading, radius + 12));
+    drawShieldArc(
+      entry.graphics,
+      center,
+      radius,
+      middle - halfArc,
+      middle + halfArc,
+      appearance,
+    );
+    entry.labels.addChild(
+      shieldLabel(
+        collapsed ? "×" : String(charge),
+        appearance.color,
+        heading,
+        radius + 12,
+      ),
+    );
   }
 }
 
@@ -237,7 +334,11 @@ function positionShieldLabels(entry, token) {
   entry.graphics.pivot.set(center.x, center.y);
   entry.graphics.angle = rotation;
   for (const label of entry.labels.children) {
-    const position = headingPoint(center, Number(label._viraHeading) + rotation, Number(label._viraRadius));
+    const position = headingPoint(
+      center,
+      Number(label._viraHeading) + rotation,
+      Number(label._viraRadius),
+    );
     label.position.set(position.x, position.y);
   }
 }
@@ -318,29 +419,61 @@ function destroyTokenShields() {
   for (const key of Array.from(shieldGraphics.keys())) removeTokenShield(key);
 }
 
-function drawFacing(graphics, origin, facing, length = gridSize() * 0.55, color = COLORS.facing) {
+function drawFacing(
+  graphics,
+  origin,
+  facing,
+  length = gridSize() * 0.55,
+  color = COLORS.facing,
+) {
   if (!origin || !Number.isFinite(Number(facing))) return;
   const tip = headingPoint(origin, Number(facing), length);
-  const left = headingPoint(tip, Number(facing) + 154, Math.min(16, length * 0.28));
-  const right = headingPoint(tip, Number(facing) - 154, Math.min(16, length * 0.28));
-  strokePath(graphics, [origin, tip], { color: COLORS.pathShadow, width: 7, alpha: 0.8 });
-  strokePath(graphics, [left, tip, right], { color: COLORS.pathShadow, width: 7, alpha: 0.8 });
+  const left = headingPoint(
+    tip,
+    Number(facing) + 154,
+    Math.min(16, length * 0.28),
+  );
+  const right = headingPoint(
+    tip,
+    Number(facing) - 154,
+    Math.min(16, length * 0.28),
+  );
+  strokePath(graphics, [origin, tip], {
+    color: COLORS.pathShadow,
+    width: 7,
+    alpha: 0.8,
+  });
+  strokePath(graphics, [left, tip, right], {
+    color: COLORS.pathShadow,
+    width: 7,
+    alpha: 0.8,
+  });
   strokePath(graphics, [origin, tip], { color, width: 3, alpha: 1 });
   strokePath(graphics, [left, tip, right], { color, width: 3, alpha: 1 });
 }
 
 function drawTrajectory(graphics, points, { color, dashed = false }) {
   if (points.length < 2) return;
-  strokePath(graphics, points, { color: COLORS.pathShadow, width: 3.5, alpha: 0.2, dashed });
-  strokePath(graphics, points, { color, width: 1.5, alpha: dashed ? 0.4 : 0.55, dashed });
+  strokePath(graphics, points, {
+    color: COLORS.pathShadow,
+    width: 3.5,
+    alpha: 0.2,
+    dashed,
+  });
+  strokePath(graphics, points, {
+    color,
+    width: 1.5,
+    alpha: dashed ? 0.4 : 0.55,
+    dashed,
+  });
 }
 
 function sourceToken(preview) {
   const sourceUuid = String(preview?.sourceUuid ?? preview?.tokenUuid ?? "");
   if (!sourceUuid) return null;
   return (globalThis.canvas?.tokens?.placeables ?? []).find((token) => (
-    String(token?.document?.uuid ?? token?.uuid ?? "") === sourceUuid
-    || String(token?.id ?? token?.document?.id ?? "") === sourceUuid
+    String(token?.document?.uuid ?? token?.uuid ?? "") === sourceUuid ||
+    String(token?.id ?? token?.document?.id ?? "") === sourceUuid
   )) ?? null;
 }
 
@@ -348,7 +481,9 @@ function destinationSize(preview) {
   const token = sourceToken(preview);
   const meshWidth = Math.abs(Number(token?.mesh?.width));
   const meshHeight = Math.abs(Number(token?.mesh?.height));
-  if (meshWidth > 0 && meshHeight > 0) return { width: meshWidth, height: meshHeight };
+  if (meshWidth > 0 && meshHeight > 0) {
+    return { width: meshWidth, height: meshHeight };
+  }
 
   const width = Math.abs(Number(token?.w ?? gridSize()));
   const height = Math.abs(Number(token?.h ?? gridSize()));
@@ -362,7 +497,9 @@ function destinationSize(preview) {
 function addDestinationGhost(preview, point, facing, size) {
   const token = sourceToken(preview);
   const texture = token?.mesh?.texture;
-  if (!overlayContainer || !point || !texture || texture === PIXI.Texture?.EMPTY) return;
+  if (
+    !overlayContainer || !point || !texture || texture === PIXI.Texture?.EMPTY
+  ) return;
   const ghost = new PIXI.Sprite(texture);
   ghost.name = `${MODULE_ID}.destination`;
   ghost.anchor?.set?.(0.5);
@@ -384,46 +521,93 @@ function drawDestinationFacing(graphics, point, facing, shipHeight) {
   const base = headingPoint(point, facing, baseDistance);
   const left = headingPoint(base, Number(facing) - 90, size);
   const right = headingPoint(base, Number(facing) + 90, size);
-  strokePath(graphics, [left, tip, right], { color: COLORS.pathShadow, width: 3.5, alpha: 0.5 });
-  strokePath(graphics, [left, tip, right], { color: COLORS.powered, width: 1.5, alpha: 0.9 });
+  strokePath(graphics, [left, tip, right], {
+    color: COLORS.pathShadow,
+    width: 3.5,
+    alpha: 0.5,
+  });
+  strokePath(graphics, [left, tip, right], {
+    color: COLORS.powered,
+    width: 1.5,
+    alpha: 0.9,
+  });
 }
 
 function drawArc(graphics, arc, fallbackOrigin, fallbackFacing) {
   const origin = finitePoint(arc?.origin) ?? fallbackOrigin;
-  const facing = Number(arc?.facing ?? fallbackFacing);
-  const width = Number(arc?.arcWidth ?? arc?.arcWidthDegrees ?? arc?.width ?? 0);
-  const center = Number(arc?.arcCenter ?? arc?.arcCenterDegrees ?? arc?.center ?? 0);
-  const radius = Number(arc?.range ?? arc?.maxRange ?? arc?.radius ?? gridSize() * 3);
-  if (!origin || !Number.isFinite(facing) || !Number.isFinite(width) || width <= 0 || !Number.isFinite(radius) || radius <= 0) return;
+  const facing = Number(arc?.rotation ?? arc?.facing ?? fallbackFacing);
+  const width = Number(
+    arc?.arcDegrees ?? arc?.arcWidth ?? arc?.arcWidthDegrees ?? arc?.width ?? 0,
+  );
+  const center = Number(
+    arc?.arcCenter ?? arc?.arcCenterDegrees ?? arc?.center ?? 0,
+  );
+  const radius = Number(
+    arc?.maximumRange ?? arc?.range ?? arc?.maxRange ?? arc?.radius ??
+      gridSize() * 3,
+  );
+  if (
+    !origin || !Number.isFinite(facing) || !Number.isFinite(width) ||
+    width <= 0 || !Number.isFinite(radius) || radius <= 0
+  ) return;
+  const optimal = Math.max(
+    0,
+    Math.min(radius, Number(arc?.optimalRange ?? radius)),
+  );
+  if (!Number.isFinite(optimal)) return;
   const boundedWidth = Math.min(360, width);
   const startHeading = facing + center - (boundedWidth / 2);
   const endHeading = facing + center + (boundedWidth / 2);
-  const start = headingPoint(origin, startHeading, radius);
-  const end = headingPoint(origin, endHeading, radius);
-
-  if (!useModernGraphics(graphics)) {
-    graphics.lineStyle(2, Number(arc.color ?? COLORS.arc), 0.7);
-    graphics.beginFill(Number(arc.color ?? COLORS.arc), 0.07);
-    graphics.moveTo(origin.x, origin.y);
+  const startAngle = degreesToRadians(startHeading - 90);
+  const endAngle = degreesToRadians(endHeading - 90);
+  const band = (inner, outer, color) => {
+    if (outer <= inner) return;
+    const start = headingPoint(origin, startHeading, outer);
+    const innerEnd = headingPoint(origin, endHeading, inner);
+    const modern = useModernGraphics(graphics);
+    if (!modern) {
+      graphics.lineStyle(2, color, 0.7);
+      graphics.beginFill(color, 0.09);
+    }
+    graphics.moveTo(start.x, start.y);
+    graphics.arc(origin.x, origin.y, outer, startAngle, endAngle);
+    graphics.lineTo(innerEnd.x, innerEnd.y);
+    if (inner > 0) {
+      graphics.arc(origin.x, origin.y, inner, endAngle, startAngle, true);
+    }
     graphics.lineTo(start.x, start.y);
-    graphics.arc(origin.x, origin.y, radius, degreesToRadians(startHeading - 90), degreesToRadians(endHeading - 90));
-    graphics.lineTo(origin.x, origin.y);
-    graphics.endFill();
-    return;
+    if (modern) {
+      graphics.fill({ color, alpha: 0.09 });
+      graphics.stroke({ color, width: 2, alpha: 0.7 });
+    } else graphics.endFill();
+  };
+  band(optimal, radius, COLORS.extendedArc);
+  band(0, optimal, Number(arc.color ?? COLORS.arc));
+  if (arc?.optimalRange != null) {
+    addLabel(
+      "OPTIMAL",
+      headingPoint(origin, facing + center, optimal),
+      COLORS.arc,
+      { x: 10, y: -22 },
+    );
+    addLabel(
+      "MAXIMUM · extended range",
+      headingPoint(origin, facing + center, radius),
+      COLORS.extendedArc,
+      { x: 10, y: 0 },
+    );
   }
-  graphics.moveTo(origin.x, origin.y);
-  graphics.lineTo(start.x, start.y);
-  graphics.arc(origin.x, origin.y, radius, degreesToRadians(startHeading - 90), degreesToRadians(endHeading - 90));
-  graphics.lineTo(origin.x, origin.y);
-  graphics.fill({ color: Number(arc.color ?? COLORS.arc), alpha: 0.07 });
-  graphics.stroke({ color: Number(arc.color ?? COLORS.arc), width: 2, alpha: 0.7 });
 }
 
 function drawCollision(graphics, collision) {
   const point = finitePoint(collision);
   if (!point) return;
   const radius = Math.max(6, gridSize() * 0.09);
-  drawCircle(graphics, point, radius, { color: COLORS.collision, width: 3, fillAlpha: 0.2 });
+  drawCircle(graphics, point, radius, {
+    color: COLORS.collision,
+    width: 3,
+    fillAlpha: 0.2,
+  });
   strokePath(graphics, [
     { x: point.x - radius, y: point.y - radius },
     { x: point.x + radius, y: point.y + radius },
@@ -481,20 +665,40 @@ function warningEntries(preview, anchor, collisions) {
       return;
     }
     const code = String(entry.code ?? entry.kind ?? entry.type ?? defaultKind);
-    let message = entry.message ?? entry.label ?? code.replace(/^MOVEMENT_/, "").replaceAll("_", " ");
-    if (code.includes("OVERSPEED") && Number.isFinite(Number(entry.overspeed))) {
+    let message = entry.message ?? entry.label ??
+      code.replace(/^MOVEMENT_/, "").replaceAll("_", " ");
+    if (
+      code.includes("OVERSPEED") && Number.isFinite(Number(entry.overspeed))
+    ) {
       message = `OVERSPEED +${Number(entry.overspeed)}`;
-      if (Number.isFinite(Number(entry.hullDamage))) message += ` (${Number(entry.hullDamage)} hull)`;
+      if (Number.isFinite(Number(entry.hullDamage))) {
+        message += ` (${Number(entry.hullDamage)} hull)`;
+      }
     }
-    warnings.push({ kind: code, message, position: finitePoint(entry) ?? anchor });
+    warnings.push({
+      kind: code,
+      message,
+      position: finitePoint(entry) ?? anchor,
+    });
   };
-  const supplied = Array.isArray(preview?.warnings) ? preview.warnings : preview?.warnings ? [preview.warnings] : [];
+  const supplied = Array.isArray(preview?.warnings)
+    ? preview.warnings
+    : preview?.warnings
+    ? [preview.warnings]
+    : [];
   for (const warning of supplied) append(warning);
-  append(preview?.overspeedWarning ?? (preview?.overspeed ? "OVERSPEED" : null), "overspeed");
+  append(
+    preview?.overspeedWarning ?? (preview?.overspeed ? "OVERSPEED" : null),
+    "overspeed",
+  );
   append(preview?.wallWarning, "wall");
   for (const collision of collisions) {
     if (collision?.type !== "wall") continue;
-    append({ kind: "wall", message: "WALL COLLISION", point: finitePoint(collision) }, "wall");
+    append({
+      kind: "wall",
+      message: "WALL COLLISION",
+      point: finitePoint(collision),
+    }, "wall");
   }
   return warnings;
 }
@@ -502,22 +706,44 @@ function warningEntries(preview, anchor, collisions) {
 function drawPreview(graphics, preview) {
   for (const projection of preview?.targetedCoasts ?? []) {
     const points = pointsFrom(projection.path ?? []);
-    strokePath(trajectoryGraphics, points, { color: COLORS.pathShadow, width: 7, alpha: 0.3, dashed: true });
-    strokePath(trajectoryGraphics, points, { color: COLORS.marker, width: 3, alpha: 0.45, dashed: true });
-    if (points.length) addLabel(`${projection.label ?? "Target"} · COAST`, points.at(-1), COLORS.marker, { x: 10, y: 10 });
+    strokePath(trajectoryGraphics, points, {
+      color: COLORS.pathShadow,
+      width: 7,
+      alpha: 0.3,
+      dashed: true,
+    });
+    strokePath(trajectoryGraphics, points, {
+      color: COLORS.marker,
+      width: 3,
+      alpha: 0.45,
+      dashed: true,
+    });
+    if (points.length) {
+      addLabel(
+        `${projection.label ?? "Target"} · COAST`,
+        points.at(-1),
+        COLORS.marker,
+        { x: 10, y: 10 },
+      );
+    }
   }
 
   const { powered, coast } = trajectoryPaths(preview);
   drawTrajectory(trajectoryGraphics, powered, { color: COLORS.powered });
-  drawTrajectory(trajectoryGraphics, coast, { color: COLORS.coast, dashed: true });
+  drawTrajectory(trajectoryGraphics, coast, {
+    color: COLORS.coast,
+    dashed: true,
+  });
 
-  const finalPoint = finitePoint(preview?.coastEnd)
-    ?? coast.at(-1)
-    ?? finitePoint(preview?.position)
-    ?? finitePoint(preview?.poweredEnd)
-    ?? powered.at(-1)
-    ?? finitePoint(preview?.origin);
-  const facing = preview?.finalFacing ?? preview?.facing ?? preview?.coastEnd?.facing ?? preview?.poweredEnd?.facing ?? preview?.heading;
+  const finalPoint = finitePoint(preview?.coastEnd) ??
+    coast.at(-1) ??
+    finitePoint(preview?.position) ??
+    finitePoint(preview?.poweredEnd) ??
+    powered.at(-1) ??
+    finitePoint(preview?.origin);
+  const facing = preview?.finalFacing ?? preview?.facing ??
+    preview?.coastEnd?.facing ?? preview?.poweredEnd?.facing ??
+    preview?.heading;
   const startPoint = powered[0] ?? coast[0];
   if (startPoint) {
     fillCircle(trajectoryGraphics, startPoint, 3, COLORS.pathShadow, 0.4);
@@ -529,25 +755,43 @@ function drawPreview(graphics, preview) {
     fillCircle(trajectoryGraphics, phasePoint, 1.5, COLORS.powered);
   }
   if (finalPoint) {
-    drawCircle(trajectoryGraphics, finalPoint, 4, { color: COLORS.pathShadow, width: 3.5, alpha: 0.3 });
-    drawCircle(trajectoryGraphics, finalPoint, 4, { color: COLORS.powered, width: 1.5, alpha: 0.55 });
+    drawCircle(trajectoryGraphics, finalPoint, 4, {
+      color: COLORS.pathShadow,
+      width: 3.5,
+      alpha: 0.3,
+    });
+    drawCircle(trajectoryGraphics, finalPoint, 4, {
+      color: COLORS.powered,
+      width: 1.5,
+      alpha: 0.55,
+    });
 
     const size = destinationSize(preview);
     addDestinationGhost(preview, finalPoint, facing, size);
     drawDestinationFacing(graphics, finalPoint, facing, size.height);
   }
 
-  const arcs = Array.isArray(preview?.firingArcs) ? preview.firingArcs : preview?.firingArc ? [preview.firingArc] : [];
+  const arcs = Array.isArray(preview?.firingArcs)
+    ? preview.firingArcs
+    : preview?.firingArc
+    ? [preview.firingArc]
+    : [];
   for (const arc of arcs) drawArc(graphics, arc, finalPoint, facing);
 
-  const suppliedCollisions = preview?.collisions ?? preview?.collisionPoints ?? preview?.sweptCollisions ?? [];
-  const collisions = Array.isArray(suppliedCollisions) ? suppliedCollisions : [suppliedCollisions];
+  const suppliedCollisions = preview?.collisions ?? preview?.collisionPoints ??
+    preview?.sweptCollisions ?? [];
+  const collisions = Array.isArray(suppliedCollisions)
+    ? suppliedCollisions
+    : [suppliedCollisions];
   for (const collision of collisions) drawCollision(graphics, collision);
 
   warningEntries(preview, finalPoint, collisions).forEach((warning, index) => {
     const kind = String(warning.kind).toLowerCase();
     const color = kind.includes("wall") ? COLORS.wall : COLORS.overspeed;
-    addLabel(warning.message, warning.position, color, { x: 12, y: -14 + (index * 19) });
+    addLabel(warning.message, warning.position, color, {
+      x: 12,
+      y: -14 + (index * 19),
+    });
   });
 }
 
@@ -555,7 +799,12 @@ function drawLastKnown(graphics, marker) {
   const point = finitePoint(marker?.position);
   if (!point) return;
   const radius = Math.max(9, gridSize() * 0.14);
-  drawCircle(graphics, point, radius, { color: COLORS.marker, alpha: 0.8, width: 2, fillAlpha: 0.08 });
+  drawCircle(graphics, point, radius, {
+    color: COLORS.marker,
+    alpha: 0.8,
+    width: 2,
+    fillAlpha: 0.08,
+  });
   strokePath(graphics, [
     { x: point.x - radius, y: point.y },
     { x: point.x + radius, y: point.y },
@@ -578,20 +827,27 @@ function clearLabels() {
 }
 
 function redraw() {
-  if (!overlayContainer || !overlayGraphics || !trajectoryGraphics || !globalThis.canvas?.ready) return;
+  if (
+    !overlayContainer || !overlayGraphics || !trajectoryGraphics ||
+    !globalThis.canvas?.ready
+  ) return;
   overlayGraphics.clear();
   trajectoryGraphics.clear();
   trajectoryGraphics.elevation = Number(canvas.level?.elevation?.base ?? 0);
   canvas.primary.sortDirty = true;
   clearLabels();
   refreshTokenShields();
-  for (const preview of previews.values()) drawPreview(overlayGraphics, preview);
+  for (const preview of previews.values()) {
+    drawPreview(overlayGraphics, preview);
+  }
   for (const marker of lastKnownMarkers) drawLastKnown(overlayGraphics, marker);
 }
 
 function createContainer() {
   destroyContainer();
-  if (!globalThis.canvas?.stage || !globalThis.canvas?.primary || !globalThis.PIXI) return;
+  if (
+    !globalThis.canvas?.stage || !globalThis.canvas?.primary || !globalThis.PIXI
+  ) return;
   overlayContainer = new PIXI.Container();
   overlayContainer.name = `${MODULE_ID}.overlays`;
   overlayContainer.eventMode = "none";
@@ -607,7 +863,8 @@ function createContainer() {
   trajectoryGraphics.name = `${MODULE_ID}.trajectories`;
   trajectoryGraphics.eventMode = "none";
   // Primary rendering puts paths above level scenery but below token meshes.
-  trajectoryGraphics.sortLayer = foundry.canvas.groups.PrimaryCanvasGroup.SORT_LAYERS.TOKENS - 1;
+  trajectoryGraphics.sortLayer =
+    foundry.canvas.groups.PrimaryCanvasGroup.SORT_LAYERS.TOKENS - 1;
   canvas.primary.addChild(trajectoryGraphics);
   installShieldTicker();
   refreshTokenShields();
@@ -636,18 +893,28 @@ function registerHook(name, callback) {
 
 function previewKey(sourceOrPreview, preview) {
   if (preview !== undefined) return String(sourceOrPreview ?? "default");
-  return String(sourceOrPreview?.sourceUuid ?? sourceOrPreview?.tokenUuid ?? sourceOrPreview?.id ?? "default");
+  return String(
+    sourceOrPreview?.sourceUuid ?? sourceOrPreview?.tokenUuid ??
+      sourceOrPreview?.id ?? "default",
+  );
 }
 
 /** Set or replace a ship movement preview and redraw the dedicated overlay container. */
 export function setMovementPreview(sourceOrPreview, suppliedPreview) {
   const key = previewKey(sourceOrPreview, suppliedPreview);
-  const preview = suppliedPreview === undefined ? sourceOrPreview : suppliedPreview;
+  const preview = suppliedPreview === undefined
+    ? sourceOrPreview
+    : suppliedPreview;
   if (!preview) previews.delete(key);
-  else previews.set(key, typeof preview === "object" ? {
-    ...preview,
-    sourceUuid: preview.sourceUuid ?? preview.tokenUuid ?? key,
-  } : preview);
+  else {previews.set(
+      key,
+      typeof preview === "object"
+        ? {
+          ...preview,
+          sourceUuid: preview.sourceUuid ?? preview.tokenUuid ?? key,
+        }
+        : preview,
+    );}
   redraw();
 }
 

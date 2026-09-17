@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { CANADENSIS_IDS } from "../scripts/data/canadensis.js";
-import { createDefaultShipData, createInitialState } from "../scripts/model/defaults.js";
+import {
+  createDefaultShipData,
+  createInitialState,
+} from "../scripts/model/defaults.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 import { trackKey } from "../scripts/rules/sensors.js";
 import { publishOperationEvents } from "../scripts/foundry/chat.js";
@@ -30,7 +33,9 @@ function ship(uuid, overrides = {}) {
 
 function context(records, overrides = {}) {
   return {
-    ships: Object.fromEntries(records.map(([uuid, record]) => [uuid, clone(record)])),
+    ships: Object.fromEntries(
+      records.map(([uuid, record]) => [uuid, clone(record)]),
+    ),
     userId: "gm-user",
     isGM: true,
     rollD20: () => 20,
@@ -39,7 +44,13 @@ function context(records, overrides = {}) {
   };
 }
 
-function request(type, sourceUuid = SOURCE, targetUuids = [], payload = {}, revisions = {}) {
+function request(
+  type,
+  sourceUuid = SOURCE,
+  targetUuids = [],
+  payload = {},
+  revisions = {},
+) {
   return {
     type,
     sourceUuid,
@@ -72,14 +83,34 @@ async function withChat(callback) {
   const created = [];
   globalThis.foundry = {
     utils: {
-      escapeHTML: (value) => String(value).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]),
+      escapeHTML: (value) =>
+        String(value).replace(
+          /[&<>"']/g,
+          (character) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[character],
+        ),
     },
-    documents: { ChatMessage: { implementation: {
-      getSpeaker: () => ({ alias: "Ship combat" }),
-      createDocuments: async (messages) => { created.push(...messages); return messages; },
-    } } },
+    documents: {
+      ChatMessage: {
+        implementation: {
+          getSpeaker: () => ({ alias: "Ship combat" }),
+          createDocuments: async (messages) => {
+            created.push(...messages);
+            return messages;
+          },
+        },
+      },
+    },
   };
-  globalThis.game = { users: [{ id: "gm", isGM: true }, { id: "player", isGM: false }] };
+  globalThis.game = {
+    users: [{ id: "gm", isGM: true }, { id: "player", isGM: false }],
+  };
   try {
     await callback(created);
   } finally {
@@ -89,9 +120,13 @@ async function withChat(callback) {
 }
 
 function assignedUser(record, operatorId, userId) {
-  const operator = record.config.operators.find((entry) => entry.id === operatorId);
+  const operator = record.config.operators.find((entry) =>
+    entry.id === operatorId
+  );
   operator.userId = userId;
-  for (const entries of [record.state.roster.command, record.state.roster.crew]) {
+  for (
+    const entries of [record.state.roster.command, record.state.roster.crew]
+  ) {
     const assignment = entries.find((entry) => entry.operatorId === operatorId);
     if (assignment) assignment.userId = userId;
   }
@@ -100,13 +135,22 @@ function assignedUser(record, operatorId, userId) {
 function lifecycleResult(type, phase, payload = {}) {
   const source = ship(SOURCE);
   source.state.phase = phase;
-  return executeShipOperation(request(type, SOURCE, [], payload), context([[SOURCE, source]]));
+  return executeShipOperation(
+    request(type, SOURCE, [], payload),
+    context([[SOURCE, source]]),
+  );
 }
 
 describe("executeShipOperation lifecycle dispatch", () => {
   test("canonical and stable aliases dispatch to the same lifecycle transitions", () => {
     const cases = [
-      ["enterCombat", "combat.enter", "outsideCombat", { turnKey: "round-1" }, "start"],
+      [
+        "enterCombat",
+        "combat.enter",
+        "outsideCombat",
+        { turnKey: "round-1" },
+        "start",
+      ],
       ["coast", "phase.coast", "active", {}, "end"],
       ["endPhase", "phase.end", "end", {}, "start"],
       ["leaveCombat", "combat.leave", "start", {}, "outsideCombat"],
@@ -121,10 +165,16 @@ describe("executeShipOperation lifecycle dispatch", () => {
   });
 
   test("lifecycle events remain GM-only", () => {
-    const result = lifecycleResult("combat.enter", "outsideCombat", { turnKey: "round-2" });
+    const result = lifecycleResult("combat.enter", "outsideCombat", {
+      turnKey: "round-2",
+    });
     expect(result.publicEvents).toEqual([]);
     expect(result.gmEvents).toHaveLength(1);
-    expect(result.gmEvents[0]).toMatchObject({ type: "enterCombat", sourceUuid: SOURCE, targetUuids: [] });
+    expect(result.gmEvents[0]).toMatchObject({
+      type: "enterCombat",
+      sourceUuid: SOURCE,
+      targetUuids: [],
+    });
   });
 });
 
@@ -135,9 +185,23 @@ describe("dispatcher rejection and authority", () => {
     const authority = context([[SOURCE, source]]);
     const before = json(authority);
 
-    expect(errorCode(() => executeShipOperation(request("warp", SOURCE, [], {}, { [SOURCE]: 4 }), authority))).toBe("UNKNOWN_OPERATION");
+    expect(
+      errorCode(() =>
+        executeShipOperation(
+          request("warp", SOURCE, [], {}, { [SOURCE]: 4 }),
+          authority,
+        )
+      ),
+    ).toBe("UNKNOWN_OPERATION");
     expect(json(authority)).toBe(before);
-    expect(errorCode(() => executeShipOperation(request("enterCombat", SOURCE, [], {}, { [SOURCE]: 3 }), authority))).toBe("STALE_SHIP_REVISION");
+    expect(
+      errorCode(() =>
+        executeShipOperation(
+          request("enterCombat", SOURCE, [], {}, { [SOURCE]: 3 }),
+          authority,
+        )
+      ),
+    ).toBe("STALE_SHIP_REVISION");
     expect(json(authority)).toBe(before);
   });
 
@@ -147,7 +211,10 @@ describe("dispatcher rejection and authority", () => {
     const authority = context([[SOURCE, source]]);
     const before = clone(authority.ships);
 
-    const result = executeShipOperation(request("enterCombat", SOURCE, [], { turnKey: "round-3" }), authority);
+    const result = executeShipOperation(
+      request("enterCombat", SOURCE, [], { turnKey: "round-3" }),
+      authority,
+    );
 
     expect(authority.ships).toEqual(before);
     expect(result.shipStates[SOURCE]).not.toBe(authority.ships[SOURCE].state);
@@ -157,10 +224,20 @@ describe("dispatcher rejection and authority", () => {
   test("failed Active-phase operations are atomic and leave context byte-identical", () => {
     const source = ship(SOURCE);
     assignedUser(source, PILOT, "pilot-user");
-    const authority = context([[SOURCE, source]], { isGM: false, userId: "pilot-user" });
+    const authority = context([[SOURCE, source]], {
+      isGM: false,
+      userId: "pilot-user",
+    });
     const before = json(authority);
 
-    expect(errorCode(() => executeShipOperation(request("spendResource", SOURCE, [], { operatorId: PILOT }), authority))).toBe("SHIP_NOT_ACTIVE");
+    expect(
+      errorCode(() =>
+        executeShipOperation(
+          request("spendResource", SOURCE, [], { operatorId: PILOT }),
+          authority,
+        )
+      ),
+    ).toBe("SHIP_NOT_ACTIVE");
     expect(json(authority)).toBe(before);
   });
 
@@ -169,13 +246,29 @@ describe("dispatcher rejection and authority", () => {
     source.state.phase = "active";
     source.state.resources.actions[PILOT] = 1;
     assignedUser(source, PILOT, "owner-user");
-    const owned = context([[SOURCE, source]], { isGM: false, userId: "owner-user" });
-    const accepted = executeShipOperation(request("spendResource", SOURCE, [], { operatorId: PILOT }), owned);
+    const owned = context([[SOURCE, source]], {
+      isGM: false,
+      userId: "owner-user",
+    });
+    const accepted = executeShipOperation(
+      request("spendResource", SOURCE, [], { operatorId: PILOT }),
+      owned,
+    );
     expect(accepted.shipStates[SOURCE].resources.actions[PILOT]).toBe(0);
 
-    const foreign = context([[SOURCE, source]], { isGM: false, userId: "other-user" });
+    const foreign = context([[SOURCE, source]], {
+      isGM: false,
+      userId: "other-user",
+    });
     const before = json(foreign);
-    expect(errorCode(() => executeShipOperation(request("spendResource", SOURCE, [], { operatorId: PILOT }), foreign))).toBe("OPERATOR_PERMISSION_DENIED");
+    expect(
+      errorCode(() =>
+        executeShipOperation(
+          request("spendResource", SOURCE, [], { operatorId: PILOT }),
+          foreign,
+        )
+      ),
+    ).toBe("OPERATOR_PERMISSION_DENIED");
     expect(json(foreign)).toBe(before);
   });
 
@@ -184,10 +277,26 @@ describe("dispatcher rejection and authority", () => {
     source.state.phase = "active";
     source.state.resources.actions[PILOT] = 1;
     assignedUser(source, PILOT, "owner-user");
-    const authority = context([[SOURCE, source]], { isGM: true, userId: "different-user" });
+    const authority = context([[SOURCE, source]], {
+      isGM: true,
+      userId: "different-user",
+    });
 
-    expect(errorCode(() => executeShipOperation(request("spendResource", SOURCE, [], { operatorId: PILOT }), authority))).toBe("OPERATOR_PERMISSION_DENIED");
-    const result = executeShipOperation(request("spendResource", SOURCE, [], { operatorId: PILOT, gmOverride: true }), authority);
+    expect(
+      errorCode(() =>
+        executeShipOperation(
+          request("spendResource", SOURCE, [], { operatorId: PILOT }),
+          authority,
+        )
+      ),
+    ).toBe("OPERATOR_PERMISSION_DENIED");
+    const result = executeShipOperation(
+      request("spendResource", SOURCE, [], {
+        operatorId: PILOT,
+        gmOverride: true,
+      }),
+      authority,
+    );
     expect(result.shipStates[SOURCE].resources.actions[PILOT]).toBe(0);
   });
 });
@@ -200,33 +309,131 @@ describe("authority invariants", () => {
     assignedUser(source, GUNNER, "sensor-user");
 
     const result = executeShipOperation(
-      request("ping", SOURCE, [], { operatorId: GUNNER, cost: 0, free: true, operation: { free: true } }),
+      request("ping", SOURCE, [], {
+        operatorId: GUNNER,
+        cost: 0,
+        free: true,
+        operation: { free: true },
+      }),
       context([[SOURCE, source]], { isGM: false, userId: "sensor-user" }),
     );
 
     expect(result.shipStates[SOURCE].resources.actions[GUNNER]).toBe(0);
   });
 
-  test("roster identities already assigned to another ship are rejected", () => {
+  test("two participating ships sharing all template operators can both resolve Start", () => {
     const source = ship(SOURCE);
     const target = ship(TARGET_A);
-    expect(errorCode(() => executeShipOperation(
-      request("setRoster", SOURCE, [TARGET_A], { roster: clone(source.state.roster), occupiedIdentities: [] }),
+    source.state.phase = "start";
+    target.state.phase = "start";
+    const authority = context([[SOURCE, source], [TARGET_A, target]]);
+
+    const sourceStart = executeShipOperation(
+      request("startPhase", SOURCE),
+      authority,
+    );
+    authority.ships[SOURCE].state = sourceStart.shipStates[SOURCE];
+    const targetStart = executeShipOperation(
+      request("startPhase", TARGET_A),
+      authority,
+    );
+
+    for (
+      const [uuid, result] of [[SOURCE, sourceStart], [TARGET_A, targetStart]]
+    ) {
+      expect(result.shipStates[uuid].phase).toBe("active");
+      expect(result.shipStates[uuid].resources).toEqual({
+        actions: { [PILOT]: 3, [GUNNER]: 3 },
+        orders: { [DAMAGE_CONTROL]: 1, "canadensis-loader-general": 1 },
+      });
+    }
+  });
+
+  test("Start rejects a bound actor already assigned to another participating ship", () => {
+    const source = ship(SOURCE);
+    const target = ship(TARGET_A);
+    source.state.phase = "start";
+    target.state.phase = "active";
+    source.config.operators.find((entry) => entry.id === PILOT).actorId =
+      "shared-actor";
+    target.state.roster.command.find((entry) => entry.operatorId === GUNNER)
+      .actorId = "shared-actor";
+
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("startPhase", SOURCE, [], { occupiedIdentities: [] }),
+        context([[SOURCE, source], [TARGET_A, target]]),
+      )
+    )).toBe("DUPLICATE_OPERATOR");
+  });
+
+  test("roster edits reject a bound user already assigned to another participating ship", () => {
+    const source = ship(SOURCE);
+    const target = ship(TARGET_A);
+    source.state.phase = "start";
+    target.state.phase = "end";
+    assignedUser(source, PILOT, "shared-user");
+    assignedUser(target, GUNNER, "shared-user");
+
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("setRoster", SOURCE, [TARGET_A], {
+          roster: clone(source.state.roster),
+          occupiedIdentities: [],
+        }),
+        context([[SOURCE, source], [TARGET_A, target]]),
+      )
+    )).toBe("DUPLICATE_OPERATOR");
+  });
+
+  test("Start ignores bound individuals on ships outside combat", () => {
+    const source = ship(SOURCE);
+    const target = ship(TARGET_A);
+    source.state.phase = "start";
+    for (const record of [source, target]) {
+      record.config.operators.find((entry) => entry.id === PILOT).actorId =
+        "shared-actor";
+      assignedUser(record, PILOT, "shared-user");
+    }
+
+    const result = executeShipOperation(
+      request("startPhase", SOURCE),
       context([[SOURCE, source], [TARGET_A, target]]),
-    ))).toBe("DUPLICATE_OPERATOR");
+    );
+
+    expect(result.shipStates[SOURCE].phase).toBe("active");
+    expect(result.shipStates[SOURCE].resources.actions[PILOT]).toBe(3);
+  });
+
+  test("the same template operator cannot occupy two slots on one ship", () => {
+    const source = ship(SOURCE);
+    source.state.roster.command[1].operatorId = PILOT;
+
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("setRoster", SOURCE, [], {
+          roster: clone(source.state.roster),
+        }),
+        context([[SOURCE, source]]),
+      )
+    )).toBe("DUPLICATE_OPERATOR");
   });
 
   test("Start cannot run twice and End requires the mandatory coast", () => {
     const active = ship(SOURCE);
     active.state.phase = "active";
-    expect(errorCode(() => executeShipOperation(
-      request("startPhase", SOURCE),
-      context([[SOURCE, active]]),
-    ))).toBe("SHIP_NOT_STARTING");
-    expect(errorCode(() => executeShipOperation(
-      request("endPhase", SOURCE),
-      context([[SOURCE, active]]),
-    ))).toBe("COAST_REQUIRED");
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("startPhase", SOURCE),
+        context([[SOURCE, active]]),
+      )
+    )).toBe("SHIP_NOT_STARTING");
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("endPhase", SOURCE),
+        context([[SOURCE, active]]),
+      )
+    )).toBe("COAST_REQUIRED");
   });
 
   test("Power and Defense controls release on commit while free weapon toggles need no control or resource", () => {
@@ -237,7 +444,10 @@ describe("authority invariants", () => {
 
     source.state.controls.power = { operatorId: GUNNER };
     const power = executeShipOperation(
-      request("routePower", SOURCE, [], { operatorId: GUNNER, allocation: clone(source.state.power) }),
+      request("routePower", SOURCE, [], {
+        operatorId: GUNNER,
+        allocation: clone(source.state.power),
+      }),
       context([[SOURCE, source]], { isGM: false, userId: "operator-user" }),
     );
     expect(power.shipStates[SOURCE].controls.power).toBeNull();
@@ -246,7 +456,10 @@ describe("authority invariants", () => {
     defenseSource.state.controls.defense = { operatorId: GUNNER };
     const defense = executeShipOperation(
       request("routeDefense", SOURCE, [], { operatorId: GUNNER }),
-      context([[SOURCE, defenseSource]], { isGM: false, userId: "operator-user" }),
+      context([[SOURCE, defenseSource]], {
+        isGM: false,
+        userId: "operator-user",
+      }),
     );
     expect(defense.shipStates[SOURCE].controls.defense).toBeNull();
 
@@ -258,7 +471,8 @@ describe("authority invariants", () => {
       }),
       context([[SOURCE, source]], { isGM: false, userId: "operator-user" }),
     );
-    expect(toggled.shipStates[SOURCE].weapons[CANADENSIS_IDS.railgun].status).toBe("off");
+    expect(toggled.shipStates[SOURCE].weapons[CANADENSIS_IDS.railgun].status)
+      .toBe("off");
     expect(toggled.shipStates[SOURCE].resources.actions[GUNNER]).toBe(0);
   });
 
@@ -334,7 +548,10 @@ describe("authority invariants", () => {
     };
 
     const result = executeShipOperation(
-      request("repair", SOURCE, [], { operatorId: DAMAGE_CONTROL, conditionId: "starboard" }),
+      request("repair", SOURCE, [], {
+        operatorId: DAMAGE_CONTROL,
+        conditionId: "starboard",
+      }),
       context([[SOURCE, source]], { isGM: false, userId: "repair-user" }),
     );
 
@@ -362,14 +579,24 @@ describe("authority invariants", () => {
       ["ping", { operatorId: GUNNER }, "SENSORS_OFFLINE"],
     ];
     for (const [type, payload, code] of cases) {
-      const authority = context([[SOURCE, source]], { isGM: false, userId: "operator-user" });
+      const authority = context([[SOURCE, source]], {
+        isGM: false,
+        userId: "operator-user",
+      });
       const operationRequest = request(type, SOURCE, [], payload);
-      const before = clone({ ships: authority.ships, request: operationRequest });
-      expect(errorCode(() => executeShipOperation(
-        operationRequest,
-        authority,
-      ))).toBe(code);
-      expect({ ships: authority.ships, request: operationRequest }).toEqual(before);
+      const before = clone({
+        ships: authority.ships,
+        request: operationRequest,
+      });
+      expect(errorCode(() =>
+        executeShipOperation(
+          operationRequest,
+          authority,
+        )
+      )).toBe(code);
+      expect({ ships: authority.ships, request: operationRequest }).toEqual(
+        before,
+      );
     }
   });
 });
@@ -382,31 +609,60 @@ describe("multi-ship replacement scope and event privacy", () => {
     target.token.y = -20;
     assignedUser(source, GUNNER, "gunner-user");
     source.state.resources.actions[GUNNER] = 1;
-    source.state.tracks[TARGET_A] = { state: "targeted", firingSolution: true, effectiveAc: 10 };
+    source.state.tracks[TARGET_A] = {
+      state: "targeted",
+      firingSolution: true,
+      effectiveAc: 10,
+    };
     const weaponId = CANADENSIS_IDS.railgun;
     source.state.weapons[weaponId].readiness = 1;
 
     const result = executeShipOperation(
-      request("attack", SOURCE, [TARGET_A], { operatorId: GUNNER, weaponId, barrageRounds: 1 }),
-      context([[SOURCE, source], [TARGET_A, target]], { isGM: false, userId: "gunner-user" }),
+      request("attack", SOURCE, [TARGET_A], {
+        operatorId: GUNNER,
+        weaponId,
+        barrageRounds: 1,
+      }),
+      context([[SOURCE, source], [TARGET_A, target]], {
+        isGM: false,
+        userId: "gunner-user",
+      }),
     );
 
     expect(result.changedUuids).toEqual([SOURCE, TARGET_A].sort());
-    expect(Object.keys(result.shipStates).sort()).toEqual([SOURCE, TARGET_A].sort());
+    expect(Object.keys(result.shipStates).sort()).toEqual(
+      [SOURCE, TARGET_A].sort(),
+    );
     expect(result.publicEvents).toHaveLength(1);
     expect(result.gmEvents).toHaveLength(1);
-    expect(result.publicEvents[0]).toMatchObject({ type: "attack", sourceUuid: SOURCE, targetUuids: [TARGET_A] });
-    expect(result.gmEvents[0]).toMatchObject({ type: "attack", sourceUuid: SOURCE, targetUuids: [TARGET_A] });
-    expect(result.publicEvents[0].detail).not.toEqual(result.gmEvents[0].detail);
+    expect(result.publicEvents[0]).toMatchObject({
+      type: "attack",
+      sourceUuid: SOURCE,
+      targetUuids: [TARGET_A],
+    });
+    expect(result.gmEvents[0]).toMatchObject({
+      type: "attack",
+      sourceUuid: SOURCE,
+      targetUuids: [TARGET_A],
+    });
+    expect(result.publicEvents[0].detail).not.toEqual(
+      result.gmEvents[0].detail,
+    );
     const before = clone(result);
     await withChat(async () => {
-      const { publicMessages, gmMessages } = await publishOperationEvents(result);
+      const { publicMessages, gmMessages } = await publishOperationEvents(
+        result,
+      );
       const publicCard = publicMessages[0];
       const gmCard = gmMessages[0];
       expect(publicCard.content).toMatch(/[Hh]it!/);
-      expect(publicCard.content).toContain(`total ${result.publicEvents[0].detail.roll.total}`);
+      expect(publicCard.content).toContain(
+        `total ${result.publicEvents[0].detail.roll.total}`,
+      );
       expect(publicCard.content).not.toContain("Hull damage:");
-      expect(gmCard.content).toContain(`Hull damage: ${result.gmEvents[0].detail.damage.totals.hullDamage}`);
+      expect(gmCard.content).toContain(
+        `Hull damage: ${result.gmEvents[0].detail.damage.totals.hullDamage}`,
+      );
       expect(publicCard.whisper).toBeUndefined();
       expect(gmCard.whisper).toEqual(["gm"]);
       for (const card of [publicCard, gmCard]) {
@@ -433,12 +689,18 @@ describe("multi-ship replacement scope and event privacy", () => {
     );
 
     expect(result.changedUuids).toEqual([SOURCE, TARGET_A].sort());
-    expect(Object.keys(result.tokenUpdates).sort()).toEqual([SOURCE, TARGET_A].sort());
-    expect(result.shipStates[SOURCE].tracks[trackKey(TARGET_A)]?.targetUuid).toBe(TARGET_A);
-    expect(result.shipStates[TARGET_A].tracks[trackKey(SOURCE)]?.targetUuid).toBe(SOURCE);
+    expect(Object.keys(result.tokenUpdates).sort()).toEqual(
+      [SOURCE, TARGET_A].sort(),
+    );
+    expect(result.shipStates[SOURCE].tracks[trackKey(TARGET_A)]?.targetUuid)
+      .toBe(TARGET_A);
+    expect(result.shipStates[TARGET_A].tracks[trackKey(SOURCE)]?.targetUuid)
+      .toBe(SOURCE);
     expect(result.gmEvents[0].detail.collisions[0].obstacleId).toBe(TARGET_A);
     await withChat(async () => {
-      const { publicMessages, gmMessages } = await publishOperationEvents(result);
+      const { publicMessages, gmMessages } = await publishOperationEvents(
+        result,
+      );
       expect(publicMessages).toEqual([]);
       expect(gmMessages[0].content).toContain("Collision!");
       expect(gmMessages[0].content).toContain("hull damage:");
@@ -456,15 +718,25 @@ describe("administrative reposition", () => {
       source.state.velocity = { x: 7, y: -3 };
       unrelated.state.velocity = { x: 99, y: 99 };
       const result = executeShipOperation(
-        request("admin.reposition", SOURCE, [], { position: { x: 12, y: 34 }, facing: 90, resetVelocity }),
+        request("admin.reposition", SOURCE, [], {
+          position: { x: 12, y: 34 },
+          facing: 90,
+          resetVelocity,
+        }),
         context([[SOURCE, source], [TARGET_A, unrelated]]),
       );
 
       expect(result.changedUuids).toEqual([SOURCE]);
       expect(Object.keys(result.tokenUpdates)).toEqual([SOURCE]);
-      expect(result.shipStates[SOURCE].velocity).toEqual(resetVelocity ? { x: 0, y: 0 } : { x: 7, y: -3 });
+      expect(result.shipStates[SOURCE].velocity).toEqual(
+        resetVelocity ? { x: 0, y: 0 } : { x: 7, y: -3 },
+      );
       expect(result.shipStates[TARGET_A]).toEqual(unrelated.state);
-      expect(result.tokenUpdates[SOURCE]).toMatchObject({ x: 12, y: 34, rotation: 90 });
+      expect(result.tokenUpdates[SOURCE]).toMatchObject({
+        x: 12,
+        y: 34,
+        rotation: 90,
+      });
       expect(result.publicEvents).toEqual([]);
       expect(result.gmEvents[0].detail.velocityReset).toBe(resetVelocity);
     }
@@ -473,17 +745,26 @@ describe("administrative reposition", () => {
   test("rotation and routine reposition retain audit events without creating chat", async () => {
     const source = ship(SOURCE);
     const result = executeShipOperation(
-      request("admin.reposition", SOURCE, [], { position: { x: 0, y: 0 }, facing: 45 }),
+      request("admin.reposition", SOURCE, [], {
+        position: { x: 0, y: 0 },
+        facing: 45,
+      }),
       context([[SOURCE, source]]),
     );
     const before = clone(result);
     await withChat(async (created) => {
-      expect(await publishOperationEvents(result)).toEqual({ publicMessages: [], gmMessages: [] });
-      await publishOperationEvents({ publicEvents: [], gmEvents: [
-        { type: "rotate", detail: { facing: 90 } },
-        { type: "maneuver", detail: { collisions: [] } },
-        { type: "startPhase", detail: { state: { revision: 20 } } },
-      ] });
+      expect(await publishOperationEvents(result)).toEqual({
+        publicMessages: [],
+        gmMessages: [],
+      });
+      await publishOperationEvents({
+        publicEvents: [],
+        gmEvents: [
+          { type: "rotate", detail: { facing: 90 } },
+          { type: "maneuver", detail: { collisions: [] } },
+          { type: "startPhase", detail: { state: { revision: 20 } } },
+        ],
+      });
       expect(created).toEqual([]);
     });
     expect(result).toEqual(before);
@@ -491,11 +772,14 @@ describe("administrative reposition", () => {
   });
 
   test("GM failures are escaped prose without diagnostic payloads or public fallback", async () => {
-    const result = { publicEvents: [], gmEvents: [{
-      type: "operation.rejected",
-      message: '<img src=x onerror="alert(1)"> failed',
-      details: { secret: "hidden diagnostic", requestId: "technical-id" },
-    }] };
+    const result = {
+      publicEvents: [],
+      gmEvents: [{
+        type: "operation.rejected",
+        message: '<img src=x onerror="alert(1)"> failed',
+        details: { secret: "hidden diagnostic", requestId: "technical-id" },
+      }],
+    };
     await withChat(async (created) => {
       const messages = await publishOperationEvents(result);
       expect(messages.publicMessages).toEqual([]);
@@ -505,7 +789,10 @@ describe("administrative reposition", () => {
       expect(messages.gmMessages[0].content).not.toContain("hidden diagnostic");
       expect(messages.gmMessages[0].content).not.toContain("technical-id");
       globalThis.game.users = [{ id: "player", isGM: false }];
-      expect(await publishOperationEvents(result)).toEqual({ publicMessages: [], gmMessages: [] });
+      expect(await publishOperationEvents(result)).toEqual({
+        publicMessages: [],
+        gmMessages: [],
+      });
       expect(created).toHaveLength(1);
     });
   });

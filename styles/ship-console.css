@@ -87,7 +87,7 @@
 
 .ship-console-layout button:disabled {
   cursor: not-allowed;
-  opacity: 0.42;
+  opacity: 0.85;
 }
 
 .ship-console-layout input,
@@ -464,7 +464,7 @@
   margin-bottom: 0.1rem;
   color: var(--ship-cyan);
   font-family: var(--font-monospace, monospace);
-  font-size: 0.55rem;
+  font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.105em;
   text-transform: uppercase;
@@ -740,7 +740,7 @@
 
 .ship-console-layout input[type="range"]:disabled {
   cursor: not-allowed;
-  opacity: 0.42;
+  opacity: 0.85;
 }
 
 .ship-slider-track input[type="range"]::-webkit-slider-runnable-track,
@@ -814,9 +814,9 @@
 }
 
 .vira-shipcombat.ship-console [data-power-blocks] button {
-  flex: 0 0 0.9rem;
-  min-width: 0.9rem;
-  min-height: 1.1rem;
+  flex: 0 0 1.15rem;
+  min-width: 1.15rem;
+  min-height: 1.15rem;
   padding: 0;
   border-color: var(--ship-border-bright);
   background: #0a151c;
@@ -1044,7 +1044,7 @@
 .ship-radar-axis--vertical { top: 0; bottom: 0; left: 50%; width: 1px; }
 .ship-radar-axis--horizontal { top: 50%; right: 0; left: 0; height: 1px; }
 .ship-radar-heading { position: absolute; top: 0.35rem; left: 50%; color: var(--ship-cyan); font: 700 0.52rem var(--font-monospace, monospace); transform: translateX(-50%); }
-.ship-radar-range { position: absolute; right: 8%; bottom: 8%; color: var(--ship-muted); font: 0.55rem var(--font-monospace, monospace); }
+.ship-radar-range { position: absolute; right: 8%; bottom: 8%; color: var(--ship-muted); font: 0.72rem var(--font-monospace, monospace); }
 .ship-radar-center { position: absolute; top: 50%; left: 50%; color: var(--ship-cyan); transform: translate(-50%, -50%) rotate(-45deg); filter: drop-shadow(0 0 5px var(--ship-cyan)); }
 
 .ship-radar-contact {
@@ -1183,11 +1183,10 @@
 .ship-weapon-row > div > small {
   grid-column: 1 / -1;
   min-width: 0;
-  overflow: hidden;
   color: var(--ship-muted);
-  font: 0.55rem var(--font-monospace, monospace);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font: 0.72rem var(--font-monospace, monospace);
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .ship-weapon-row > select {
@@ -1268,7 +1267,8 @@
   color: var(--ship-muted);
   font: 700 0.56rem var(--font-monospace, monospace);
   text-transform: uppercase;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .vira-shipcombat.ship-console [data-weapon-validity][data-state="valid"] { color: var(--ship-green); }
@@ -1381,8 +1381,7 @@
   padding: 0.2rem 0;
   border-bottom: 1px solid rgb(142 165 173 / 12%);
 }
-.ship-overview-weapons > div strong,
-.ship-overview-weapons > div span {
+.ship-overview-weapons > div strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1390,7 +1389,7 @@
 }
 .ship-overview-weapons > div strong { color: var(--ship-text); font-family: var(--font-serif, Georgia, serif); font-size: 0.7rem; }
 
-.ship-overview-weapons > div span { color: var(--ship-muted); font-size: 0.61rem; }
+.ship-overview-weapons > div span { min-width: 0; color: var(--ship-muted); font-size: 0.61rem; overflow-wrap: anywhere; white-space: normal; }
 
 .ship-console-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.35rem; margin-top: 0.45rem; }
 .ship-operation fieldset { display: grid; gap: 0.3rem; margin: 0; border: 1px solid var(--ship-border); }
@@ -1698,6 +1697,8 @@
 .vira-shipcombat.ship-component-sheet .window-content {
   padding: 0;
   overflow: auto;
+  container-type: inline-size;
+  container-name: ship-component;
   background:
     linear-gradient(135deg, rgb(62 232 208 / 3%) 0, transparent 35%),
     radial-gradient(circle at 80% 0, rgb(84 168 255 / 8%), transparent 35%),
@@ -1805,7 +1806,7 @@
 
 .ship-component-editor :disabled {
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.85;
 }
 
 .ship-component-identity-grid {
@@ -1925,7 +1926,7 @@
   background: linear-gradient(180deg, #76f8e4, #35c8b3) !important;
 }
 
-@media (max-width: 680px) {
+@container ship-console (max-width: 680px) {
   .ship-refit-grid {
     grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
   }
@@ -1933,6 +1934,9 @@
   .ship-refit-card > header {
     flex-direction: column;
   }
+}
+
+@container ship-component (max-width: 680px) {
 
   .ship-component-editor {
     padding: 0.6rem;
@@ -1953,8 +1957,13 @@
   }
 }
 
-@media (max-width: 440px) {
-  .ship-refit-grid,
+@container ship-console (max-width: 440px) {
+  .ship-refit-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container ship-component (max-width: 440px) {
   .ship-component-form-grid,
   .ship-component-editor fieldset > p,
   .ship-component-identity-grid {

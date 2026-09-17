@@ -1,16 +1,30 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SHIP_TYPE } from "../scripts/constants.js";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { INTERNAL_UPDATE_OPTION, SHIP_TYPE } from "../scripts/constants.js";
 import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../scripts/data/canadensis-components.js";
 import { initializeShipActor } from "../scripts/foundry/initialization.js";
 import { createDefaultShipSystemData } from "../scripts/model/defaults.js";
 import { materializeShipConfig } from "../scripts/model/equipment.js";
-import { readShipRecord } from "../scripts/state/token-state.js";
+import {
+  readShipRecord,
+  writeShipState,
+} from "../scripts/state/token-state.js";
 
 const clone = (value) => structuredClone(value);
 
 class FakeForcedReplacement {
-  constructor(value) { this.value = value; }
-  static create(value) { return new FakeForcedReplacement(value); }
+  constructor(value) {
+    this.value = value;
+  }
+  static create(value) {
+    return new FakeForcedReplacement(value);
+  }
+}
+
+function setPath(object, path, value) {
+  const parts = path.split(".");
+  let cursor = object;
+  for (const part of parts.slice(0, -1)) cursor = cursor[part] ??= {};
+  cursor[parts.at(-1)] = clone(value);
 }
 
 let nextActorId = 0;
@@ -20,22 +34,36 @@ class FakeActor {
     this.type = SHIP_TYPE;
     this.system = { shipCombat: clone(shipCombat) };
     this._source = { system: clone(this.system) };
-    this.items = new Map(sources.map((source) => [source._id, { ...clone(source), id: source._id }]));
+    this.items = new Map(
+      sources.map((
+        source,
+      ) => [source._id, { ...clone(source), id: source._id }]),
+    );
     this.creationCalls = 0;
     this.updates = 0;
   }
 
   async createEmbeddedDocuments(_name, sources) {
     this.creationCalls++;
-    const created = sources.map((source) => ({ ...clone(source), id: source._id }));
+    const created = sources.map((source) => ({
+      ...clone(source),
+      id: source._id,
+    }));
     for (const item of created) this.items.set(item.id, item);
     return created;
   }
 
-  async update(changes) {
+  async update(changes, options = {}) {
     this.updates++;
-    this.system.shipCombat = clone(changes["system.shipCombat"].value);
+    for (const [path, supplied] of Object.entries(changes)) {
+      setPath(
+        this,
+        path,
+        supplied instanceof FakeForcedReplacement ? supplied.value : supplied,
+      );
+    }
     this._source.system = clone(this.system);
+    this.onUpdate?.(changes, options);
     return this;
   }
 }
@@ -47,7 +75,9 @@ beforeEach(() => {
   previousGame = globalThis.game;
   const gm = { id: "gm", active: true, isGM: true };
   globalThis.game = { user: gm, users: { activeGM: gm } };
-  globalThis.foundry = { data: { operators: { ForcedReplacement: FakeForcedReplacement } } };
+  globalThis.foundry = {
+    data: { operators: { ForcedReplacement: FakeForcedReplacement } },
+  };
 });
 afterEach(() => {
   globalThis.foundry = previousFoundry;
@@ -55,18 +85,31 @@ afterEach(() => {
 });
 
 function effectiveConfig(actor) {
-  return materializeShipConfig(actor.system.shipCombat.config, [...actor.items.values()]);
+  return materializeShipConfig(actor.system.shipCombat.config, [
+    ...actor.items.values(),
+  ]);
 }
 
 describe("current ship initialization", () => {
   test("serializes competing initialization and preserves later combat state", async () => {
-    const actor = new FakeActor({ schemaVersion: 2, config: { schemaVersion: 2 }, state: { schemaVersion: 2 } });
+    const actor = new FakeActor({
+      schemaVersion: 2,
+      config: { schemaVersion: 2 },
+      state: { schemaVersion: 2 },
+    });
     actor.uuid = "Scene.test.Token.synthetic.Actor.ship";
-    expect(await Promise.all([initializeShipActor(actor), initializeShipActor(actor)])).toEqual([true, false]);
+    expect(
+      await Promise.all([
+        initializeShipActor(actor),
+        initializeShipActor(actor),
+      ]),
+    ).toEqual([true, false]);
     const config = effectiveConfig(actor);
     expect(config.components.weapons.map(({ id }) => id).sort())
       .toEqual(Object.keys(actor.system.shipCombat.state.weapons).sort());
-    expect(config.components.drives.portLateral.id).not.toBe(config.components.drives.starboardLateral.id);
+    expect(config.components.drives.portLateral.id).not.toBe(
+      config.components.drives.starboardLateral.id,
+    );
     expect(actor.creationCalls).toBe(1);
     expect(actor.updates).toBe(1);
     actor.system.shipCombat.state.hull = 1;
@@ -79,7 +122,11 @@ describe("current ship initialization", () => {
 
   test("retains custom installed components and deliberately empty mounts while filling missing defaults", async () => {
     const data = createDefaultShipSystemData();
-    const custom = clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES.find(({ system }) => system.componentClass === "reactor"));
+    const custom = clone(
+      CANADENSIS_DEFAULT_COMPONENT_SOURCES.find(({ system }) =>
+        system.componentClass === "reactor"
+      ),
+    );
     custom.name = "Custom Reactor";
     custom.system.definition.nominalOutput = 13;
     data.config.hardpoints[0].weaponId = null;
@@ -87,7 +134,9 @@ describe("current ship initialization", () => {
     const actor = new FakeActor(data, [custom]);
     expect(await initializeShipActor(actor)).toBe(true);
     expect(effectiveConfig(actor).components.reactor.nominalOutput).toBe(13);
-    expect(effectiveConfig(actor).components.reactor.label).toBe("Custom Reactor");
+    expect(effectiveConfig(actor).components.reactor.label).toBe(
+      "Custom Reactor",
+    );
     expect(effectiveConfig(actor).hardpoints[0].weaponId).toBeNull();
     expect(actor.system.shipCombat).toEqual(data);
     expect(actor.updates).toBe(0);
@@ -95,7 +144,11 @@ describe("current ship initialization", () => {
   });
 
   test("does not replace unrelated Items occupying referenced default IDs", async () => {
-    const occupied = { _id: CANADENSIS_DEFAULT_COMPONENT_SOURCES[0]._id, type: "loot", name: "Keep me" };
+    const occupied = {
+      _id: CANADENSIS_DEFAULT_COMPONENT_SOURCES[0]._id,
+      type: "loot",
+      name: "Keep me",
+    };
     const actor = new FakeActor({}, [occupied]);
     await expect(initializeShipActor(actor)).rejects.toThrow();
     expect(actor.items.get(occupied._id).name).toBe("Keep me");
@@ -105,18 +158,27 @@ describe("current ship initialization", () => {
 
   test("rejects incompatible existing components before installing defaults", async () => {
     const component = clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES[0]);
-    component.system.size = component.system.size === "large" ? "small" : "large";
+    component.system.size = component.system.size === "large"
+      ? "small"
+      : "large";
     const actor = new FakeActor({}, [component]);
     await expect(initializeShipActor(actor)).rejects.toThrow();
-    expect(actor.items.get(component._id).system.size).toBe(component.system.size);
+    expect(actor.items.get(component._id).system.size).toBe(
+      component.system.size,
+    );
     expect(actor.creationCalls).toBe(0);
     expect(actor.updates).toBe(0);
   });
 
   test("rejects obsolete persisted schema even when prepared data has current slots", async () => {
-    const actor = new FakeActor(createDefaultShipSystemData(), CANADENSIS_DEFAULT_COMPONENT_SOURCES);
+    const actor = new FakeActor(
+      createDefaultShipSystemData(),
+      CANADENSIS_DEFAULT_COMPONENT_SOURCES,
+    );
     actor._source.system.shipCombat.schemaVersion = 1;
-    await expect(initializeShipActor(actor)).rejects.toMatchObject({ code: "UNSUPPORTED_SCHEMA_VERSION" });
+    await expect(initializeShipActor(actor)).rejects.toMatchObject({
+      code: "UNSUPPORTED_SCHEMA_VERSION",
+    });
     try {
       readShipRecord({ actor, uuid: "Scene.test.Token.ship" });
       throw new Error("Obsolete ship was accepted.");
@@ -131,7 +193,9 @@ describe("current ship initialization", () => {
     const data = createDefaultShipSystemData();
     data.config.components = {};
     const actor = new FakeActor(data);
-    await expect(initializeShipActor(actor)).rejects.toMatchObject({ code: "UNSUPPORTED_SCHEMA_VERSION" });
+    await expect(initializeShipActor(actor)).rejects.toMatchObject({
+      code: "UNSUPPORTED_SCHEMA_VERSION",
+    });
     expect(actor.creationCalls).toBe(0);
     expect(actor.updates).toBe(0);
   });
@@ -146,9 +210,12 @@ describe("current ship initialization", () => {
 
   test("does not persist dangling references if Item creation changes IDs", async () => {
     const actor = new FakeActor();
-    actor.createEmbeddedDocuments = async (_name, sources) => sources.map((source, index) => ({
-      ...clone(source), _id: `changed-${index}`, id: `changed-${index}`,
-    }));
+    actor.createEmbeddedDocuments = async (_name, sources) =>
+      sources.map((source, index) => ({
+        ...clone(source),
+        _id: `changed-${index}`,
+        id: `changed-${index}`,
+      }));
     await expect(initializeShipActor(actor)).rejects.toThrow();
     expect(actor.updates).toBe(0);
     expect(actor.system.shipCombat).toEqual({});
@@ -175,5 +242,198 @@ describe("current ship initialization", () => {
     expect(await initializeShipActor(actor)).toBe(false);
     expect(actor.items.size).toBe(0);
     expect(actor.system.shipCombat).toEqual({});
+  });
+});
+
+describe("native vehicle edits through registered Actor hooks", () => {
+  let actor;
+  let callbacks;
+  let notifications;
+  let errors;
+  let previousGlobals;
+  let updateOptions;
+
+  // Hook work is queued on promises; yielding to a timer drains that queue and
+  // the console-refresh timer before assertions or restoration of Foundry globals.
+  async function settleHooks() {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(errors.mock.calls).toEqual([]);
+  }
+
+  beforeEach(async () => {
+    previousGlobals = {
+      Hooks: globalThis.Hooks,
+      ui: globalThis.ui,
+      CONST: globalThis.CONST,
+    };
+    errors = spyOn(console, "error").mockImplementation(() => {});
+    callbacks = new Map();
+    notifications = [];
+    globalThis.Hooks = {
+      on(name, callback) {
+        const listeners = callbacks.get(name) ?? [];
+        listeners.push(callback);
+        callbacks.set(name, listeners);
+      },
+      callAll(name, ...args) {
+        for (const callback of callbacks.get(name) ?? []) callback(...args);
+      },
+    };
+    globalThis.ui = {
+      notifications: { error: (message) => notifications.push(message) },
+    };
+    globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 2 } };
+    Object.assign(game, { actors: [], scenes: [], combats: [] });
+    game.users.get = (id) => id === game.user.id ? game.user : undefined;
+    foundry.utils = {
+      deepClone: clone,
+      getProperty: (object, path) =>
+        path.split(".").reduce((value, key) => value?.[key], object),
+    };
+    actor = new FakeActor(
+      createDefaultShipSystemData(),
+      CANADENSIS_DEFAULT_COMPONENT_SOURCES,
+    );
+    actor.id = actor.uuid.split(".").at(-1);
+    actor.documentName = "Actor";
+    const { config, state } = actor.system.shipCombat;
+    actor.system.attributes = {
+      ac: { calc: "flat", flat: config.ac },
+      hp: { value: state.hull, max: config.maxHull },
+    };
+    actor.system.traits = { size: "med" };
+    actor.system.details = { type: "space" };
+    actor._source.system = clone(actor.system);
+    updateOptions = [];
+    actor.onUpdate = (changes, options) => {
+      updateOptions.push(options);
+      Hooks.callAll("updateActor", actor, changes, options, game.user.id);
+    };
+    // The module owns a registration guard and queue; isolate them from other
+    // hook fixtures without mocking the actual updateActor implementation.
+    const { registerShipHooks } = await import(
+      `../scripts/foundry/hooks.js?native-integration=${actor.id}`
+    );
+    registerShipHooks();
+    await settleHooks();
+  });
+
+  afterEach(async () => {
+    try {
+      await settleHooks();
+    } finally {
+      errors.mockRestore();
+      Object.assign(globalThis, previousGlobals);
+    }
+  });
+
+  test("current HP edits retain phase, turn identity and spent actions/orders", async () => {
+    Object.assign(actor.system.shipCombat.state, {
+      phase: "active",
+      turnKey: "combat:4:0",
+      revision: 17,
+      resources: { actions: { pilot: 0, gunner: 1 }, orders: { engineer: 0 } },
+    });
+    const before = clone(actor.system.shipCombat);
+
+    await actor.update({ "system.attributes.hp.value": 13 });
+    await settleHooks();
+
+    expect(actor.system.shipCombat).toEqual({
+      ...before,
+      state: { ...before.state, hull: 13, revision: 18 },
+    });
+    expect(actor.system.attributes.hp).toEqual({
+      value: 13,
+      max: before.config.maxHull,
+    });
+    expect(notifications).toEqual([]);
+  });
+
+  test("combat blocks structural native edits but clamps current HP to the unchanged maximum", async () => {
+    Object.assign(actor.system.shipCombat.state, {
+      phase: "active",
+      turnKey: "combat:4:0",
+      revision: 17,
+      hull: 10,
+      resources: { actions: { pilot: 0 }, orders: { engineer: 0 } },
+    });
+    const before = clone(actor.system.shipCombat);
+
+    await actor.update({
+      "system.attributes.ac.flat": 18,
+      "system.attributes.hp.max": 80,
+      "system.attributes.hp.value": 70,
+      "system.traits.size": "lg",
+    });
+    await settleHooks();
+
+    expect(actor.system.shipCombat).toEqual({
+      ...before,
+      state: { ...before.state, hull: before.config.maxHull, revision: 18 },
+    });
+    expect(actor.system.attributes).toEqual({
+      ac: { calc: "flat", flat: before.config.ac },
+      hp: { value: before.config.maxHull, max: before.config.maxHull },
+    });
+    expect(actor.system.traits.size).toBe("med");
+    expect(notifications).toHaveLength(1);
+    // One user write, one sparse ship write and one corrected native mirror.
+    // A missing INTERNAL_UPDATE guard would schedule additional reconciliation.
+    expect(
+      updateOptions.map((options) => options[INTERNAL_UPDATE_OPTION] === true),
+    ).toEqual([false, true, true]);
+  });
+
+  test("outside combat accepts structural edits, clamps on reduction and does not heal on increase", async () => {
+    const before = clone(actor.system.shipCombat);
+    await actor.update({
+      "system.attributes.ac.flat": 18,
+      "system.attributes.hp.max": 20,
+      "system.traits.size": "lg",
+    });
+    await settleHooks();
+    expect(actor.system.shipCombat).toEqual({
+      ...before,
+      config: { ...before.config, ac: 18, maxHull: 20, size: "large" },
+      state: { ...before.state, hull: 20, revision: 1 },
+    });
+    expect(actor.system.attributes.hp).toEqual({ value: 20, max: 20 });
+    expect(actor.system.attributes.ac.flat).toBe(18);
+    expect(actor.system.traits.size).toBe("lg");
+
+    await actor.update({ "system.attributes.hp.max": 80 });
+    await settleHooks();
+    expect(actor.system.shipCombat.config.maxHull).toBe(80);
+    expect(actor.system.shipCombat.state).toEqual({
+      ...before.state,
+      hull: 20,
+      revision: 2,
+    });
+    expect(actor.system.attributes.hp).toEqual({ value: 20, max: 80 });
+    expect(notifications).toEqual([]);
+  });
+
+  test("authoritative state writes mirror native HP without another writer or combat reset", async () => {
+    const state = {
+      ...clone(actor.system.shipCombat.state),
+      hull: 7,
+      phase: "end",
+      turnKey: "combat:4:0",
+      revision: 31,
+      resources: { actions: { pilot: 0 }, orders: { engineer: 0 } },
+    };
+    await writeShipState({ actor }, state);
+    await settleHooks();
+
+    expect(actor.system.shipCombat.state).toEqual(state);
+    expect(actor.system.attributes.hp).toEqual({
+      value: 7,
+      max: actor.system.shipCombat.config.maxHull,
+    });
+    expect(actor.updates).toBe(1);
+    expect(updateOptions[0][INTERNAL_UPDATE_OPTION]).toBe(true);
+    expect(notifications).toEqual([]);
   });
 });

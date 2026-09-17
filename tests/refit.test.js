@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 
-import { CANADENSIS_CONFIG, CANADENSIS_HULL_CONFIG, CANADENSIS_SLOT_IDS } from "../scripts/data/canadensis.js";
+import {
+  CANADENSIS_CONFIG,
+  CANADENSIS_HULL_CONFIG,
+  CANADENSIS_SLOT_IDS,
+} from "../scripts/data/canadensis.js";
 import {
   CANADENSIS_DEFAULT_COMPONENT_SOURCES,
   CANADENSIS_LATERAL_DRIVE_SOURCE,
@@ -56,7 +60,12 @@ class FakeActor {
     const defaults = createDefaultShipData();
     this.id = "ship-1";
     this.uuid = "Actor.ship-1";
-    this.system = { shipCombat: { config: clone(defaults.hull), state: clone(defaults.state) } };
+    this.system = {
+      shipCombat: {
+        config: clone(defaults.hull),
+        state: clone(defaults.state),
+      },
+    };
     this.prototypeToken = { width: 1 };
     this.items = new Map(defaults.items.map((source) => {
       const item = new FakeItem(source);
@@ -73,20 +82,33 @@ class FakeActor {
     const created = sources.map((source) => {
       expect(source._id).toBeUndefined();
       expect(source.id).toBeUndefined();
-      const item = new FakeItem({ ...clone(source), _id: `fresh-${String(this.nextId++).padStart(4, "0")}` });
+      const item = new FakeItem({
+        ...clone(source),
+        _id: `fresh-${String(this.nextId++).padStart(4, "0")}`,
+      });
       this.items.set(item.id, item);
       return item;
     });
-    this.events.push({ type: "create", ids: created.map((item) => item.id), options: clone(options) });
+    this.events.push({
+      type: "create",
+      ids: created.map((item) => item.id),
+      options: clone(options),
+    });
     return created;
   }
 
   async update(changes, options) {
     const itemUpdates = changes.items ?? null;
     for (const update of itemUpdates ?? []) {
-      if (!this.items.has(update._id)) throw new Error(`Unknown embedded Item '${update._id}'`);
+      if (!this.items.has(update._id)) {
+        throw new Error(`Unknown embedded Item '${update._id}'`);
+      }
     }
-    this.events.push({ type: "update", options: clone(options), items: clone(itemUpdates) });
+    this.events.push({
+      type: "update",
+      options: clone(options),
+      items: clone(itemUpdates),
+    });
     if (this.failNextUpdate) {
       this.failNextUpdate = false;
       throw new Error("simulated update failure");
@@ -97,14 +119,18 @@ class FakeActor {
     }
     for (const [path, supplied] of Object.entries(changes)) {
       if (path === "items") continue;
-      const value = supplied instanceof FakeForcedReplacement ? supplied.value : supplied;
+      const value = supplied instanceof FakeForcedReplacement
+        ? supplied.value
+        : supplied;
       setPath(this, path, value);
     }
     for (const update of itemUpdates ?? []) {
       const item = this.items.get(update._id);
       for (const [path, supplied] of Object.entries(update)) {
         if (path === "_id") continue;
-        const value = supplied instanceof FakeForcedReplacement ? supplied.value : supplied;
+        const value = supplied instanceof FakeForcedReplacement
+          ? supplied.value
+          : supplied;
         setPath(item, path, value);
       }
     }
@@ -114,7 +140,12 @@ class FakeActor {
   async deleteEmbeddedDocuments(documentName, ids, options) {
     expect(documentName).toBe("Item");
     const visibleReferences = references(this.system.shipCombat.config);
-    this.events.push({ type: "delete", ids: [...ids], visibleReferences, options: clone(options) });
+    this.events.push({
+      type: "delete",
+      ids: [...ids],
+      visibleReferences,
+      options: clone(options),
+    });
     const deleted = ids.map((id) => this.items.get(id)).filter(Boolean);
     for (const id of ids) this.items.delete(id);
     return deleted;
@@ -133,10 +164,16 @@ function componentDraft(actor, componentId) {
 }
 
 function renameHardpoint(hull, from, to) {
-  for (const hardpoint of hull.hardpoints) if (hardpoint.id === from) hardpoint.id = to;
-  hull.weaponPriority = hull.weaponPriority.map((id) => (id === from ? to : id));
+  for (const hardpoint of hull.hardpoints) {
+    if (hardpoint.id === from) hardpoint.id = to;
+  }
+  hull.weaponPriority = hull.weaponPriority.map((
+    id,
+  ) => (id === from ? to : id));
   for (const entries of Object.values(hull.criticalPools ?? {})) {
-    for (const entry of entries) if (entry.hardpointId === from) entry.hardpointId = to;
+    for (const entry of entries) {
+      if (entry.hardpointId === from) entry.hardpointId = to;
+    }
   }
 }
 
@@ -147,9 +184,12 @@ beforeEach(() => {
   activeGm = { id: "gm-active", isGM: true, active: true };
   globalThis.game = {
     user: activeGm,
-    users: Object.assign(new Map([[activeGm.id, activeGm]]), { activeGM: activeGm }),
+    users: Object.assign(new Map([[activeGm.id, activeGm]]), {
+      activeGM: activeGm,
+    }),
   };
   globalThis.foundry = {
+    applications: { api: { DialogV2: { confirm: async () => true } } },
     data: { operators: { ForcedReplacement: FakeForcedReplacement } },
     utils: { deepClone: clone },
   };
@@ -158,7 +198,11 @@ beforeEach(() => {
 
 describe("refit API", () => {
   test("materializes embedded component Items while ignoring ordinary Items", () => {
-    actor.items.set("ordinary-item", { id: "ordinary-item", type: "equipment", system: {} });
+    actor.items.set("ordinary-item", {
+      id: "ordinary-item",
+      type: "equipment",
+      system: {},
+    });
     expect(refit.materializeActorConfig(actor)).toEqual(CANADENSIS_CONFIG);
   });
 
@@ -171,11 +215,29 @@ describe("refit API", () => {
     specialWeapon.system.definition.category = "spinal";
     const hardpointId = actor.system.shipCombat.config.hardpoints[0].id;
 
-    await expect(refit.installShipComponent(actor, CANADENSIS_SLOT_IDS.portLateralDrive, wrongSize))
+    await expect(
+      refit.installShipComponent(
+        actor,
+        CANADENSIS_SLOT_IDS.portLateralDrive,
+        wrongSize,
+      ),
+    )
       .rejects.toMatchObject({ code: "INCOMPATIBLE_COMPONENT_SIZE" });
-    await expect(refit.installShipComponent(actor, CANADENSIS_SLOT_IDS.mainDrive, CANADENSIS_LATERAL_DRIVE_SOURCE))
+    await expect(
+      refit.installShipComponent(
+        actor,
+        CANADENSIS_SLOT_IDS.mainDrive,
+        CANADENSIS_LATERAL_DRIVE_SOURCE,
+      ),
+    )
       .rejects.toMatchObject({ code: "INCOMPATIBLE_DRIVE_ROLE" });
-    await expect(refit.installShipComponent(actor, hardpointId, CANADENSIS_DEFAULT_COMPONENT_SOURCES[0]))
+    await expect(
+      refit.installShipComponent(
+        actor,
+        hardpointId,
+        CANADENSIS_DEFAULT_COMPONENT_SOURCES[0],
+      ),
+    )
       .rejects.toMatchObject({ code: "INCOMPATIBLE_COMPONENT_CLASS" });
     await expect(refit.installShipComponent(actor, hardpointId, specialWeapon))
       .rejects.toMatchObject({ code: "UNSUPPORTED_SPECIAL_WEAPON" });
@@ -192,11 +254,26 @@ describe("refit API", () => {
       velocity: { x: 4, y: -2 },
       history: [{ type: "kept" }],
       conditions: {
-        local: { id: "local", kind: "fault", componentId: oldId, targetId: oldId, severity: "major" },
-        hazard: { id: "hazard", kind: "hazard", targetId: "fore", severity: "minor" },
+        local: {
+          id: "local",
+          kind: "fault",
+          componentId: oldId,
+          targetId: oldId,
+          severity: "major",
+        },
+        hazard: {
+          id: "hazard",
+          kind: "hazard",
+          targetId: "fore",
+          severity: "minor",
+        },
       },
       work: {
-        [`recover:${oldId}`]: { id: `recover:${oldId}`, targetId: oldId, current: 1 },
+        [`recover:${oldId}`]: {
+          id: `recover:${oldId}`,
+          targetId: oldId,
+          current: 1,
+        },
         global: { id: "global", targetId: "fore", current: 2 },
       },
     });
@@ -223,8 +300,14 @@ describe("refit API", () => {
       history: [{ type: "kept" }],
       revision: beforeRevision + 1,
     });
-    expect(actor.events.map(({ type }) => type)).toEqual(["create", "update", "delete"]);
-    expect(actor.events.every(({ options }) => options.viraShipCombatRefit === true)).toBe(true);
+    expect(actor.events.map(({ type }) => type)).toEqual([
+      "create",
+      "update",
+      "delete",
+    ]);
+    expect(
+      actor.events.every(({ options }) => options.viraShipCombatRefit === true),
+    ).toBe(true);
     expect(actor.events.at(-1).visibleReferences).not.toContain(oldId);
   });
 
@@ -234,30 +317,69 @@ describe("refit API", () => {
     const beforeIds = [...actor.items.keys()];
     actor.failNextUpdate = true;
 
-    await expect(refit.installShipComponent(actor, mount.id, CANADENSIS_DEFAULT_COMPONENT_SOURCES[0]))
+    await expect(
+      refit.installShipComponent(
+        actor,
+        mount.id,
+        CANADENSIS_DEFAULT_COMPONENT_SOURCES[0],
+      ),
+    )
       .rejects.toThrow("simulated update failure");
 
     expect(actor.system.shipCombat.config.slots[0].itemId).toBe(oldId);
     expect([...actor.items.keys()]).toEqual(beforeIds);
-    expect(actor.events.map(({ type }) => type)).toEqual(["create", "update", "delete"]);
+    expect(actor.events.map(({ type }) => type)).toEqual([
+      "create",
+      "update",
+      "delete",
+    ]);
     expect(actor.events.at(-1).ids).toEqual(["fresh-0001"]);
   });
 
   test.each([
-    ["install", (ship) => refit.installShipComponent(ship, ship.system.shipCombat.config.slots[0].id, CANADENSIS_DEFAULT_COMPONENT_SOURCES[0])],
-    ["remove", (ship) => refit.removeShipComponent(ship, ship.system.shipCombat.config.hardpoints[1].id)],
+    [
+      "install",
+      (ship) =>
+        refit.installShipComponent(
+          ship,
+          ship.system.shipCombat.config.slots[0].id,
+          CANADENSIS_DEFAULT_COMPONENT_SOURCES[0],
+        ),
+    ],
+    [
+      "remove",
+      (ship) =>
+        refit.removeShipComponent(
+          ship,
+          ship.system.shipCombat.config.hardpoints[1].id,
+        ),
+    ],
     ["reset", (ship) => refit.resetShipToCanadensis(ship)],
-  ])("a canceled %s retains mounted components and discards fresh copies", async (_operation, refitShip) => {
-    const before = clone(actor.system.shipCombat);
-    const beforeItems = [...actor.items.values()].map((item) => item.toObject());
-    actor.cancelNextUpdate = true;
+  ])(
+    "a canceled %s retains mounted components and discards fresh copies",
+    async (_operation, refitShip) => {
+      const before = clone(actor.system.shipCombat);
+      const beforeItems = [...actor.items.values()].map((item) =>
+        item.toObject()
+      );
+      actor.cancelNextUpdate = true;
 
-    await expect(refitShip(actor)).rejects.toMatchObject({ name: "RuleViolation", code: "REFIT_UPDATE_FAILED" });
+      await expect(refitShip(actor)).rejects.toMatchObject({
+        name: "RuleViolation",
+        code: "REFIT_UPDATE_FAILED",
+      });
 
-    expect(actor.system.shipCombat).toEqual(before);
-    expect([...actor.items.values()].map((item) => item.toObject())).toEqual(beforeItems);
-    expect(references(actor.system.shipCombat.config).every((id) => actor.items.has(id))).toBe(true);
-  });
+      expect(actor.system.shipCombat).toEqual(before);
+      expect([...actor.items.values()].map((item) => item.toObject())).toEqual(
+        beforeItems,
+      );
+      expect(
+        references(actor.system.shipCombat.config).every((id) =>
+          actor.items.has(id)
+        ),
+      ).toBe(true);
+    },
+  );
 
   test("clears a mount and its local state before deleting the old Item", async () => {
     const mount = actor.system.shipCombat.config.hardpoints[1];
@@ -282,7 +404,9 @@ describe("refit API", () => {
 
   test("hull saves reconcile sensor-local state while preserving ship-global state", async () => {
     const hull = clone(actor.system.shipCombat.config);
-    const sensor = hull.slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.sensor);
+    const sensor = hull.slots.find(({ id }) =>
+      id === CANADENSIS_SLOT_IDS.sensor
+    );
     const sensorId = sensor.itemId;
     sensor.itemId = null;
     Object.assign(actor.system.shipCombat.state, {
@@ -291,7 +415,11 @@ describe("refit API", () => {
       tracks: { target: { targetUuid: "Scene.s.Token.t", state: "contact" } },
       history: [{ type: "kept" }],
       conditions: {
-        sensor: { id: `sensorFault:${sensorId}`, kind: "fault", componentId: sensorId },
+        sensor: {
+          id: `sensorFault:${sensorId}`,
+          kind: "fault",
+          componentId: sensorId,
+        },
         fire: { id: "fire:fore", kind: "hazard", targetId: "fore" },
       },
     });
@@ -306,7 +434,9 @@ describe("refit API", () => {
       history: [{ type: "kept" }],
       revision: revision + 1,
     });
-    expect(actor.system.shipCombat.state.conditions).toEqual({ fire: expect.any(Object) });
+    expect(actor.system.shipCombat.state.conditions).toEqual({
+      fire: expect.any(Object),
+    });
     expect(actor.system.shipCombat.state.power.sensors).toBe(0);
     expect(actor.items.has(sensorId)).toBe(true);
   });
@@ -327,21 +457,37 @@ describe("refit API", () => {
     expect(new Set(mountedIds).size).toBe(12);
     expect(mountedIds.every((id) => !oldIds.has(id))).toBe(true);
     expect(actor.items.size).toBe(12);
-    expect(actor.events.map(({ type }) => type)).toEqual(["create", "update", "delete"]);
+    expect(actor.events.map(({ type }) => type)).toEqual([
+      "create",
+      "update",
+      "delete",
+    ]);
     expect(actor.events[0].ids).toHaveLength(12);
-    expect(actor.events[2].visibleReferences.some((id) => oldIds.has(id))).toBe(false);
+    expect(actor.events[2].visibleReferences.some((id) => oldIds.has(id))).toBe(
+      false,
+    );
 
     const expectedHull = clone(CANADENSIS_HULL_CONFIG);
-    expectedHull.slots.forEach((slot) => { slot.itemId = expect.any(String); });
-    expectedHull.hardpoints.forEach((hardpoint) => { hardpoint.weaponId = expect.any(String); });
+    expectedHull.slots.forEach((slot) => {
+      slot.itemId = expect.any(String);
+    });
+    expectedHull.hardpoints.forEach((hardpoint) => {
+      hardpoint.weaponId = expect.any(String);
+    });
     expect(hull).toEqual(expectedHull);
     expect(effective).toEqual(refit.materializeActorConfig(actor));
     expect(effective.label).toBe(CANADENSIS_CONFIG.label);
     expect(effective.components.weapons).toHaveLength(4);
 
-    const installedSources = mountedIds.map((id) => withoutId(actor.items.get(id).toObject()));
-    expect(installedSources).toEqual(CANADENSIS_DEFAULT_COMPONENT_SOURCES.map(withoutId));
-    expect(actor.items.get(mountedIds[6]).system).not.toBe(actor.items.get(mountedIds[7]).system);
+    const installedSources = mountedIds.map((id) =>
+      withoutId(actor.items.get(id).toObject())
+    );
+    expect(installedSources).toEqual(
+      CANADENSIS_DEFAULT_COMPONENT_SOURCES.map(withoutId),
+    );
+    expect(actor.items.get(mountedIds[6]).system).not.toBe(
+      actor.items.get(mountedIds[7]).system,
+    );
     expect(actor.system.shipCombat.state).toMatchObject({
       hull: 11,
       heat: 7,
@@ -358,11 +504,19 @@ describe("refit API", () => {
     hull.ac = "invalid";
     const before = clone(actor.system.shipCombat);
 
-    const error = await refit.saveShipHull(actor, hull, actor.system.shipCombat.state.revision).catch((failure) => failure);
+    const error = await refit.saveShipHull(
+      actor,
+      hull,
+      actor.system.shipCombat.state.revision,
+    ).catch((failure) => failure);
 
     expect(error.code).toBe("INVALID_SHIP_CONFIG");
-    expect(error.details.map(({ path }) => path)).toEqual(expect.arrayContaining(["maxHull", "heatCapacity", "ac"]));
-    for (const path of ["maxHull", "heatCapacity", "ac"]) expect(error.message).toContain(path);
+    expect(error.details.map(({ path }) => path)).toEqual(
+      expect.arrayContaining(["maxHull", "heatCapacity", "ac"]),
+    );
+    for (const path of ["maxHull", "heatCapacity", "ac"]) {
+      expect(error.message).toContain(path);
+    }
     expect(actor.system.shipCombat).toEqual(before);
     expect(actor.events).toEqual([]);
   });
@@ -373,10 +527,24 @@ describe("refit API", () => {
     const ids = [...actor.items.keys()];
     const mount = actor.system.shipCombat.config.slots[0];
 
-    await expect(refit.installShipComponent(actor, mount.id, CANADENSIS_DEFAULT_COMPONENT_SOURCES[0]))
-      .rejects.toMatchObject({ code: "INVALID_SHIP_CONFIG", details: expect.arrayContaining([expect.objectContaining({ path: "tokenWidth" })]) });
-    await expect(refit.removeShipComponent(actor, mount.id)).rejects.toMatchObject({ code: "INVALID_SHIP_CONFIG" });
-    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({ code: "INVALID_SHIP_CONFIG" });
+    await expect(
+      refit.installShipComponent(
+        actor,
+        mount.id,
+        CANADENSIS_DEFAULT_COMPONENT_SOURCES[0],
+      ),
+    )
+      .rejects.toMatchObject({
+        code: "INVALID_SHIP_CONFIG",
+        details: expect.arrayContaining([
+          expect.objectContaining({ path: "tokenWidth" }),
+        ]),
+      });
+    await expect(refit.removeShipComponent(actor, mount.id)).rejects
+      .toMatchObject({ code: "INVALID_SHIP_CONFIG" });
+    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({
+      code: "INVALID_SHIP_CONFIG",
+    });
     expect(actor.system.shipCombat).toEqual(before);
     expect([...actor.items.keys()]).toEqual(ids);
     expect(actor.events.some(({ type }) => type === "update")).toBe(false);
@@ -385,28 +553,55 @@ describe("refit API", () => {
   test("installs only a single detached clean source without inherited provenance or effects", async () => {
     const catalog = clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES[0]);
     Object.assign(catalog, {
-      flags: { core: { sourceId: "Compendium.private.reactor" }, "vira-shipcombat": { migration: { source: "old" } } },
-      folder: "private-folder", sort: 12, ownership: { default: 3 },
-      effects: [{ name: "Catalog effect" }], _stats: { compendiumSource: "Compendium.private.reactor" },
+      flags: {
+        core: { sourceId: "Compendium.private.reactor" },
+        "vira-shipcombat": { migration: { source: "old" } },
+      },
+      folder: "private-folder",
+      sort: 12,
+      ownership: { default: 3 },
+      effects: [{ name: "Catalog effect" }],
+      _stats: { compendiumSource: "Compendium.private.reactor" },
       provenance: { originalId: "old-item" },
     });
-    const source = { toObject() { return clone(catalog); } };
+    const source = {
+      toObject() {
+        return clone(catalog);
+      },
+    };
 
-    const created = await refit.installShipComponent(actor, actor.system.shipCombat.config.slots[0].id, source);
+    const created = await refit.installShipComponent(
+      actor,
+      actor.system.shipCombat.config.slots[0].id,
+      source,
+    );
 
-    expect(withoutId(created.toObject())).toEqual({ name: catalog.name, img: catalog.img, type: catalog.type, system: catalog.system });
+    expect(withoutId(created.toObject())).toEqual({
+      name: catalog.name,
+      img: catalog.img,
+      type: catalog.type,
+      system: catalog.system,
+    });
     expect(catalog.flags.core.sourceId).toBe("Compendium.private.reactor");
   });
 
   test("refit persistence does not schedule the Actor initializer as a second writer", async () => {
     const callbacks = new Map();
-    globalThis.Hooks = { on(name, callback) { callbacks.set(name, callback); } };
+    globalThis.Hooks = {
+      on(name, callback) {
+        callbacks.set(name, callback);
+      },
+    };
     game.actors = [];
     game.scenes = [];
     registerShipHooks();
     actor.type = SHIP_TYPE;
     let scannedScenes = 0;
-    game.scenes = { *[Symbol.iterator]() { scannedScenes += 1; } };
+    game.scenes = {
+      *[Symbol.iterator]() {
+        scannedScenes += 1;
+      },
+    };
     const update = actor.update.bind(actor);
     actor.update = async (changes, options) => {
       await update(changes, options);
@@ -414,10 +609,15 @@ describe("refit API", () => {
       return actor;
     };
 
-    await refit.removeShipComponent(actor, actor.system.shipCombat.config.hardpoints[0].id);
+    await refit.removeShipComponent(
+      actor,
+      actor.system.shipCombat.config.hardpoints[0].id,
+    );
 
     expect(scannedScenes).toBe(0);
-    expect(actor.events.filter(({ type }) => type === "update")).toHaveLength(1);
+    expect(actor.events.filter(({ type }) => type === "update")).toHaveLength(
+      1,
+    );
   });
 
   test("rejects a revision advanced during Item creation instead of overwriting newer state", async () => {
@@ -433,11 +633,23 @@ describe("refit API", () => {
     };
     const revision = actor.system.shipCombat.state.revision;
 
-    await expect(refit.installShipComponent(actor, beforeHull.slots[0].id, CANADENSIS_DEFAULT_COMPONENT_SOURCES[0]))
+    await expect(
+      refit.installShipComponent(
+        actor,
+        beforeHull.slots[0].id,
+        CANADENSIS_DEFAULT_COMPONENT_SOURCES[0],
+      ),
+    )
       .rejects.toMatchObject({ code: "STALE_REVISION" });
 
-    expect(actor.system.shipCombat.config).toEqual({ ...beforeHull, label: "Newer hull edit" });
-    expect(actor.system.shipCombat.state).toMatchObject({ revision: revision + 1, hull: 7 });
+    expect(actor.system.shipCombat.config).toEqual({
+      ...beforeHull,
+      label: "Newer hull edit",
+    });
+    expect(actor.system.shipCombat.state).toMatchObject({
+      revision: revision + 1,
+      hull: 7,
+    });
     expect([...actor.items.keys()]).toEqual(beforeIds);
     expect(actor.events.map(({ type }) => type)).toEqual(["create", "delete"]);
   });
@@ -451,7 +663,9 @@ describe("refit API", () => {
       return created;
     };
 
-    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({ code: "REFIT_DENIED" });
+    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({
+      code: "REFIT_DENIED",
+    });
 
     expect(actor.system.shipCombat.state.phase).toBe("active");
     expect([...actor.items.keys()]).toEqual(beforeIds);
@@ -498,7 +712,9 @@ describe("refit API", () => {
       hazard: { id: "fire:fore", kind: "hazard", targetId: "fore" },
     };
     actor.system.shipCombat.state.shields.charge.fore = 7;
-    actor.system.shipCombat.state.tracks = { contact: { targetUuid: "Scene.s.Token.t", state: "contact" } };
+    actor.system.shipCombat.state.tracks = {
+      contact: { targetUuid: "Scene.s.Token.t", state: "contact" },
+    };
     const priority = clone(actor.system.shipCombat.state.weaponPriority);
     const revision = actor.system.shipCombat.state.revision;
 
@@ -508,8 +724,14 @@ describe("refit API", () => {
     expect(actor.system.shipCombat.config.hardpoints[2].weaponId).toBe(otherId);
     expect(actor.system.shipCombat.config.hardpoints[3].weaponId).toBe(movedId);
     expect(actor.items.has(movedId)).toBe(true);
-    expect(state.weapons[movedId]).toMatchObject({ readiness: 0, status: "online" });
-    expect(state.weapons[otherId]).toMatchObject({ readiness: 20, status: "off" });
+    expect(state.weapons[movedId]).toMatchObject({
+      readiness: 0,
+      status: "online",
+    });
+    expect(state.weapons[otherId]).toMatchObject({
+      readiness: 20,
+      status: "off",
+    });
     expect(state.conditions.fault).toMatchObject({ severity: "major" });
     expect(state.conditions.hazard).toEqual(expect.any(Object));
     expect(state.weaponPriority).toEqual(priority);
@@ -535,7 +757,9 @@ describe("refit API", () => {
         severity: "major",
       },
     };
-    actor.system.shipCombat.state.tracks = { contact: { targetUuid: "Scene.s.Token.t", state: "targeted" } };
+    actor.system.shipCombat.state.tracks = {
+      contact: { targetUuid: "Scene.s.Token.t", state: "targeted" },
+    };
     actor.system.shipCombat.state.shields.charge.fore = 9;
     const power = clone(actor.system.shipCombat.state.power);
     const priority = clone(actor.system.shipCombat.state.weaponPriority);
@@ -545,7 +769,10 @@ describe("refit API", () => {
 
     const config = actor.system.shipCombat.config;
     const state = actor.system.shipCombat.state;
-    expect(config.hardpoints[2]).toMatchObject({ id: renamedMountId, weaponId });
+    expect(config.hardpoints[2]).toMatchObject({
+      id: renamedMountId,
+      weaponId,
+    });
     expect(actor.items.has(weaponId)).toBe(true);
     expect(state.weapons[weaponId].readiness).toBe(0);
     expect(state.conditions.fault).toEqual(expect.any(Object));
@@ -558,7 +785,8 @@ describe("refit API", () => {
 
   test("rejects missing, malformed, mismatched, and stale staged revisions without writes", async () => {
     const hull = clone(actor.system.shipCombat.config);
-    const shieldId = hull.slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.shield).itemId;
+    const shieldId =
+      hull.slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.shield).itemId;
     const draft = componentDraft(actor, shieldId);
     draft.system.definition.totalBudget = 50;
     const revision = actor.system.shipCombat.state.revision;
@@ -568,9 +796,16 @@ describe("refit API", () => {
       .rejects.toMatchObject({ code: "REVISION_REQUIRED" });
     await expect(refit.saveInstalledShipComponent(actor, shieldId, draft, -1))
       .rejects.toMatchObject({ code: "REVISION_REQUIRED" });
-    await expect(refit.saveInstalledShipComponent(actor, shieldId, draft, revision + 1))
+    await expect(
+      refit.saveInstalledShipComponent(actor, shieldId, draft, revision + 1),
+    )
       .rejects.toMatchObject({ code: "STALE_REVISION" });
-    await expect(refit.saveInstalledShipComponent(actor, shieldId, { ...draft, _id: "other-item" }, revision))
+    await expect(
+      refit.saveInstalledShipComponent(actor, shieldId, {
+        ...draft,
+        _id: "other-item",
+      }, revision),
+    )
       .rejects.toMatchObject({ code: "COMPONENT_ID_MISMATCH" });
     await expect(refit.saveShipHull(actor, hull))
       .rejects.toMatchObject({ code: "REVISION_REQUIRED" });
@@ -587,7 +822,11 @@ describe("refit API", () => {
     bubble._id = "catalog-bubble-shield";
     bubble.system.definition.topology = "bubble";
     bubble.system.definition.sectors = ["bubble"];
-    const installed = await refit.installShipComponent(actor, CANADENSIS_SLOT_IDS.shield, bubble);
+    const installed = await refit.installShipComponent(
+      actor,
+      CANADENSIS_SLOT_IDS.shield,
+      bubble,
+    );
     const itemId = installed.id;
     actor.system.shipCombat.state.shields.charge.bubble = 20;
     const draft = componentDraft(actor, itemId);
@@ -600,29 +839,55 @@ describe("refit API", () => {
     const config = actor.system.shipCombat.config;
     const state = actor.system.shipCombat.state;
     const sectors = ["fore", "port", "starboard", "aft"];
-    expect(config.slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.shield).itemId).toBe(itemId);
+    expect(
+      config.slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.shield).itemId,
+    ).toBe(itemId);
     expect(actor.items.has(itemId)).toBe(true);
     expect(actor.items.size).toBe(12);
-    expect(actor.items.get(itemId).system.definition.topology).toBe("directional");
-    expect(Object.keys(state.shields.charge).sort()).toEqual([...sectors].sort());
-    expect(Object.keys(state.shields.regenerationAllocation).sort()).toEqual([...sectors].sort());
-    expect(Object.keys(state.shields.collapse).sort()).toEqual([...sectors].sort());
-    expect(Object.values(state.shields.regenerationAllocation).reduce((sum, weight) => sum + weight, 0)).toBe(100);
-    const total = Object.values(state.shields.charge).reduce((sum, charge) => sum + charge, 0);
+    expect(actor.items.get(itemId).system.definition.topology).toBe(
+      "directional",
+    );
+    expect(Object.keys(state.shields.charge).sort()).toEqual(
+      [...sectors].sort(),
+    );
+    expect(Object.keys(state.shields.regenerationAllocation).sort()).toEqual(
+      [...sectors].sort(),
+    );
+    expect(Object.keys(state.shields.collapse).sort()).toEqual(
+      [...sectors].sort(),
+    );
+    expect(
+      Object.values(state.shields.regenerationAllocation).reduce(
+        (sum, weight) => sum + weight,
+        0,
+      ),
+    ).toBe(100);
+    const total = Object.values(state.shields.charge).reduce(
+      (sum, charge) => sum + charge,
+      0,
+    );
     expect(total).toBe(20);
-    expect(Math.max(...Object.values(state.shields.charge))).toBeLessThanOrEqual(24);
+    expect(Math.max(...Object.values(state.shields.charge)))
+      .toBeLessThanOrEqual(24);
     expect(state.revision).toBe(revision + 1);
 
     const updateEvent = actor.events.at(-1);
     expect(updateEvent.type).toBe("update");
     expect(updateEvent.items[0]._id).toBe(itemId);
-    expect(updateEvent.items[0]["system.definition"].value.topology).toBe("directional");
+    expect(updateEvent.items[0]["system.definition"].value.topology).toBe(
+      "directional",
+    );
 
     const effective = refit.materializeActorConfig(actor);
     const route = previewDefenseRoute(effective, state, {});
     expect(route.totalCharge).toBe(20);
     expect(route.capacities.fore).toBe(24);
-    expect(route.regenerationAllocation).toEqual({ fore: 25, port: 25, starboard: 25, aft: 25 });
+    expect(route.regenerationAllocation).toEqual({
+      fore: 25,
+      port: 25,
+      starboard: 25,
+      aft: 25,
+    });
 
     const back = componentDraft(actor, itemId);
     back.system.definition.topology = "bubble";
@@ -637,7 +902,11 @@ describe("refit API", () => {
     expect(bubbleState.shields.charge).toEqual({ bubble: 20 });
     expect(bubbleState.shields.regenerationAllocation).toEqual({ bubble: 100 });
     expect(bubbleState.shields.collapse).toEqual({ bubble: 0 });
-    const bubbleRoute = previewDefenseRoute(refit.materializeActorConfig(actor), bubbleState, {});
+    const bubbleRoute = previewDefenseRoute(
+      refit.materializeActorConfig(actor),
+      bubbleState,
+      {},
+    );
     expect(bubbleRoute.totalCharge).toBe(20);
     expect(bubbleRoute.capacities.bubble).toBe(24);
   });
@@ -647,18 +916,29 @@ describe("refit API", () => {
     const weaponId = hardpoint.weaponId;
     actor.system.shipCombat.state.weapons[weaponId].readiness = 20;
     const lower = componentDraft(actor, weaponId);
-    lower.system.definition.readiness = { ...lower.system.definition.readiness, capacity: 5 };
+    lower.system.definition.readiness = {
+      ...lower.system.definition.readiness,
+      capacity: 5,
+    };
     let revision = actor.system.shipCombat.state.revision;
 
     await refit.saveInstalledShipComponent(actor, weaponId, lower, revision);
 
     expect(actor.items.has(weaponId)).toBe(true);
     expect(actor.items.size).toBe(12);
-    expect(actor.items.get(weaponId).system.definition.readiness.capacity).toBe(5);
-    expect(actor.system.shipCombat.state.weapons[weaponId]).toMatchObject({ readiness: 5, status: "online" });
+    expect(actor.items.get(weaponId).system.definition.readiness.capacity).toBe(
+      5,
+    );
+    expect(actor.system.shipCombat.state.weapons[weaponId]).toMatchObject({
+      readiness: 5,
+      status: "online",
+    });
 
     const raise = componentDraft(actor, weaponId);
-    raise.system.definition.readiness = { ...raise.system.definition.readiness, capacity: 20 };
+    raise.system.definition.readiness = {
+      ...raise.system.definition.readiness,
+      capacity: 20,
+    };
     revision = actor.system.shipCombat.state.revision;
 
     await refit.saveInstalledShipComponent(actor, weaponId, raise, revision);
@@ -672,16 +952,23 @@ describe("refit API", () => {
     const weaponId = hardpoint.weaponId;
     actor.system.shipCombat.state.weapons[weaponId].readiness = 20;
     const draft = componentDraft(actor, weaponId);
-    draft.system.definition.readiness = { ...draft.system.definition.readiness, capacity: 5 };
+    draft.system.definition.readiness = {
+      ...draft.system.definition.readiness,
+      capacity: 5,
+    };
     const revision = actor.system.shipCombat.state.revision;
     const before = clone(actor.system.shipCombat);
     actor.failNextUpdate = true;
 
-    await expect(refit.saveInstalledShipComponent(actor, weaponId, draft, revision))
+    await expect(
+      refit.saveInstalledShipComponent(actor, weaponId, draft, revision),
+    )
       .rejects.toThrow("simulated update failure");
 
     expect(actor.system.shipCombat).toEqual(before);
-    expect(actor.items.get(weaponId).system.definition.readiness.capacity).toBe(20);
+    expect(actor.items.get(weaponId).system.definition.readiness.capacity).toBe(
+      20,
+    );
     expect(actor.events.map(({ type }) => type)).toEqual(["update"]);
 
     await refit.saveInstalledShipComponent(actor, weaponId, draft, revision);
@@ -689,27 +976,49 @@ describe("refit API", () => {
     expect(actor.events.map(({ type }) => type)).toEqual(["update", "update"]);
     expect(actor.system.shipCombat.state.revision).toBe(revision + 1);
     expect(actor.system.shipCombat.state.weapons[weaponId].readiness).toBe(5);
-    expect(actor.items.get(weaponId).system.definition.readiness.capacity).toBe(5);
+    expect(actor.items.get(weaponId).system.definition.readiness.capacity).toBe(
+      5,
+    );
   });
 
   test("keeps Power valid when an edit removes tiers or lowers reactor output", async () => {
     const slots = actor.system.shipCombat.config.slots;
-    const coolingId = slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.cooling).itemId;
+    const coolingId =
+      slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.cooling).itemId;
     actor.system.shipCombat.state.power.cooling = 3;
     const cooling = componentDraft(actor, coolingId);
-    cooling.system.definition.tiers = cooling.system.definition.tiers.filter(({ power }) => power !== 3);
+    cooling.system.definition.tiers = cooling.system.definition.tiers.filter((
+      { power },
+    ) => power !== 3);
 
-    await refit.saveInstalledShipComponent(actor, coolingId, cooling, actor.system.shipCombat.state.revision);
+    await refit.saveInstalledShipComponent(
+      actor,
+      coolingId,
+      cooling,
+      actor.system.shipCombat.state.revision,
+    );
 
     expect(actor.system.shipCombat.state.power.cooling).toBe(1);
 
-    const reactorId = slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.reactor).itemId;
-    actor.system.shipCombat.state.power = { engines: 4, shields: 3, sensors: 2, cooling: 2, weapons: 3 };
+    const reactorId =
+      slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.reactor).itemId;
+    actor.system.shipCombat.state.power = {
+      engines: 4,
+      shields: 3,
+      sensors: 2,
+      cooling: 2,
+      weapons: 3,
+    };
     const reactor = componentDraft(actor, reactorId);
     reactor.system.definition.nominalOutput = 10;
     reactor.system.definition.redlineOutput = 12;
 
-    await refit.saveInstalledShipComponent(actor, reactorId, reactor, actor.system.shipCombat.state.revision);
+    await refit.saveInstalledShipComponent(
+      actor,
+      reactorId,
+      reactor,
+      actor.system.shipCombat.state.revision,
+    );
 
     const effective = refit.materializeActorConfig(actor);
     const power = getPowerState(effective, actor.system.shipCombat.state);
@@ -722,13 +1031,20 @@ describe("refit API", () => {
   test("denies combat refits and GMs who are not the active authority", async () => {
     actor.system.shipCombat.state.phase = "active";
     expect(refit.getRefitDenial(actor)).toContain("outside combat");
-    await expect(refit.removeShipComponent(actor, actor.system.shipCombat.config.slots[0].id))
+    await expect(
+      refit.removeShipComponent(
+        actor,
+        actor.system.shipCombat.config.slots[0].id,
+      ),
+    )
       .rejects.toMatchObject({ code: "REFIT_DENIED" });
 
     actor.system.shipCombat.state.phase = "outsideCombat";
     globalThis.game.user = { id: "gm-inactive", isGM: true, active: true };
     expect(refit.getRefitDenial(actor)).toContain("active GM");
-    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({ code: "REFIT_DENIED" });
+    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({
+      code: "REFIT_DENIED",
+    });
     expect(actor.events).toEqual([]);
   });
 });

@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
 import { CANADENSIS_IDS } from "../scripts/data/canadensis.js";
-import { createDefaultShipData, createInitialState } from "../scripts/model/defaults.js";
+import {
+  createDefaultShipData,
+  createInitialState,
+} from "../scripts/model/defaults.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 import {
   applyMaintainedOverclockHeat,
@@ -93,7 +96,12 @@ describe("Power routing and weapon lifecycle", () => {
     const before = clone(state);
 
     captureViolation(
-      () => commitPowerRoute(config, state, clone({ allocation: { engines: 2.5, sensors: 1 } })),
+      () =>
+        commitPowerRoute(
+          config,
+          state,
+          clone({ allocation: { engines: 2.5, sensors: 1 } }),
+        ),
       "INVALID_POWER_ALLOCATION",
     );
 
@@ -104,12 +112,23 @@ describe("Power routing and weapon lifecycle", () => {
     const { config, state } = freshShip((candidate) => {
       delete candidate.components.reactor;
     });
-    const allocation = { engines: 0, shields: 0, sensors: 0, cooling: 0, weapons: 0 };
+    const allocation = {
+      engines: 0,
+      shields: 0,
+      sensors: 0,
+      cooling: 0,
+      weapons: 0,
+    };
     const weaponStates = Object.fromEntries(
-      Object.keys(state.weapons).map((weaponId) => [weaponId, { status: "off" }]),
+      Object.keys(state.weapons).map((
+        weaponId,
+      ) => [weaponId, { status: "off" }]),
     );
 
-    const routed = commitPowerRoute(config, state, { allocation, weaponStates });
+    const routed = commitPowerRoute(config, state, {
+      allocation,
+      weaponStates,
+    });
     expect(routed).toMatchObject({
       allocation,
       committed: 0,
@@ -119,7 +138,10 @@ describe("Power routing and weapon lifecycle", () => {
 
     const before = clone(state);
     captureViolation(
-      () => commitPowerRoute(config, state, { allocation: { ...allocation, engines: 1 } }),
+      () =>
+        commitPowerRoute(config, state, {
+          allocation: { ...allocation, engines: 1 },
+        }),
       "REACTOR_CAPACITY_EXCEEDED",
     );
     expect(state).toEqual(before);
@@ -140,12 +162,19 @@ describe("Power routing and weapon lifecycle", () => {
     });
     commitPowerRoute(legal.config, legal.state, clone(staged));
     expect(legal.state.power.weapons).toBe(2);
-    expect(legal.state.weapons[CANADENSIS_IDS.portMacrocannon].status).toBe("off");
+    expect(legal.state.weapons[CANADENSIS_IDS.portMacrocannon].status).toBe(
+      "off",
+    );
 
     const illegal = freshShip();
     const before = clone(illegal.state);
     captureViolation(
-      () => commitPowerRoute(illegal.config, illegal.state, clone({ allocation: { weapons: 2 } })),
+      () =>
+        commitPowerRoute(
+          illegal.config,
+          illegal.state,
+          clone({ allocation: { weapons: 2 } }),
+        ),
       "WEAPONS_POWER_EXCEEDED",
     );
     expect(illegal.state).toEqual(before);
@@ -154,7 +183,11 @@ describe("Power routing and weapon lifecycle", () => {
   test("Redline and subsystem entry Heat is charged once, then maintained every Start", () => {
     const { config, state } = freshShip();
 
-    const entered = commitPowerRoute(config, state, clone({ allocation: { engines: 4 } }));
+    const entered = commitPowerRoute(
+      config,
+      state,
+      clone({ allocation: { engines: 4 } }),
+    );
     expect(entered.redlining).toBe(true);
     expect(entered.heatAdded).toBe(7);
     expect(entered.overclockEntries).toEqual([
@@ -163,7 +196,11 @@ describe("Power routing and weapon lifecycle", () => {
     ]);
     expect(state.heat).toBe(7);
 
-    const unchanged = commitPowerRoute(config, state, clone({ allocation: { engines: 4 } }));
+    const unchanged = commitPowerRoute(
+      config,
+      state,
+      clone({ allocation: { engines: 4 } }),
+    );
     expect(unchanged.heatAdded).toBe(0);
     expect(unchanged.overclockEntries).toEqual([]);
     expect(state.heat).toBe(7);
@@ -236,10 +273,16 @@ describe("Power routing and weapon lifecycle", () => {
     const { config, state } = freshShip((candidate) => {
       delete candidate.components.drives.main;
       delete candidate.components.drives.reverse;
-      candidate.components.drives.starboardLateral.tiers.find(({ power }) => power === 4).overclockHeat = 2;
+      candidate.components.drives.starboardLateral.tiers.find(({ power }) =>
+        power === 4
+      ).overclockHeat = 2;
     });
     state.conditions.port = driveFault(config, "portLateral");
-    state.conditions.starboard = driveFault(config, "starboardLateral", "critical");
+    state.conditions.starboard = driveFault(
+      config,
+      "starboardLateral",
+      "critical",
+    );
     const staged = { allocation: { engines: 4, cooling: 0 } };
 
     const preview = previewPowerRoute(config, state, staged);
@@ -274,11 +317,19 @@ describe("Power routing and weapon lifecycle", () => {
 
     const result = applyPowerShedding(config, state);
 
-    expect(result.ceilings).toMatchObject({ nominal: 9, maximum: 11, fault: "minor" });
+    expect(result.ceilings).toMatchObject({
+      nominal: 9,
+      maximum: 11,
+      fault: "minor",
+    });
     expect(result.committed).toBe(11);
     expect(result.events).toEqual([
       { type: "tierShed", system: "weapons", from: 3, to: 2 },
-      { type: "weaponShed", weaponId: CANADENSIS_IDS.portMacrocannon, released: 1 },
+      {
+        type: "weaponShed",
+        weaponId: CANADENSIS_IDS.portMacrocannon,
+        released: 1,
+      },
     ]);
     expect(result.weaponReserved).toBe(2);
     expect(state.weapons[CANADENSIS_IDS.railgun].status).toBe("online");
@@ -290,36 +341,62 @@ describe("Power routing and weapon lifecycle", () => {
   });
 });
 
-  test("Power commits persist presets and validated shedding priorities", () => {
-    const { config, state } = freshShip();
-    const preset = config.powerPresets.find(({ id }) => id === "pursuit");
-    const sheddingPriority = ["weapons", "cooling", "shields", "sensors", "engines"];
-    const weaponPriority = [...config.weaponPriority].reverse();
+test("Power commits persist presets and validated shedding priorities", () => {
+  const { config, state } = freshShip();
+  const preset = config.powerPresets.find(({ id }) => id === "pursuit");
+  const sheddingPriority = [
+    "weapons",
+    "cooling",
+    "shields",
+    "sensors",
+    "engines",
+  ];
+  const weaponPriority = [...config.weaponPriority].reverse();
 
-    const result = commitPowerRoute(config, state, clone({
+  const result = commitPowerRoute(
+    config,
+    state,
+    clone({
       powerPresetId: preset.id,
       allocation: preset.allocations,
       sheddingPriority,
       weaponPriority,
-    }));
+    }),
+  );
 
-    expect(result.powerPresetId).toBe("pursuit");
-    expect(state.powerPresetId).toBe("pursuit");
-    expect(state.sheddingPriority).toEqual(sheddingPriority);
-    expect(state.weaponPriority).toEqual(weaponPriority);
+  expect(result.powerPresetId).toBe("pursuit");
+  expect(state.powerPresetId).toBe("pursuit");
+  expect(state.sheddingPriority).toEqual(sheddingPriority);
+  expect(state.weaponPriority).toEqual(weaponPriority);
 
-    captureViolation(
-      () => commitPowerRoute(config, state, clone({
-        allocation: preset.allocations,
-        sheddingPriority: ["engines", "engines", "sensors", "cooling", "weapons"],
-      })),
-      "INVALID_POWER_PRIORITY",
-    );
-  });
+  captureViolation(
+    () =>
+      commitPowerRoute(
+        config,
+        state,
+        clone({
+          allocation: preset.allocations,
+          sheddingPriority: [
+            "engines",
+            "engines",
+            "sensors",
+            "cooling",
+            "weapons",
+          ],
+        }),
+      ),
+    "INVALID_POWER_PRIORITY",
+  );
+});
 
 describe("shield allocation, collapse, and recovery", () => {
   test("integer regeneration uses stable directional tie-breaking", () => {
-    expect(allocateRegeneration(3, clone({ fore: 25, port: 25, starboard: 25, aft: 25 }))).toEqual({
+    expect(
+      allocateRegeneration(
+        3,
+        clone({ fore: 25, port: 25, starboard: 25, aft: 25 }),
+      ),
+    ).toEqual({
       fore: 1,
       port: 1,
       starboard: 1,
@@ -331,12 +408,22 @@ describe("shield allocation, collapse, and recovery", () => {
     const { config, state } = freshShip();
     state.power.shields = 2;
     state.shields.charge = { fore: 0, port: 0, starboard: 0, aft: 0 };
-    state.shields.regenerationAllocation = { fore: 25, port: 25, starboard: 25, aft: 25 };
+    state.shields.regenerationAllocation = {
+      fore: 25,
+      port: 25,
+      starboard: 25,
+      aft: 25,
+    };
     state.shields.collapse = { fore: 1, port: 0, starboard: 0, aft: 0 };
     state.conditions.portEmitter = emitterFault(config, "port");
 
     const blocked = applyShieldRegeneration(config, state);
-    expect(blocked.assigned).toEqual({ fore: 1, port: 1, starboard: 1, aft: 1 });
+    expect(blocked.assigned).toEqual({
+      fore: 1,
+      port: 1,
+      starboard: 1,
+      aft: 1,
+    });
     expect(blocked.gains).toEqual({ fore: 0, port: 0, starboard: 1, aft: 1 });
     expect(blocked.losses).toEqual(expect.arrayContaining([
       { sector: "fore", amount: 1, reason: "collapsed" },
@@ -364,7 +451,12 @@ describe("shield allocation, collapse, and recovery", () => {
       { sector: "port", from: 1, to: 0, reactivated: true },
     ]);
 
-    state.shields.regenerationAllocation = { fore: 0, port: 100, starboard: 0, aft: 0 };
+    state.shields.regenerationAllocation = {
+      fore: 0,
+      port: 100,
+      starboard: 0,
+      aft: 0,
+    };
     const restored = applyShieldRegeneration(config, state);
     expect(restored.assigned.port).toBe(4);
     expect(restored.gains.port).toBe(1);
@@ -375,20 +467,28 @@ describe("shield allocation, collapse, and recovery", () => {
     const { config, state } = freshShip((draft) => {
       draft.components.shield.topology = "bubble";
       draft.components.shield.sectors = ["bubble"];
-      draft.components.shield.emitters = [{ id: `${draft.components.shield.id}:bubble`, sector: "bubble", regions: ["fore", "port", "starboard", "aft"] }];
+      draft.components.shield.emitters = [{
+        id: `${draft.components.shield.id}:bubble`,
+        sector: "bubble",
+        regions: ["fore", "port", "starboard", "aft"],
+      }];
       draft.components.shield.sectorCap = 30;
       draft.components.shield.totalBudget = 30;
     });
     state.power.shields = 2;
     state.shields.charge.bubble = 10;
 
-    const impact = resolveShieldDamage(config, state, clone({
-      sector: "fore",
-      shieldDamage: 25,
-      hullDamage: 10,
-      heatDamage: 5,
-      armorPiercing: 1,
-    }));
+    const impact = resolveShieldDamage(
+      config,
+      state,
+      clone({
+        sector: "fore",
+        shieldDamage: 25,
+        hullDamage: 10,
+        heatDamage: 5,
+        armorPiercing: 1,
+      }),
+    );
 
     expect(impact).toMatchObject({
       sector: "bubble",
@@ -455,10 +555,11 @@ describe("ordered lifecycle transactions", () => {
       heat: 6,
       ventCooldown: 1,
     });
-    expect(result.shipStates[SOURCE].weapons[CANADENSIS_IDS.railgun]).toMatchObject({
-      status: "booting",
-      bootCounter: 1,
-    });
+    expect(result.shipStates[SOURCE].weapons[CANADENSIS_IDS.railgun])
+      .toMatchObject({
+        status: "booting",
+        bootCounter: 1,
+      });
     expect(result.publicEvents).toEqual([]);
     expect(result.gmEvents).toHaveLength(1);
     expect(authority.ships[SOURCE].state).toEqual(before);
@@ -478,10 +579,11 @@ describe("ordered lifecycle transactions", () => {
     expect(next.gmEvents[0].detail.events[7].counters).toEqual({
       ventCooldown: { from: 1, to: 0 },
     });
-    expect(next.shipStates[SOURCE].weapons[CANADENSIS_IDS.railgun]).toMatchObject({
-      status: "online",
-      bootCounter: 0,
-    });
+    expect(next.shipStates[SOURCE].weapons[CANADENSIS_IDS.railgun])
+      .toMatchObject({
+        status: "online",
+        bootCounter: 0,
+      });
   });
 
   test("an empty loadout completes the passive combat lifecycle without component errors", () => {
@@ -507,8 +609,17 @@ describe("ordered lifecycle transactions", () => {
       phases.push(record.state.phase);
     }
 
-    expect(phases).toEqual(["start", "active", "end", "start", "outsideCombat"]);
-    expect(record.state).toMatchObject({ hull: record.config.maxHull, heat: 0 });
+    expect(phases).toEqual([
+      "start",
+      "active",
+      "end",
+      "start",
+      "outsideCombat",
+    ]);
+    expect(record.state).toMatchObject({
+      hull: record.config.maxHull,
+      heat: 0,
+    });
   });
 
   test("End completes every ordered step after Hull reaches zero and resolves Fate last", () => {
@@ -518,11 +629,29 @@ describe("ordered lifecycle transactions", () => {
     state.heat = 25;
     state.velocity = { x: 31, y: 0 };
     state.effects = [
-      { id: "zeta", timing: "end", expiresAt: "end", harmful: true, hullDamage: 2, heat: 2 },
-      { id: "alpha", timing: "end", expiresAt: "end", harmful: true, hullDamage: 2, heat: 1 },
+      {
+        id: "zeta",
+        timing: "end",
+        expiresAt: "end",
+        harmful: true,
+        hullDamage: 2,
+        heat: 2,
+      },
+      {
+        id: "alpha",
+        timing: "end",
+        expiresAt: "end",
+        harmful: true,
+        hullDamage: 2,
+        heat: 1,
+      },
     ];
 
-    const result = runEndPhase(config, state, clone({ random: [0], endKey: "round-1" }));
+    const result = runEndPhase(
+      config,
+      state,
+      clone({ random: [0], endKey: "round-1" }),
+    );
 
     expect(result.events.map(({ step, type }) => [step, type])).toEqual([
       [1, "overspeedDamage"],
@@ -533,10 +662,26 @@ describe("ordered lifecycle transactions", () => {
       [6, "persistentEffects"],
       ["afterEnd", "shipFate"],
     ]);
-    expect(result.events[0]).toMatchObject({ beforeHull: 1, hullDamage: 2, hull: 0 });
-    expect(result.events[4]).toMatchObject({ overflow: 5, hullDamage: 3, beforeHull: 0, hull: 0 });
-    expect(result.events[5].applied.map(({ id }) => id)).toEqual(["alpha", "zeta"]);
-    expect(result.events.at(-1).public).toEqual({ status: "pending", outcome: null, reason: "important" });
+    expect(result.events[0]).toMatchObject({
+      beforeHull: 1,
+      hullDamage: 2,
+      hull: 0,
+    });
+    expect(result.events[4]).toMatchObject({
+      overflow: 5,
+      hullDamage: 3,
+      beforeHull: 0,
+      hull: 0,
+    });
+    expect(result.events[5].applied.map(({ id }) => id)).toEqual([
+      "alpha",
+      "zeta",
+    ]);
+    expect(result.events.at(-1).public).toEqual({
+      status: "pending",
+      outcome: null,
+      reason: "important",
+    });
     expect(state).toMatchObject({
       phase: "start",
       hull: 0,
@@ -548,7 +693,8 @@ describe("ordered lifecycle transactions", () => {
 
   test("an injected mid-Start failure rolls back both the lifecycle transaction and dispatcher input", () => {
     const record = freshShip((config) => {
-      config.components.cooling.tiers.find(({ power }) => power === 1).cooling = -1;
+      config.components.cooling.tiers.find(({ power }) => power === 1).cooling =
+        -1;
     });
     record.state.phase = "start";
     record.state.heat = 9;
@@ -558,10 +704,307 @@ describe("ordered lifecycle transactions", () => {
     const before = clone(authority.ships[SOURCE].state);
 
     captureViolation(
-      () => executeShipOperation(gmRequest("phase.start", { turnKey: "round-failure" }), authority),
+      () =>
+        executeShipOperation(
+          gmRequest("phase.start", { turnKey: "round-failure" }),
+          authority,
+        ),
       "INVALID_COOLING_OUTPUT",
     );
 
     expect(authority.ships[SOURCE].state).toEqual(before);
   });
+});
+
+test("registered hooks repair mixed synthetic data, retry failed startup, and grant each turn once", async () => {
+  const { MODULE_ID, SHIP_TYPE } = await import("../scripts/constants.js");
+  const { createDefaultShipSystemData } = await import(
+    "../scripts/model/defaults.js"
+  );
+  const { CANADENSIS_DEFAULT_COMPONENT_SOURCES } = await import(
+    "../scripts/data/canadensis-components.js"
+  );
+  const globals = [
+    "game",
+    "foundry",
+    "Hooks",
+    "ui",
+    "CONST",
+    "fromUuid",
+    "JournalEntry",
+  ];
+  const previous = Object.fromEntries(
+    globals.map((key) => [key, globalThis[key]]),
+  );
+  const errors = [];
+  const notices = [];
+  const callbacks = new Map();
+  const hooks = {
+    on(event, callback) {
+      const list = callbacks.get(event) ?? [];
+      list.push(callback);
+      callbacks.set(event, list);
+    },
+    callAll(event, ...args) {
+      for (const callback of callbacks.get(event) ?? []) callback(...args);
+    },
+  };
+  class Collection extends Map {
+    get contents() {
+      return [...this.values()];
+    }
+    [Symbol.iterator]() {
+      return this.values();
+    }
+    filter(callback) {
+      return this.contents.filter(callback);
+    }
+  }
+  class Replacement {
+    constructor(value) {
+      this.value = value;
+    }
+    static create(value) {
+      return new Replacement(value);
+    }
+  }
+  function assign(object, path, value) {
+    const keys = path.split(".");
+    const last = keys.pop();
+    for (const key of keys) object = object[key] ??= {};
+    object[last] = clone(value instanceof Replacement ? value.value : value);
+  }
+  const gm = { id: "lifecycle-gm", active: true, isGM: true };
+  const users = new Collection([[gm.id, gm]]);
+  users.activeGM = gm;
+  const scene = {
+    id: "lifecycle-hooks",
+    grid: { size: 100, distance: 1 },
+    tokens: new Collection(),
+    walls: new Collection(),
+  };
+  function actor(id) {
+    const ship = createDefaultShipSystemData();
+    ship.state.phase = "start";
+    ship.state.revision = 63;
+    ship.state.heat = 9;
+    return {
+      id,
+      name: id,
+      uuid: `Actor.${id}`,
+      documentName: "Actor",
+      type: SHIP_TYPE,
+      ownership: { default: 0 },
+      flags: {},
+      system: { shipCombat: clone(ship) },
+      _source: { system: { shipCombat: clone(ship) } },
+      items: new Collection(
+        CANADENSIS_DEFAULT_COMPONENT_SOURCES.map((
+          item,
+        ) => [item._id, clone(item)]),
+      ),
+      async update(changes, options) {
+        expect(options.viraShipCombatInternal).toBe(true);
+        for (const [path, value] of Object.entries(changes)) {
+          assign(this, path, value);
+          assign(this._source, path, value);
+        }
+        hooks.callAll("updateActor", this, changes, options, gm.id);
+        await Promise.resolve();
+        return this;
+      },
+      async createEmbeddedDocuments() {
+        throw new Error(
+          "Mixed-data repair must never install default components",
+        );
+      },
+    };
+  }
+  const source = actor("mixed-synthetic");
+  const other = actor("template-peer");
+  const world = actor("world-base");
+  const legacy = {
+    drive: { id: "canadensis-drive", customSetting: 42 },
+    weapons: [{ id: "canadensis-twin-railgun" }],
+  };
+  source.system.shipCombat.config.components = clone(legacy);
+  source._source.system.shipCombat.config.components = clone(legacy);
+  const originalState = clone(source.system.shipCombat.state);
+  function token(id, shipActor) {
+    const document = {
+      id,
+      uuid: `Scene.${scene.id}.Token.${id}`,
+      name: shipActor.name,
+      documentName: "Token",
+      actor: shipActor,
+      parent: scene,
+      x: 0,
+      y: 0,
+      rotation: 0,
+      width: 1,
+      height: 1,
+      async update(changes) {
+        Object.assign(this, changes);
+        return this;
+      },
+    };
+    scene.tokens.set(id, document);
+    return document;
+  }
+  const sourceToken = token("source", source);
+  token("other", other);
+  source.uuid = `${sourceToken.uuid}.Actor.${source.id}`;
+  const combatant = { id: "current", token: sourceToken };
+  const combat = {
+    id: "registered-hooks",
+    round: 1,
+    turn: 0,
+    combatant,
+    current: { combatantId: combatant.id },
+    combatants: new Collection([[combatant.id, combatant]]),
+  };
+  combatant.parent = combat;
+  const journal = {
+    flags: { [MODULE_ID]: { isOperationLog: true, operationLog: "[]" } },
+    ownership: { default: 0 },
+    getFlag(module, key) {
+      return this.flags[module]?.[key];
+    },
+    async update(changes) {
+      for (const [path, value] of Object.entries(changes)) {
+        assign(this, path, value);
+      }
+      return this;
+    },
+  };
+  const entries = () => JSON.parse(journal.flags[MODULE_ID].operationLog);
+  async function settled(predicate, label) {
+    const deadline = Date.now() + 1500;
+    while (!predicate() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    if (!predicate()) {
+      throw new Error(
+        `${label}: hook/authority work did not settle; notifications=${
+          JSON.stringify(errors)
+        }`,
+      );
+    }
+  }
+  try {
+    globalThis.Hooks = hooks;
+    globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0, OBSERVER: 2 } };
+    globalThis.ui = {
+      notifications: {
+        error: (message) => errors.push(message),
+        info: (message) => notices.push(message),
+      },
+    };
+    globalThis.foundry = {
+      utils: { deepClone: clone, escapeHTML: (value) => String(value) },
+      data: { operators: { ForcedReplacement: Replacement } },
+      documents: {
+        ChatMessage: {
+          implementation: {
+            getSpeaker: () => ({}),
+            createDocuments: async (messages) => messages,
+          },
+        },
+      },
+    };
+    globalThis.game = {
+      user: gm,
+      users,
+      actors: new Collection([[world.id, world], [other.id, other]]),
+      scenes: new Collection([[scene.id, scene]]),
+      combats: new Collection([[combat.id, combat]]),
+      journal: new Collection([["log", journal]]),
+      socket: { on() {} },
+    };
+    globalThis.fromUuid = async (uuid) =>
+      scene.tokens.contents.find((entry) => entry.uuid === uuid);
+    globalThis.JournalEntry = { create: async () => journal };
+    const { initializeShipActor } = await import(
+      "../scripts/foundry/initialization.js"
+    );
+    const existingBackup = { reactor: { id: "other-legacy-reactor" } };
+    source.flags[MODULE_ID] = { legacyInlineComponents: clone(existingBackup) };
+    await expect(initializeShipActor(source)).rejects.toThrow(
+      "different legacy component backup",
+    );
+    expect(source.flags[MODULE_ID].legacyInlineComponents).toEqual(
+      existingBackup,
+    );
+    expect(source.system.shipCombat.state).toEqual(originalState);
+    expect(source.system.shipCombat.config.components).toEqual(legacy);
+    delete source.flags[MODULE_ID].legacyInlineComponents;
+    const missingId = source.system.shipCombat.config.slots[0].itemId;
+    const missing = source.items.get(missingId);
+    source.items.delete(missingId);
+    const { registerShipHooks } = await import(
+      "../scripts/foundry/hooks.js?registered-lifecycle-regression"
+    );
+    registerShipHooks();
+    await settled(
+      () => errors.some((message) => message.includes("combat.enter")),
+      "failed startup notification",
+    );
+    expect(errors.some((message) => message.includes(sourceToken.uuid))).toBe(
+      true,
+    );
+    expect(source.system.shipCombat.state).toEqual(originalState);
+    expect(source.system.shipCombat.config.components).toEqual(legacy);
+    expect(source.flags[MODULE_ID]?.legacyInlineComponents).toBeUndefined();
+    expect(entries()).toEqual([]);
+
+    source.items.set(missingId, missing);
+    hooks.callAll("updateCombat", combat, {}, {}, gm.id);
+    await settled(
+      () => source.system.shipCombat.state.phase === "active",
+      "repaired startup",
+    );
+    await settled(
+      () => entries().some((entry) => entry.request?.type === "phase.start"),
+      "startup commit",
+    );
+    expect(source.system.shipCombat.config.components).toBeUndefined();
+    expect(source.flags[MODULE_ID].legacyInlineComponents).toEqual(legacy);
+    expect(notices).toHaveLength(1);
+    expect(other.system.shipCombat.state.resources).toEqual({
+      actions: {},
+      orders: {},
+    });
+    const actions = source.system.shipCombat.state.resources.actions;
+    const operator = Object.keys(actions)[0];
+    expect(actions[operator]).toBeGreaterThan(0);
+    actions[operator] = 0;
+    const committedRevision = source.system.shipCombat.state.revision;
+    hooks.callAll("updateCombat", combat, {}, {}, gm.id);
+    hooks.callAll("combatTurnChange", combat);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(source.system.shipCombat.state.resources.actions[operator]).toBe(0);
+    expect(source.system.shipCombat.state.revision).toBe(committedRevision);
+    combat.round = 2;
+    hooks.callAll("updateCombat", combat, { round: 2 }, {}, gm.id);
+    await settled(
+      () =>
+        source.system.shipCombat.state.turnKey ===
+          `${combat.id}:2:${combatant.id}`,
+      "round transition",
+    );
+    await settled(
+      () =>
+        entries().filter((entry) => entry.request?.type === "phase.start")
+          .length === 2,
+      "round commit",
+    );
+    expect(source.system.shipCombat.state.resources.actions[operator])
+      .toBeGreaterThan(0);
+    expect(notices).toHaveLength(1);
+    expect(source.flags[MODULE_ID].legacyInlineComponents).toEqual(legacy);
+  } finally {
+    journal.invalid = true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    for (const key of globals) globalThis[key] = previous[key];
+  }
 });

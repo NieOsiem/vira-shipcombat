@@ -1,10 +1,22 @@
-import { COMPONENT_ITEM_TYPE, INTERNAL_REFIT_OPTION, INTERNAL_UPDATE_OPTION, RuleViolation, SECTORS } from "../constants.js";
+import {
+  COMPONENT_ITEM_TYPE,
+  INTERNAL_REFIT_OPTION,
+  INTERNAL_UPDATE_OPTION,
+  RuleViolation,
+  SECTORS,
+} from "../constants.js";
 import { CANADENSIS_HULL_CONFIG } from "../data/canadensis.js";
 import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../data/canadensis-components.js";
 import { createInitialState } from "../model/defaults.js";
-import { materializeShipConfig, normalizeComponentItem } from "../model/equipment.js";
+import {
+  materializeShipConfig,
+  normalizeComponentItem,
+} from "../model/equipment.js";
 import { nativeVehicleFieldValues } from "../model/native-vehicle.js";
-import { validateComponentItem, validateEffectiveLoadout } from "../model/validation.js";
+import {
+  validateComponentItem,
+  validateEffectiveLoadout,
+} from "../model/validation.js";
 import { validateRoster } from "../rules/operators.js";
 import { applyPowerShedding } from "../rules/power.js";
 import { applyShieldCapacityClamping } from "../rules/shields.js";
@@ -14,7 +26,9 @@ const actorQueues = new Map();
 
 function clone(value) {
   if (value === undefined) return undefined;
-  if (globalThis.foundry?.utils?.deepClone) return globalThis.foundry.utils.deepClone(value);
+  if (globalThis.foundry?.utils?.deepClone) {
+    return globalThis.foundry.utils.deepClone(value);
+  }
   return structuredClone(value);
 }
 
@@ -51,7 +65,11 @@ function forcedReplacement(value) {
 }
 
 function refitOptions(extra = {}) {
-  return { ...extra, [INTERNAL_REFIT_OPTION]: true, [INTERNAL_UPDATE_OPTION]: true };
+  return {
+    ...extra,
+    [INTERNAL_REFIT_OPTION]: true,
+    [INTERNAL_UPDATE_OPTION]: true,
+  };
 }
 
 function queueKey(actor) {
@@ -78,17 +96,27 @@ function requireRefit(actor) {
 function assertCurrent(actor, observed) {
   requireRefit(actor);
   const current = actor.system.shipCombat.state;
-  if (current.phase !== observed.phase || current.revision !== observed.revision) {
-    fail("STALE_REVISION", "Ship state changed while the refit was being prepared. Reload the ship and try again.", {
-      expected: observed,
-      actual: { phase: current.phase, revision: current.revision },
-    });
+  if (
+    current.phase !== observed.phase || current.revision !== observed.revision
+  ) {
+    fail(
+      "STALE_REVISION",
+      "Ship state changed while the refit was being prepared. Reload the ship and try again.",
+      {
+        expected: observed,
+        actual: { phase: current.phase, revision: current.revision },
+      },
+    );
   }
 }
 
 function requireStagedRevision(expected) {
   if (!Number.isSafeInteger(expected) || expected < 0) {
-    fail("REVISION_REQUIRED", "A nonnegative expected ship state revision is required.", { expected });
+    fail(
+      "REVISION_REQUIRED",
+      "A nonnegative expected ship state revision is required.",
+      { expected },
+    );
   }
   return expected;
 }
@@ -96,24 +124,39 @@ function requireStagedRevision(expected) {
 function assertStagedRevision(observed, expected) {
   requireStagedRevision(expected);
   if (expected !== observed.revision) {
-    fail("STALE_REVISION", "Ship state changed after this edit was staged. Close and reopen the editor to reload the current revision.", {
-      expected,
-      actual: observed.revision,
-    });
+    fail(
+      "STALE_REVISION",
+      "Ship state changed after this edit was staged. Close and reopen the editor to reload the current revision.",
+      {
+        expected,
+        actual: observed.revision,
+      },
+    );
   }
 }
 
 function requireValid(validation, code, label) {
   if (!validation.valid) {
-    fail(code, `${label}: ${validation.errors.map(({ path, message }) => `${path}: ${message}`).join("; ")}`, validation.errors);
+    fail(
+      code,
+      `${label}: ${
+        validation.errors.map(({ path, message }) => `${path}: ${message}`)
+          .join("; ")
+      }`,
+      validation.errors,
+    );
   }
 }
 
 function candidateConfig(actor, hull, items) {
   const effective = materializeShipConfig(hull, items);
-  requireValid(validateEffectiveLoadout(effective, {
-    tokenWidth: actor.token?.width ?? actor.prototypeToken?.width,
-  }), "INVALID_SHIP_CONFIG", "The refit would invalidate this ship");
+  requireValid(
+    validateEffectiveLoadout(effective, {
+      tokenWidth: actor.token?.width ?? actor.prototypeToken?.width,
+    }),
+    "INVALID_SHIP_CONFIG",
+    "The refit would invalidate this ship",
+  );
   return effective;
 }
 
@@ -124,11 +167,21 @@ function mountReference(mount) {
 function findMount(hull, mountId) {
   const slots = (hull?.slots ?? []).filter((slot) => slot?.id === mountId)
     .map((value) => ({ kind: "slot", value }));
-  const hardpoints = (hull?.hardpoints ?? []).filter((hardpoint) => hardpoint?.id === mountId)
+  const hardpoints = (hull?.hardpoints ?? []).filter((hardpoint) =>
+    hardpoint?.id === mountId
+  )
     .map((value) => ({ kind: "hardpoint", value }));
   const matches = [...slots, ...hardpoints];
-  if (matches.length === 0) fail("MOUNT_NOT_FOUND", `Ship mount '${mountId}' does not exist.`, { mountId });
-  if (matches.length !== 1) fail("DUPLICATE_HULL_SLOT", `Ship mount ID '${mountId}' is duplicated.`, { mountId });
+  if (matches.length === 0) {
+    fail("MOUNT_NOT_FOUND", `Ship mount '${mountId}' does not exist.`, {
+      mountId,
+    });
+  }
+  if (matches.length !== 1) {
+    fail("DUPLICATE_HULL_SLOT", `Ship mount ID '${mountId}' is duplicated.`, {
+      mountId,
+    });
+  }
   return matches[0];
 }
 
@@ -145,12 +198,24 @@ function componentSourceForCopy(sourceItem) {
     fail("INVALID_COMPONENT_ITEM", "A ship component Item is required.");
   }
   if (raw.type !== COMPONENT_ITEM_TYPE) {
-    fail("INVALID_COMPONENT_ITEM_TYPE", "Only ship component Items can be installed.");
+    fail(
+      "INVALID_COMPONENT_ITEM_TYPE",
+      "Only ship component Items can be installed.",
+    );
   }
-  const source = clone({ name: raw.name, img: raw.img, type: raw.type, system: raw.system });
+  const source = clone({
+    name: raw.name,
+    img: raw.img,
+    type: raw.type,
+    system: raw.system,
+  });
   const identified = { ...source, _id: raw.id ?? raw._id };
   const normalized = normalizeComponentItem(identified);
-  requireValid(validateComponentItem(identified), "INVALID_COMPONENT_ITEM", "The component cannot be installed");
+  requireValid(
+    validateComponentItem(identified),
+    "INVALID_COMPONENT_ITEM",
+    "The component cannot be installed",
+  );
   return { source, catalogId: normalized.id, component: normalized };
 }
 
@@ -161,38 +226,68 @@ function installedComponentSource(componentId, sourceItem) {
   }
   const supplied = raw.id ?? raw._id;
   if (supplied != null && supplied !== componentId) {
-    fail("COMPONENT_ID_MISMATCH", "An installed component edit must keep its existing Item identity.", { itemId: componentId, supplied });
+    fail(
+      "COMPONENT_ID_MISMATCH",
+      "An installed component edit must keep its existing Item identity.",
+      { itemId: componentId, supplied },
+    );
   }
-  return componentSourceForCopy({ ...raw, _id: componentId, type: raw.type ?? COMPONENT_ITEM_TYPE });
+  return componentSourceForCopy({
+    ...raw,
+    _id: componentId,
+    type: raw.type ?? COMPONENT_ITEM_TYPE,
+  });
 }
 
 function assertCompatible(mount, component) {
   const system = component.system;
   if (mount.kind === "hardpoint") {
     if (system.componentClass !== "weapon") {
-      fail("INCOMPATIBLE_COMPONENT_CLASS", `Only weapons can occupy hardpoint '${mount.value.id}'.`);
+      fail(
+        "INCOMPATIBLE_COMPONENT_CLASS",
+        `Only weapons can occupy hardpoint '${mount.value.id}'.`,
+      );
     }
     if (system.size !== mount.value.mountSize) {
-      fail("HARDPOINT_INCOMPATIBLE", `Weapon size does not match hardpoint '${mount.value.id}'.`);
+      fail(
+        "HARDPOINT_INCOMPATIBLE",
+        `Weapon size does not match hardpoint '${mount.value.id}'.`,
+      );
     }
-    if (mount.value.category !== "hardpoint" || system.definition.category !== mount.value.category) {
-      fail("HARDPOINT_INCOMPATIBLE", `Weapon category does not match hardpoint '${mount.value.id}'.`);
+    if (
+      mount.value.category !== "hardpoint" ||
+      system.definition.category !== mount.value.category
+    ) {
+      fail(
+        "HARDPOINT_INCOMPATIBLE",
+        `Weapon category does not match hardpoint '${mount.value.id}'.`,
+      );
     }
     return;
   }
 
   if (system.componentClass !== mount.value.class) {
-    fail("INCOMPATIBLE_COMPONENT_CLASS", `Component class does not match slot '${mount.value.id}'.`);
+    fail(
+      "INCOMPATIBLE_COMPONENT_CLASS",
+      `Component class does not match slot '${mount.value.id}'.`,
+    );
   }
   if (system.size !== mount.value.size) {
-    fail("INCOMPATIBLE_COMPONENT_SIZE", `Component size does not match slot '${mount.value.id}'.`);
+    fail(
+      "INCOMPATIBLE_COMPONENT_SIZE",
+      `Component size does not match slot '${mount.value.id}'.`,
+    );
   }
   if (mount.value.class === "drive") {
-    const requiredRole = ["portLateral", "starboardLateral"].includes(mount.value.driveRole)
-      ? "lateral"
-      : mount.value.driveRole;
+    const requiredRole =
+      ["portLateral", "starboardLateral"].includes(mount.value.driveRole)
+        ? "lateral"
+        : mount.value.driveRole;
     if (system.driveRole !== requiredRole) {
-      fail("INCOMPATIBLE_DRIVE_ROLE", `Drive role does not match slot '${mount.value.id}'.`);
+      fail(
+        "INCOMPATIBLE_DRIVE_ROLE",
+        `Drive role does not match slot '${mount.value.id}'.`,
+      );
     }
   }
 }
@@ -213,18 +308,34 @@ function mountRecords(hull) {
 }
 
 function changedHardware(beforeHull, afterHull) {
-  const before = new Map(mountRecords(beforeHull).map((mount) => [mount.id, mount]));
-  const after = new Map(mountRecords(afterHull).map((mount) => [mount.id, mount]));
+  const before = new Map(
+    mountRecords(beforeHull).map((mount) => [mount.id, mount]),
+  );
+  const after = new Map(
+    mountRecords(afterHull).map((mount) => [mount.id, mount]),
+  );
   const beforeClasses = new Map();
   const afterClasses = new Map();
   for (const mount of before.values()) {
-    if (mount.reference) beforeClasses.set(mount.reference, mount.componentClass);
+    if (mount.reference) {
+      beforeClasses.set(mount.reference, mount.componentClass);
+    }
   }
   for (const mount of after.values()) {
-    if (mount.reference) afterClasses.set(mount.reference, mount.componentClass);
+    if (mount.reference) {
+      afterClasses.set(mount.reference, mount.componentClass);
+    }
   }
-  const removedIds = new Set([...beforeClasses.keys()].filter((reference) => !afterClasses.has(reference)));
-  const addedIds = new Set([...afterClasses.keys()].filter((reference) => !beforeClasses.has(reference)));
+  const removedIds = new Set(
+    [...beforeClasses.keys()].filter((reference) =>
+      !afterClasses.has(reference)
+    ),
+  );
+  const addedIds = new Set(
+    [...afterClasses.keys()].filter((reference) =>
+      !beforeClasses.has(reference)
+    ),
+  );
   const replacements = new Map();
   const resetClasses = new Set();
 
@@ -232,11 +343,17 @@ function changedHardware(beforeHull, afterHull) {
     const oldMount = before.get(id);
     const newMount = after.get(id);
     if (oldMount?.reference === newMount?.reference) continue;
-    if (removedIds.has(oldMount?.reference) && addedIds.has(newMount?.reference)) {
+    if (
+      removedIds.has(oldMount?.reference) && addedIds.has(newMount?.reference)
+    ) {
       replacements.set(oldMount.reference, newMount.reference);
     }
-    if (removedIds.has(oldMount?.reference)) resetClasses.add(oldMount.componentClass);
-    if (addedIds.has(newMount?.reference)) resetClasses.add(newMount.componentClass);
+    if (removedIds.has(oldMount?.reference)) {
+      resetClasses.add(oldMount.componentClass);
+    }
+    if (addedIds.has(newMount?.reference)) {
+      resetClasses.add(newMount.componentClass);
+    }
   }
   return { removedIds, replacements, resetClasses };
 }
@@ -253,9 +370,13 @@ function recordReferences(value, ids, seen = new Set()) {
   if (stringReferences(value, ids)) return true;
   if (!value || typeof value !== "object" || seen.has(value)) return false;
   seen.add(value);
-  if (Array.isArray(value)) return value.some((child) => recordReferences(child, ids, seen));
-  return Object.entries(value).some(([key, child]) => stringReferences(key, ids)
-    || recordReferences(child, ids, seen));
+  if (Array.isArray(value)) {
+    return value.some((child) => recordReferences(child, ids, seen));
+  }
+  return Object.entries(value).some(([key, child]) =>
+    stringReferences(key, ids) ||
+    recordReferences(child, ids, seen)
+  );
 }
 
 function shieldSectors(shield) {
@@ -265,7 +386,9 @@ function shieldSectors(shield) {
 }
 
 function shieldSectorCap(shield, sector) {
-  const value = typeof shield?.sectorCap === "object" ? shield.sectorCap?.[sector] : shield?.sectorCap;
+  const value = typeof shield?.sectorCap === "object"
+    ? shield.sectorCap?.[sector]
+    : shield?.sectorCap;
   const fallback = shield?.topology === "bubble" ? shield?.totalBudget : 0;
   const cap = Number.isSafeInteger(value) && value >= 0 ? value : fallback;
   return Number.isSafeInteger(cap) && cap >= 0 ? cap : 0;
@@ -275,7 +398,13 @@ function positiveCharge(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
 
-function projectShieldCharge(beforeCharge, beforeSectors, sectors, caps, budget) {
+function projectShieldCharge(
+  beforeCharge,
+  beforeSectors,
+  sectors,
+  caps,
+  budget,
+) {
   const charge = Object.fromEntries(sectors.map((sector) => [sector, 0]));
   let carried = 0;
   let orphaned = 0;
@@ -289,7 +418,10 @@ function projectShieldCharge(beforeCharge, beforeSectors, sectors, caps, budget)
     charge[sector] = kept;
     carried += kept;
   }
-  const spare = sectors.reduce((sum, sector) => sum + Math.max(0, caps[sector] - charge[sector]), 0);
+  const spare = sectors.reduce(
+    (sum, sector) => sum + Math.max(0, caps[sector] - charge[sector]),
+    0,
+  );
   let remaining = Math.min(orphaned, Math.max(0, budget - carried), spare);
   let cursor = 0;
   let guard = remaining * sectors.length + sectors.length;
@@ -311,21 +443,33 @@ function projectShieldAllocation(beforeAllocation, shield, sectors) {
   const valid = sectors.every((sector) => {
     const weight = beforeAllocation?.[sector];
     return Number.isSafeInteger(weight) && weight >= 0 && weight <= 100;
-  }) && sectors.reduce((sum, sector) => sum + beforeAllocation[sector], 0) === 100;
-  if (valid) return Object.fromEntries(sectors.map((sector) => [sector, beforeAllocation[sector]]));
+  }) && sectors.reduce((sum, sector) =>
+        sum + beforeAllocation[sector], 0) === 100;
+  if (valid) {
+    return Object.fromEntries(
+      sectors.map((sector) => [sector, beforeAllocation[sector]]),
+    );
+  }
   const allocation = Object.fromEntries(sectors.map((sector) => [sector, 0]));
-  for (let index = 0; index < 100; index += 1) allocation[sectors[index % sectors.length]] += 1;
+  for (let index = 0; index < 100; index += 1) {
+    allocation[sectors[index % sectors.length]] += 1;
+  }
   return allocation;
 }
 
 function projectShieldCollapse(beforeCollapse, beforeSectors, sectors) {
-  const unchanged = sectors.length === beforeSectors.length
-    && sectors.every((sector) => beforeSectors.includes(sector));
+  const unchanged = sectors.length === beforeSectors.length &&
+    sectors.every((sector) => beforeSectors.includes(sector));
   if (unchanged) {
-    return Object.fromEntries(sectors.map((sector) => [sector, positiveCharge(beforeCollapse?.[sector])]));
+    return Object.fromEntries(
+      sectors.map((
+        sector,
+      ) => [sector, positiveCharge(beforeCollapse?.[sector])]),
+    );
   }
   const counter = beforeSectors.reduce(
-    (highest, sector) => Math.max(highest, positiveCharge(beforeCollapse?.[sector])),
+    (highest, sector) =>
+      Math.max(highest, positiveCharge(beforeCollapse?.[sector])),
     0,
   );
   return Object.fromEntries(sectors.map((sector) => [sector, counter]));
@@ -343,31 +487,62 @@ function shieldLayout(shield) {
 function reconcileShieldDefinition(state, beforeConfig, config) {
   const beforeShield = beforeConfig?.components?.shield;
   const shield = config?.components?.shield;
-  if (!beforeShield || !shield || shieldLayout(beforeShield) === shieldLayout(shield)) return;
+  if (
+    !beforeShield || !shield ||
+    shieldLayout(beforeShield) === shieldLayout(shield)
+  ) return;
   const beforeSectors = shieldSectors(beforeShield);
   const sectors = shieldSectors(shield);
-  const caps = Object.fromEntries(sectors.map((sector) => [sector, shieldSectorCap(shield, sector)]));
-  const budget = Number.isSafeInteger(shield.totalBudget) && shield.totalBudget >= 0 ? shield.totalBudget : 0;
+  const caps = Object.fromEntries(
+    sectors.map((sector) => [sector, shieldSectorCap(shield, sector)]),
+  );
+  const budget =
+    Number.isSafeInteger(shield.totalBudget) && shield.totalBudget >= 0
+      ? shield.totalBudget
+      : 0;
   state.shields ??= {};
-  state.shields.charge = projectShieldCharge(state.shields.charge, beforeSectors, sectors, caps, budget);
+  state.shields.charge = projectShieldCharge(
+    state.shields.charge,
+    beforeSectors,
+    sectors,
+    caps,
+    budget,
+  );
   applyShieldCapacityClamping(config, state);
-  state.shields.regenerationAllocation = projectShieldAllocation(state.shields.regenerationAllocation, shield, sectors);
-  state.shields.collapse = projectShieldCollapse(state.shields.collapse, beforeSectors, sectors);
+  state.shields.regenerationAllocation = projectShieldAllocation(
+    state.shields.regenerationAllocation,
+    shield,
+    sectors,
+  );
+  state.shields.collapse = projectShieldCollapse(
+    state.shields.collapse,
+    beforeSectors,
+    sectors,
+  );
 }
 
 function reconcileWeaponDefinitions(state, beforeConfig, config) {
-  const previous = new Map((beforeConfig?.components?.weapons ?? []).map((weapon) => [weapon.id, weapon]));
+  const previous = new Map(
+    (beforeConfig?.components?.weapons ?? []).map((
+      weapon,
+    ) => [weapon.id, weapon]),
+  );
   if (previous.size === 0) return;
   for (const weapon of config?.components?.weapons ?? []) {
     if (!previous.has(weapon.id)) continue;
     const current = state.weapons?.[weapon.id];
-    if (!current || typeof current !== "object" || Array.isArray(current)) continue;
-    const capacity = Number.isSafeInteger(weapon.readiness?.capacity) && weapon.readiness.capacity > 0
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      continue;
+    }
+    const capacity = Number.isSafeInteger(weapon.readiness?.capacity) &&
+        weapon.readiness.capacity > 0
       ? weapon.readiness.capacity
       : 0;
     current.readiness = Math.min(positiveCharge(current.readiness), capacity);
     if (current.readiness >= capacity) current.reloadProgress = 0;
-    if (current.mode === "overclock" && !weapon.modes?.overclock) current.mode = "nominal";
+    if (current.mode === "overclock" && !weapon.modes?.overclock) {
+      current.mode = "nominal";
+    }
   }
 }
 
@@ -376,7 +551,9 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
   const initial = createInitialState(config);
   const { removedIds, replacements, resetClasses } = hardware;
 
-  const profiles = new Map(config.operators.map((operator) => [operator.id, operator]));
+  const profiles = new Map(
+    config.operators.map((operator) => [operator.id, operator]),
+  );
   const roster = { ...state.roster };
   for (const kind of ["command", "crew"]) {
     roster[kind] = (state.roster?.[kind] ?? []).map((entry, index) => ({
@@ -384,34 +561,56 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
       slot: entry?.slot ?? index,
     })).filter((entry) => {
       const profile = profiles.get(entry.operatorId ?? entry.id);
-      return profile && entry.slot < config[`${kind}Capacity`]
-        && ["actorId", "userId"].every((key) => entry[key] == null || profile[key] == null || entry[key] === profile[key]);
+      return profile && entry.slot < config[`${kind}Capacity`] &&
+        ["actorId", "userId"].every((key) =>
+          entry[key] == null || profile[key] == null ||
+          entry[key] === profile[key]
+        );
     });
   }
   const validatedRoster = validateRoster(config, roster);
-  state.roster = { ...roster, command: validatedRoster.command, crew: validatedRoster.crew };
+  state.roster = {
+    ...roster,
+    command: validatedRoster.command,
+    crew: validatedRoster.crew,
+  };
 
   const removedConditionIds = new Set();
-  state.conditions = Object.fromEntries(Object.entries(state.conditions ?? {}).filter(([key, condition]) => {
-    const remove = stringReferences(key, removedIds) || recordReferences(condition, removedIds);
-    if (remove) {
-      removedConditionIds.add(key);
-      if (typeof condition?.id === "string") removedConditionIds.add(condition.id);
-    }
-    return !remove;
-  }));
+  state.conditions = Object.fromEntries(
+    Object.entries(state.conditions ?? {}).filter(([key, condition]) => {
+      const remove = stringReferences(key, removedIds) ||
+        recordReferences(condition, removedIds);
+      if (remove) {
+        removedConditionIds.add(key);
+        if (typeof condition?.id === "string") {
+          removedConditionIds.add(condition.id);
+        }
+      }
+      return !remove;
+    }),
+  );
 
-  const removedRecoveryIdentities = new Set([...removedIds, ...removedConditionIds]);
-  state.work = Object.fromEntries(Object.entries(state.work ?? {}).filter(([key, job]) => (
-    !stringReferences(key, removedRecoveryIdentities)
-    && !recordReferences(job, removedRecoveryIdentities)
-  )));
+  const removedRecoveryIdentities = new Set([
+    ...removedIds,
+    ...removedConditionIds,
+  ]);
+  state.work = Object.fromEntries(
+    Object.entries(state.work ?? {}).filter(([key, job]) => (
+      !stringReferences(key, removedRecoveryIdentities) &&
+      !recordReferences(job, removedRecoveryIdentities)
+    )),
+  );
   if (Array.isArray(state.effects)) {
-    state.effects = state.effects.filter((effect) => !recordReferences(effect, removedIds));
+    state.effects = state.effects.filter((effect) =>
+      !recordReferences(effect, removedIds)
+    );
   }
 
-  const configuredWeaponIds = new Set((config.components?.weapons ?? []).map((weapon) => weapon.id));
-  const previousWeapons = state.weapons && typeof state.weapons === "object" && !Array.isArray(state.weapons)
+  const configuredWeaponIds = new Set(
+    (config.components?.weapons ?? []).map((weapon) => weapon.id),
+  );
+  const previousWeapons = state.weapons && typeof state.weapons === "object" &&
+      !Array.isArray(state.weapons)
     ? state.weapons
     : {};
   state.weapons = Object.fromEntries([...configuredWeaponIds].map((id) => [
@@ -424,7 +623,9 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
   const priority = [];
   for (const id of state.weaponPriority ?? []) {
     const mapped = replacements.get(id) ?? id;
-    if (configuredWeaponIds.has(mapped) && !priority.includes(mapped)) priority.push(mapped);
+    if (configuredWeaponIds.has(mapped) && !priority.includes(mapped)) {
+      priority.push(mapped);
+    }
   }
   for (const id of config.weaponPriority ?? []) {
     if (!priority.includes(id)) priority.push(id);
@@ -434,12 +635,15 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
   if (previousConfig) reconcileWeaponDefinitions(state, previousConfig, config);
 
   if (resetClasses.has("shield")) state.shields = clone(initial.shields);
-  else if (previousConfig) reconcileShieldDefinition(state, previousConfig, config);
+  else if (previousConfig) {
+    reconcileShieldDefinition(state, previousConfig, config);
+  }
 
   if (resetClasses.has("sensor")) state.tracks = {};
   if (resetClasses.has("cooling")) state.ventCooldown = 0;
 
-  state.power = state.power && typeof state.power === "object" && !Array.isArray(state.power)
+  state.power = state.power && typeof state.power === "object" &&
+      !Array.isArray(state.power)
     ? state.power
     : {};
   const installed = {
@@ -457,10 +661,10 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
   for (const system of ["engines", "shields", "sensors", "cooling"]) {
     const current = state.power[system];
     const tiers = tierSources[system]?.tiers ?? [];
-    const valid = installed[system]
-      && Number.isSafeInteger(current)
-      && current >= 0
-      && tiers.some((tier) => tier.power === current);
+    const valid = installed[system] &&
+      Number.isSafeInteger(current) &&
+      current >= 0 &&
+      tiers.some((tier) => tier.power === current);
     if (valid) continue;
     if (!installed[system]) {
       state.power[system] = 0;
@@ -481,22 +685,31 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
   state.power.redlining = true;
   applyPowerShedding(config, state);
   state.heat = preservedHeat;
-  state.revision = Number.isInteger(beforeState?.revision) ? beforeState.revision + 1 : 1;
+  state.revision = Number.isInteger(beforeState?.revision)
+    ? beforeState.revision + 1
+    : 1;
   return state;
 }
 
 function hullWithoutComponentPayload(hullConfig) {
-  if (!hullConfig || typeof hullConfig !== "object" || Array.isArray(hullConfig)) {
+  if (
+    !hullConfig || typeof hullConfig !== "object" || Array.isArray(hullConfig)
+  ) {
     fail("HULL_CONFIG_REQUIRED", "Hull config must be an object.");
   }
   if (Object.hasOwn(hullConfig, "components")) {
-    fail("HULL_COMPONENT_PAYLOAD_FORBIDDEN", "Hull JSON cannot contain raw component definitions.");
+    fail(
+      "HULL_COMPONENT_PAYLOAD_FORBIDDEN",
+      "Hull JSON cannot contain raw component definitions.",
+    );
   }
   return clone(hullConfig);
 }
 
 function itemsIncluding(actor, created = []) {
-  const byId = new Map(componentItems(actor).map((item) => [itemId(item), item]));
+  const byId = new Map(
+    componentItems(actor).map((item) => [itemId(item), item]),
+  );
   for (const item of created) byId.set(itemId(item), item);
   return [...byId.values()];
 }
@@ -505,6 +718,19 @@ async function deleteItems(actor, ids) {
   const unique = [...new Set(ids.filter((id) => typeof id === "string" && id))];
   if (unique.length === 0) return [];
   return actor.deleteEmbeddedDocuments("Item", unique, refitOptions());
+}
+
+async function deleteReplacedItems(actor, ids) {
+  try {
+    await deleteItems(actor, ids);
+  } catch (cause) {
+    const error = new Error(
+      "Refit applied; removing the replaced Item failed — remove it from the ship sheet",
+      { cause },
+    );
+    error.code = "REFIT_CLEANUP_FAILED";
+    throw error;
+  }
 }
 
 async function createFreshItems(actor, prepared) {
@@ -516,18 +742,34 @@ async function createFreshItems(actor, prepared) {
   if (!Array.isArray(created) || created.length !== prepared.length) {
     const ids = values(created).map(itemId).filter(Boolean);
     await deleteItems(actor, ids);
-    fail("COMPONENT_COPY_FAILED", "Foundry did not create every requested component copy.");
+    fail(
+      "COMPONENT_COPY_FAILED",
+      "Foundry did not create every requested component copy.",
+    );
   }
   const ids = created.map(itemId);
-  if (ids.some((id) => typeof id !== "string" || !id) || new Set(ids).size !== ids.length
-    || ids.some((id, index) => id === prepared[index].catalogId)) {
+  if (
+    ids.some((id) => typeof id !== "string" || !id) ||
+    new Set(ids).size !== ids.length ||
+    ids.some((id, index) => id === prepared[index].catalogId)
+  ) {
     await deleteItems(actor, ids);
-    fail("COMPONENT_COPY_NOT_FRESH", "Installed components must receive fresh independent IDs.");
+    fail(
+      "COMPONENT_COPY_NOT_FRESH",
+      "Installed components must receive fresh independent IDs.",
+    );
   }
   return { created, prepared };
 }
 
-async function updateShip(actor, hull, state, effective, observed, itemUpdates = null) {
+async function updateShip(
+  actor,
+  hull,
+  state,
+  effective,
+  observed,
+  itemUpdates = null,
+) {
   assertCurrent(actor, observed);
   const updated = await actor.update({
     "system.shipCombat.config": forcedReplacement(hull),
@@ -535,7 +777,12 @@ async function updateShip(actor, hull, state, effective, observed, itemUpdates =
     ...(itemUpdates ? { items: itemUpdates } : {}),
     ...nativeVehicleFieldValues(effective, state),
   }, refitOptions({ diff: false }));
-  if (!updated) throw new RuleViolation("REFIT_UPDATE_FAILED", "Foundry did not persist the ship refit.");
+  if (!updated) {
+    throw new RuleViolation(
+      "REFIT_UPDATE_FAILED",
+      "Foundry did not persist the ship refit.",
+    );
+  }
 }
 
 function referencedItemIds(hull) {
@@ -543,7 +790,9 @@ function referencedItemIds(hull) {
 }
 
 function installedMountId(hull, componentId) {
-  const mount = mountRecords(hull).find((candidate) => candidate.reference === componentId);
+  const mount = mountRecords(hull).find((candidate) =>
+    candidate.reference === componentId
+  );
   return mount?.id ?? null;
 }
 
@@ -558,7 +807,36 @@ export function getRefitDenial(actor) {
 
 /** Materialize the Actor's detached effective rules configuration from its embedded component Items. */
 export function materializeActorConfig(actor) {
-  return materializeShipConfig(actor?.system?.shipCombat?.config, componentItems(actor));
+  return materializeShipConfig(
+    actor?.system?.shipCombat?.config,
+    componentItems(actor),
+  );
+}
+
+async function confirmComponentRemoval(actor, mount, action) {
+  const reference = mountReference(mount);
+  const item = values(actor.items).find((entry) => itemId(entry) === reference);
+  const componentClass = mount.kind === "hardpoint"
+    ? "weapon"
+    : mount.value.class;
+  let warning =
+    "This permanently deletes the mounted component Item and its customization, conditions, recovery work, and related effects.";
+  if (componentClass === "weapon") {
+    warning +=
+      " Its reload/readiness state is lost; a replacement starts with fresh weapon state.";
+  }
+  if (componentClass === "shield") {
+    warning +=
+      " All shield charge, allocation, collapse, and recharge state resets.";
+  }
+  if (componentClass === "sensor") warning += " All sensor tracks are cleared.";
+  if (componentClass === "cooling") warning += " Vent cooldown resets to zero.";
+  return foundry.applications.api.DialogV2.confirm({
+    window: { title: `${action} ${item?.name ?? reference}?` },
+    content: `<p>${warning}</p><p>Continue?</p>`,
+    defaultYes: false,
+    rejectClose: false,
+  });
 }
 
 /** Install a fresh embedded copy of a reusable component Item into one hull mount. */
@@ -570,6 +848,10 @@ export function installShipComponent(actor, mountId, sourceItem) {
     const prepared = componentSourceForCopy(sourceItem);
     assertCompatible(mount, prepared.component);
     const oldId = mountReference(mount);
+    if (oldId && !await confirmComponentRemoval(actor, mount, "Replace")) {
+      return null;
+    }
+    assertCurrent(actor, observed);
 
     const { created } = await createFreshItems(actor, [prepared]);
     const fresh = created[0];
@@ -578,7 +860,11 @@ export function installShipComponent(actor, mountId, sourceItem) {
     setMountReference(hull, mountId, freshId);
 
     try {
-      const effective = candidateConfig(actor, hull, itemsIncluding(actor, created));
+      const effective = candidateConfig(
+        actor,
+        hull,
+        itemsIncluding(actor, created),
+      );
       const state = reconcileState(
         actor.system.shipCombat.state,
         effective,
@@ -590,7 +876,7 @@ export function installShipComponent(actor, mountId, sourceItem) {
       throw error;
     }
 
-    if (oldId) await deleteItems(actor, [oldId]);
+    if (oldId) await deleteReplacedItems(actor, [oldId]);
     return fresh;
   });
 }
@@ -603,7 +889,11 @@ export function removeShipComponent(actor, mountId) {
     const mount = findMount(beforeHull, mountId);
     const oldId = mountReference(mount);
     if (!oldId) return null;
-    const oldItem = values(actor.items).find((item) => itemId(item) === oldId) ?? null;
+    const oldItem = values(actor.items).find((item) =>
+      itemId(item) === oldId
+    ) ?? null;
+    if (!await confirmComponentRemoval(actor, mount, "Remove")) return null;
+    assertCurrent(actor, observed);
     const hull = clone(beforeHull);
     setMountReference(hull, mountId, null);
     const effective = candidateConfig(actor, hull, componentItems(actor));
@@ -613,7 +903,7 @@ export function removeShipComponent(actor, mountId) {
       changedHardware(beforeHull, hull),
     );
     await updateShip(actor, hull, state, effective, observed);
-    await deleteItems(actor, [oldId]);
+    await deleteReplacedItems(actor, [oldId]);
     return oldItem;
   });
 }
@@ -637,39 +927,72 @@ export function saveShipHull(actor, hullConfig, expectedRevision) {
 }
 
 /** Edit one installed component's definition while preserving its embedded Item identity. Requires the state revision captured with the staged component draft. */
-export function saveInstalledShipComponent(actor, itemIdValue, sourceItem, expectedRevision) {
+export function saveInstalledShipComponent(
+  actor,
+  itemIdValue,
+  sourceItem,
+  expectedRevision,
+) {
   return serializeActor(actor, async () => {
     const observed = requireRefit(actor);
     assertStagedRevision(observed, expectedRevision);
     if (typeof itemIdValue !== "string" || itemIdValue === "") {
-      fail("COMPONENT_ID_REQUIRED", "An installed component Item ID is required.");
+      fail(
+        "COMPONENT_ID_REQUIRED",
+        "An installed component Item ID is required.",
+      );
     }
     const beforeHull = clone(actor.system.shipCombat.config);
     const mountId = installedMountId(beforeHull, itemIdValue);
     if (!mountId) {
-      fail("COMPONENT_NOT_INSTALLED", `Component Item '${itemIdValue}' is not installed on this ship.`, { itemId: itemIdValue });
+      fail(
+        "COMPONENT_NOT_INSTALLED",
+        `Component Item '${itemIdValue}' is not installed on this ship.`,
+        { itemId: itemIdValue },
+      );
     }
-    const itemExists = () => values(actor.items).some((candidate) => itemId(candidate) === itemIdValue);
+    const itemExists = () =>
+      values(actor.items).some((candidate) =>
+        itemId(candidate) === itemIdValue
+      );
     if (!itemExists()) {
-      fail("COMPONENT_ITEM_MISSING", `Component Item '${itemIdValue}' does not exist.`, { itemId: itemIdValue });
+      fail(
+        "COMPONENT_ITEM_MISSING",
+        `Component Item '${itemIdValue}' does not exist.`,
+        { itemId: itemIdValue },
+      );
     }
     const prepared = installedComponentSource(itemIdValue, sourceItem);
     assertCompatible(findMount(beforeHull, mountId), prepared.component);
-    const beforeEffective = materializeShipConfig(beforeHull, componentItems(actor));
+    const beforeEffective = materializeShipConfig(
+      beforeHull,
+      componentItems(actor),
+    );
     const hull = clone(beforeHull);
     const prospective = { ...prepared.source, _id: itemIdValue };
-    const effective = candidateConfig(actor, hull, itemsIncluding(actor, [prospective]));
+    const effective = candidateConfig(
+      actor,
+      hull,
+      itemsIncluding(actor, [prospective]),
+    );
     const state = reconcileState(
       actor.system.shipCombat.state,
       effective,
       changedHardware(beforeHull, hull),
       beforeEffective,
     );
-    if (!itemExists() || installedMountId(actor.system.shipCombat.config, itemIdValue) !== mountId) {
-      fail("STALE_REVISION", "Component Item installation changed while the edit was being prepared. Reload the ship and try again.", {
-        itemId: itemIdValue,
-        mountId,
-      });
+    if (
+      !itemExists() ||
+      installedMountId(actor.system.shipCombat.config, itemIdValue) !== mountId
+    ) {
+      fail(
+        "STALE_REVISION",
+        "Component Item installation changed while the edit was being prepared. Reload the ship and try again.",
+        {
+          itemId: itemIdValue,
+          mountId,
+        },
+      );
     }
     await updateShip(actor, hull, state, effective, observed, [{
       _id: itemIdValue,
@@ -681,7 +1004,9 @@ export function saveInstalledShipComponent(actor, itemIdValue, sourceItem, expec
       "system.driveRole": prepared.source.system.driveRole,
       "system.definition": forcedReplacement(prepared.source.system.definition),
     }]);
-    return values(actor.items).find((candidate) => itemId(candidate) === itemIdValue) ?? null;
+    return values(actor.items).find((candidate) =>
+      itemId(candidate) === itemIdValue
+    ) ?? null;
   });
 }
 
@@ -690,11 +1015,21 @@ export function resetShipToCanadensis(actor) {
   return serializeActor(actor, async () => {
     const observed = requireRefit(actor);
     const beforeHull = clone(actor.system.shipCombat.config);
-    const { created, prepared } = await createFreshItems(actor, CANADENSIS_DEFAULT_COMPONENT_SOURCES.map(componentSourceForCopy));
-    const freshIds = new Map(prepared.map(({ catalogId }, index) => [catalogId, itemId(created[index])]));
+    const { created, prepared } = await createFreshItems(
+      actor,
+      CANADENSIS_DEFAULT_COMPONENT_SOURCES.map(componentSourceForCopy),
+    );
+    const freshIds = new Map(
+      prepared.map((
+        { catalogId },
+        index,
+      ) => [catalogId, itemId(created[index])]),
+    );
     const hull = clone(CANADENSIS_HULL_CONFIG);
     for (const slot of hull.slots) slot.itemId = freshIds.get(slot.itemId);
-    for (const hardpoint of hull.hardpoints) hardpoint.weaponId = freshIds.get(hardpoint.weaponId);
+    for (const hardpoint of hull.hardpoints) {
+      hardpoint.weaponId = freshIds.get(hardpoint.weaponId);
+    }
 
     let effective;
     try {
@@ -711,7 +1046,10 @@ export function resetShipToCanadensis(actor) {
     }
 
     const freshIdSet = new Set(created.map(itemId));
-    await deleteItems(actor, referencedItemIds(beforeHull).filter((id) => !freshIdSet.has(id)));
+    await deleteReplacedItems(
+      actor,
+      referencedItemIds(beforeHull).filter((id) => !freshIdSet.has(id)),
+    );
     return effective;
   });
 }
