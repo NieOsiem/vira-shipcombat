@@ -145,7 +145,8 @@ function reduceCondition(draft, key, condition, tiers) {
 
 function componentList(config) {
   const components = config?.components ?? {};
-  return [components.reactor, components.drive, components.shield, components.sensor, components.cooling, ...(components.weapons ?? [])].filter(Boolean);
+  const drives = Object.values(components.drives ?? {}).filter(Boolean);
+  return [components.reactor, ...drives, components.shield, components.sensor, components.cooling, ...(components.weapons ?? [])].filter(Boolean);
 }
 
 function componentForCondition(config, condition) {
@@ -159,10 +160,6 @@ function recoveryRequirement(config, condition) {
   const configured = component?.recoveryWork;
   if (Number.isInteger(configured) && configured > 0) return configured;
   const channel = condition.channelId ?? condition.conditionId ?? condition.channel;
-  const keyed = channel === "driveFailure" ? configured?.drive
-    : channel === "maneuveringThrusterFailure" ? configured?.maneuveringThrusters
-      : configured?.[channel];
-  if (Number.isInteger(keyed) && keyed > 0) return keyed;
   throw new RuleViolation("RECOVERY_WORK_UNDEFINED", "The destroyed component does not define its Recovery Work requirement.", {
     conditionId: condition.id,
     componentId: component?.id,

@@ -11,6 +11,7 @@ import {
   applyManeuver,
   armEvasion,
   getCollisionSizeMultiplier,
+  getDriveCapabilities,
   getOverspeedDamage,
   integrateBurn,
   isInFiringArc,
@@ -178,6 +179,51 @@ describe("movement integration and budgets", () => {
     const error = captureViolation(() => armEvasion(rejectedState, deepClone(eligibility)));
     expect(error).toMatchObject({ name: "RuleViolation", code: "EVASION_TIMELINE_UNAVAILABLE" });
     expect(rejectedState).toEqual(before);
+  });
+  test("drive faults affect only their installed role and each lateral contributes independently", () => {
+    const { config, state } = freshShip();
+    expect(getDriveCapabilities(config, state)).toEqual({
+      forward: 6,
+      retro: 3,
+      port: 2,
+      starboard: 2,
+      rotation: 60,
+    });
+
+    state.conditions.main = {
+      kind: "fault",
+      conditionId: "driveFailure",
+      componentId: config.components.drives.main.id,
+      severity: "destroyed",
+    };
+    expect(getDriveCapabilities(config, state)).toEqual({
+      forward: 0,
+      retro: 3,
+      port: 2,
+      starboard: 2,
+      rotation: 60,
+    });
+
+    delete state.conditions.main;
+    state.conditions.reverse = {
+      kind: "fault",
+      conditionId: "driveFailure",
+      componentId: config.components.drives.reverse.id,
+      severity: "destroyed",
+    };
+    state.conditions.port = {
+      kind: "fault",
+      conditionId: "maneuveringThrusterFailure",
+      componentId: config.components.drives.portLateral.id,
+      severity: "destroyed",
+    };
+    expect(getDriveCapabilities(config, state)).toEqual({
+      forward: 6,
+      retro: 0,
+      port: 0,
+      starboard: 2,
+      rotation: 30,
+    });
   });
 
   test("preview is pure while apply commits only the powered movement state", () => {
@@ -442,16 +488,16 @@ describe("arcs, sectors, and impact consequences", () => {
     source.config.criticalPools.starboard = [{
       id: "source-drive-impact",
       kind: "fault",
-      componentId: source.config.components.drive.id,
-      channelId: "driveFailure",
+      componentId: source.config.components.drives.starboardLateral.id,
+      channelId: "maneuveringThrusterFailure",
       sector: null,
       weight: 1,
     }];
     target.config.criticalPools.port = [{
       id: "target-drive-impact",
       kind: "fault",
-      componentId: target.config.components.drive.id,
-      channelId: "driveFailure",
+      componentId: target.config.components.drives.portLateral.id,
+      channelId: "maneuveringThrusterFailure",
       sector: null,
       weight: 1,
     }];

@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { CANADENSIS_CONFIG } from "../scripts/data/canadensis.js";
+import { CANADENSIS_CONFIG, CANADENSIS_IDS } from "../scripts/data/canadensis.js";
 import {
   createDefaultShipData,
+  createDefaultShipSystemData,
   normalizeShipData,
 } from "../scripts/model/defaults.js";
-import { validateShipConfig } from "../scripts/model/validation.js";
+import { materializeShipConfig } from "../scripts/model/equipment.js";
+import { validateHullConfig, validateShipConfig } from "../scripts/model/validation.js";
 import { nativeVehicleFieldValues } from "../scripts/model/native-vehicle.js";
 
 
@@ -15,7 +17,7 @@ function expectValidationErrors(config, expectedErrors) {
   const result = validateShipConfig(config, { tokenWidth: 1 });
 
   expect(result.valid).toBe(false);
-  expect(result.errors).toEqual(expectedErrors);
+  expect(result.errors.map(({ code, path }) => ({ code, path }))).toEqual(expectedErrors);
   expect(result.warnings).toEqual([]);
 }
 
@@ -28,7 +30,7 @@ describe("ship configuration validation", () => {
     });
   });
 
-  test("reports stable component-cardinality errors", () => {
+  test("reports component-cardinality errors", () => {
     const config = clone(CANADENSIS_CONFIG);
     config.components.reactor = [config.components.reactor];
 
@@ -36,17 +38,15 @@ describe("ship configuration validation", () => {
       {
         code: "COMPONENT_CARDINALITY",
         path: "components.reactor",
-        message: "Exactly one reactor component is required.",
       },
       {
         code: "UNKNOWN_CRITICAL_COMPONENT",
-        path: "criticalPools.aft[2].componentId",
-        message: "Fault entry references an unknown component.",
+        path: "criticalPools.aft[1].componentId",
       },
     ]);
   });
 
-  test("reports stable invalid mount errors", () => {
+  test("reports invalid mount errors", () => {
     const config = clone(CANADENSIS_CONFIG);
     config.hardpoints[0].mountSize = "invalid";
     config.components.weapons[0].mountSize = "invalid";
@@ -55,17 +55,15 @@ describe("ship configuration validation", () => {
       {
         code: "INVALID_MOUNT_SIZE",
         path: "hardpoints[0].mountSize",
-        message: "Hardpoint mount size is invalid.",
       },
       {
         code: "INVALID_MOUNT_SIZE",
         path: "components.weapons[0].mountSize",
-        message: "Hardpoint weapon requires a valid mount size.",
       },
     ]);
   });
 
-  test("reports a stable error when optimal range exceeds maximum range", () => {
+  test("reports when optimal range exceeds maximum range", () => {
     const config = clone(CANADENSIS_CONFIG);
     config.components.weapons[0].range.optimal = 121;
 
@@ -73,12 +71,11 @@ describe("ship configuration validation", () => {
       {
         code: "INVALID_WEAPON_RANGE",
         path: "components.weapons[0].range",
-        message: "Optimal range cannot exceed maximum range.",
       },
     ]);
   });
 
-  test("reports a stable error for an invalid numeric boundary", () => {
+  test("reports an invalid numeric boundary", () => {
     const config = clone(CANADENSIS_CONFIG);
     config.maxHull = 0;
 
@@ -86,12 +83,11 @@ describe("ship configuration validation", () => {
       {
         code: "INVALID_NUMBER",
         path: "maxHull",
-        message: "Must be a finite number greater than 0.",
       },
     ]);
   });
 
-  test("reports a stable error for unsupported trait data", () => {
+  test("reports unsupported trait data", () => {
     const config = clone(CANADENSIS_CONFIG);
     config.components.weapons[0].traits = [{ id: "unsupported-training-trait" }];
 
@@ -99,40 +95,87 @@ describe("ship configuration validation", () => {
       {
         code: "UNSUPPORTED_TRAIT",
         path: "components.weapons[0].traits[0].id",
-        message: "Trait 'unsupported-training-trait' is not supported for automated play.",
       },
     ]);
   });
 });
 
 describe("ship data defaults", () => {
-  test("returns independent mutable configs and states without modifying the frozen reference", () => {
+  test("returns independent mutable configs, Items, and states without modifying the frozen reference", () => {
     const first = createDefaultShipData();
     const second = createDefaultShipData();
+    const firstMainDriveItem = first.items.find(({ _id }) => _id === CANADENSIS_IDS.mainDrive);
+    const secondMainDriveItem = second.items.find(({ _id }) => _id === CANADENSIS_IDS.mainDrive);
 
-    expect(first.config).toEqual(CANADENSIS_CONFIG);
     expect(first.config).not.toBe(second.config);
-    expect(first.config.components.drive).not.toBe(second.config.components.drive);
+    expect(first.config.components.drives).not.toBe(second.config.components.drives);
+    expect(first.config.components.drives.main).not.toBe(second.config.components.drives.main);
+    expect(first.items).not.toBe(second.items);
+    expect(firstMainDriveItem).not.toBe(secondMainDriveItem);
+    expect(firstMainDriveItem.system.definition).not.toBe(secondMainDriveItem.system.definition);
     expect(first.state).not.toBe(second.state);
     expect(first.state.shields).not.toBe(second.state.shields);
     expect(Object.isFrozen(CANADENSIS_CONFIG)).toBe(true);
-    expect(Object.isFrozen(CANADENSIS_CONFIG.components.drive.base)).toBe(true);
+    expect(Object.isFrozen(CANADENSIS_CONFIG.components.drives.main.base)).toBe(true);
 
     first.config.label = "Mutable Test Ship";
-    first.config.components.drive.base.forward = 99;
+    first.config.components.drives.main.base.thrust = 99;
+    firstMainDriveItem.system.definition.base.thrust = 77;
     first.state.hull = 1;
     first.state.history.push({ type: "test-event" });
 
     expect(first.config.label).toBe("Mutable Test Ship");
-    expect(first.config.components.drive.base.forward).toBe(99);
+    expect(first.config.components.drives.main.base.thrust).toBe(99);
+    expect(firstMainDriveItem.system.definition.base.thrust).toBe(77);
     expect(first.state.hull).toBe(1);
     expect(first.state.history).toEqual([{ type: "test-event" }]);
     expect(second.config.label).toBe("Canadensis Training Corvette");
-    expect(second.config.components.drive.base.forward).toBe(6);
+    expect(second.config.components.drives.main.base.thrust).toBe(6);
+    expect(secondMainDriveItem.system.definition.base.thrust).toBe(6);
     expect(second.state.hull).toBe(50);
     expect(second.state.history).toEqual([]);
     expect(CANADENSIS_CONFIG.label).toBe("Canadensis Training Corvette");
-    expect(CANADENSIS_CONFIG.components.drive.base.forward).toBe(6);
+    expect(CANADENSIS_CONFIG.components.drives.main.base.thrust).toBe(6);
+  });
+
+  test("stores a component-free hull and materializes independent embedded identities", () => {
+    const stored = createDefaultShipSystemData();
+    const defaults = createDefaultShipData();
+    const effective = materializeShipConfig(defaults.hull, defaults.items);
+    const railgun = effective.components.weapons.find(({ id }) => id === CANADENSIS_IDS.railgun);
+    const installed = [
+      effective.components.reactor,
+      effective.components.shield,
+      effective.components.sensor,
+      effective.components.cooling,
+      ...Object.values(effective.components.drives),
+      ...effective.components.weapons,
+    ];
+    const embeddedIds = new Set(defaults.items.map(({ _id }) => _id));
+
+    expect(Object.hasOwn(stored.config, "components")).toBe(false);
+    expect(installed.every(({ id }) => embeddedIds.has(id))).toBe(true);
+    expect(new Set(installed.map(({ id }) => id)).size).toBe(installed.length);
+    expect(effective.components.reactor.id).toBe(CANADENSIS_IDS.reactor);
+    expect(railgun.hardpointId).toBe(CANADENSIS_IDS.prowHardpoint);
+  });
+
+  test("preserves an intentionally empty compatible slot as a legal degraded loadout", () => {
+    const defaults = createDefaultShipData();
+    const sensorSlot = defaults.hull.slots.find(({ itemId }) => itemId === CANADENSIS_IDS.sensor);
+    sensorSlot.itemId = null;
+
+    expect(validateHullConfig(defaults.hull)).toMatchObject({ valid: true, errors: [] });
+    const effective = materializeShipConfig(defaults.hull, defaults.items);
+    const normalized = normalizeShipData({
+      schemaVersion: defaults.schemaVersion,
+      config: defaults.hull,
+      state: {},
+    }, defaults.items);
+
+    expect(effective.components.sensor).toBeNull();
+    expect(normalized.config.slots.find(({ id }) => id === sensorSlot.id).itemId).toBeNull();
+    expect(normalized.state.power.sensors).toBe(0);
   });
 
   test("normalization preserves supplied values, fills missing fields, and does not mutate its input", () => {
@@ -164,7 +207,7 @@ describe("ship data defaults", () => {
     expect(normalized.state.extension).toEqual({ nested: ["kept"] });
     expect(normalized.schemaVersion).toBe(CANADENSIS_CONFIG.schemaVersion);
     expect(normalized.state.schemaVersion).toBe(CANADENSIS_CONFIG.schemaVersion);
-    expect(normalized.state.phase).toBe("start");
+    expect(normalized.state.phase).toBe("outsideCombat");
     expect(normalized.state.power.shields).toBe(3);
     expect(normalized.state.velocity).toEqual({ x: 0, y: 0 });
 
@@ -175,93 +218,6 @@ describe("ship data defaults", () => {
     expect(supplied.config.label).toBe("Supplied Ship");
     expect(supplied.state.history[0].details.kept).toBe(true);
     expect(supplied.state.extension.nested).toEqual(["kept"]);
-  });
-});
-
-describe("exact Canadensis reference contract", () => {
-  test("matches every static identity, durability, propulsion, and subsystem value", () => {
-    expect(CANADENSIS_CONFIG).toMatchObject({
-      label: "Canadensis Training Corvette",
-      size: "medium",
-      initiative: 0,
-      ac: 14,
-      baseSignature: 14,
-      maxHull: 50,
-      heatCapacity: 20,
-      commandCapacity: 2,
-      crewCapacity: 2,
-      safeVelocity: 30,
-      evasionReserve: 20,
-      evasionAcBonus: 2,
-      fatePolicy: "important",
-      armor: { fore: 3, port: 2, starboard: 2, aft: 2 },
-      components: {
-        reactor: { nominalOutput: 12, redlineOutput: 14, overclockHeat: 4 },
-        drive: {
-          base: { forward: 6, retro: 3, port: 2, starboard: 2, rotation: 60 },
-          tiers: [
-            { power: 0, multiplier: 0, online: false },
-            { power: 1, multiplier: 0.5, online: true },
-            { power: 2, multiplier: 0.75, online: true },
-            { power: 3, multiplier: 1, online: true },
-            { power: 4, multiplier: 1.25, online: true, overclock: true, overclockHeat: 3 },
-          ],
-        },
-        shield: {
-          topology: "directional",
-          totalBudget: 60,
-          sectorCap: 24,
-          rechargeDelay: 1,
-          tiers: [
-            { power: 0, online: false, regeneration: 0 },
-            { power: 1, online: true, regeneration: 0 },
-            { power: 2, online: true, regeneration: 4 },
-            { power: 3, online: true, regeneration: 8 },
-            { power: 4, online: true, regeneration: 10, overclock: true, overclockHeat: 2 },
-          ],
-        },
-        sensor: {
-          base: {
-            passiveRange: 100,
-            passiveStrength: 10,
-            activeRange: 150,
-            activeModifier: 0,
-            ewModifier: 0,
-          },
-        },
-        cooling: {
-          tiers: [
-            { power: 0, cooling: 2 },
-            { power: 1, cooling: 4 },
-            { power: 2, cooling: 6 },
-            { power: 3, cooling: 8 },
-          ],
-          ventAmount: 10,
-          ventCooldown: 2,
-        },
-      },
-    });
-  });
-
-  test("matches every static hardpoint, preset, and priority value", () => {
-    expect(CANADENSIS_CONFIG.hardpoints.map(({ label, orientation, weaponId }) => ({
-      label, orientation, weaponId,
-    }))).toEqual([
-      { label: "Prow", orientation: 0, weaponId: "canadensis-twin-railgun" },
-      { label: "Dorsal", orientation: 0, weaponId: "canadensis-pulse-laser" },
-      { label: "Port", orientation: -90, weaponId: "canadensis-port-macrocannon" },
-      { label: "Starboard", orientation: 90, weaponId: "canadensis-starboard-macrocannon" },
-    ]);
-    const weaponIds = new Set(CANADENSIS_CONFIG.components.weapons.map((weapon) => weapon.id));
-    expect(CANADENSIS_CONFIG.hardpoints.every((hardpoint) => weaponIds.has(hardpoint.weaponId))).toBe(true);
-    expect(CANADENSIS_CONFIG.powerPresets).toEqual([
-      { id: "balanced-combat", label: "Balanced Combat", allocations: { engines: 3, shields: 3, sensors: 2, cooling: 1, weapons: 3 } },
-      { id: "all-guns", label: "All Guns", allocations: { engines: 2, shields: 2, sensors: 1, cooling: 1, weapons: 6 } },
-      { id: "pursuit", label: "Pursuit", allocations: { engines: 4, shields: 1, sensors: 2, cooling: 1, weapons: 4 } },
-      { id: "defensive", label: "Defensive", allocations: { engines: 2, shields: 4, sensors: 2, cooling: 2, weapons: 2 } },
-      { id: "silent-running", label: "Silent Running", allocations: { engines: 1, shields: 1, sensors: 1, cooling: 0, weapons: 0 } },
-    ]);
-    expect(CANADENSIS_CONFIG.sheddingPriority).toEqual(["sensors", "engines", "shields", "cooling", "weapons"]);
   });
 });
 

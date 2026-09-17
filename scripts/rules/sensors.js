@@ -78,6 +78,7 @@ function conditionMatchesSensorFault(condition, sensorId) {
 
 function getSensorFaultSeverity(config, state) {
   const sensor = config?.components?.sensor;
+  if (!sensor) return "none";
   const componentState = sensor?.id == null ? null : state?.components?.[sensor.id];
   if (componentState?.destroyed || String(componentState?.status).toLowerCase() === "destroyed") return "destroyed";
   let best = 0;

@@ -129,7 +129,7 @@ function rosterSlots(config, state) {
 }
 
 function componentForSystem(config, system) {
-  if (system === "engines") return config?.components?.drive;
+  if (system === "engines") return config?.powerSystems?.engines;
   if (system === "shields") return config?.components?.shield;
   if (system === "sensors") return config?.components?.sensor;
   if (system === "cooling") return config?.components?.cooling;
@@ -145,7 +145,9 @@ function powerOptions(config, powerState, system) {
     }));
   }
   const current = whole(powerState?.allocation?.[system]);
-  return (componentForSystem(config, system)?.tiers ?? []).map((tier) => {
+  const component = componentForSystem(config, system);
+  if (!component) return [{ value: 0, label: "0 · unavailable", selected: true }];
+  const options = (component.tiers ?? []).map((tier) => {
     const detail = tier.multiplier != null ? `${finite(tier.multiplier)}×`
       : tier.regeneration != null ? `regen ${whole(tier.regeneration)}`
         : tier.cooling != null ? `cool ${whole(tier.cooling)}`
@@ -153,6 +155,7 @@ function powerOptions(config, powerState, system) {
             : tier.online === false ? "offline" : "online";
     return { value: whole(tier.power), label: `${whole(tier.power)} · ${detail}`, selected: whole(tier.power) === current };
   });
+  return options.length ? options : [{ value: 0, label: "0 · unavailable", selected: true }];
 }
 
 function powerView(config, state) {
@@ -189,8 +192,18 @@ function powerView(config, state) {
 }
 
 function shieldView(config, state) {
+  const shield = config?.components?.shield;
+  if (!shield) {
+    return {
+      topology: "none",
+      directional: false,
+      sectors: [],
+      total: 0,
+      budget: 0,
+      meter: meter(0, 0, "shield"),
+    };
+  }
   const route = previewDefenseRoute(config, state, {});
-  const shield = config?.components?.shield ?? {};
   const sectors = Object.keys(route.charge).map((id) => ({
     id,
     label: SECTOR_LABELS[id] ?? id,

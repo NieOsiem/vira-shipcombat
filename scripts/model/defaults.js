@@ -1,5 +1,7 @@
 import { SCHEMA_VERSION, SECTORS } from "../constants.js";
-import { CANADENSIS_CONFIG } from "../data/canadensis.js";
+import { CANADENSIS_HULL_CONFIG } from "../data/canadensis.js";
+import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../data/canadensis-components.js";
+import { materializeShipConfig } from "./equipment.js";
 
 function clone(value) {
   if (Array.isArray(value)) return value.map(clone);
@@ -25,8 +27,9 @@ function fillMissing(defaults, supplied) {
 
 function shieldSectors(config) {
   const shield = config?.components?.shield;
-  if (shield?.topology === "bubble") return ["bubble"];
-  const configured = Array.isArray(shield?.sectors) ? shield.sectors : SECTORS;
+  if (!shield) return [];
+  if (shield.topology === "bubble") return ["bubble"];
+  const configured = Array.isArray(shield.sectors) ? shield.sectors : SECTORS;
   return [...configured];
 }
 
@@ -49,15 +52,19 @@ function distribute(total, keys, cap = Infinity) {
 
 function initialPower(config) {
   const allocations = config?.powerPresets?.[0]?.allocations ?? {};
-  const power = {
-    engines: allocations.engines ?? 0,
-    shields: allocations.shields ?? 0,
-    sensors: allocations.sensors ?? 0,
-    cooling: allocations.cooling ?? 0,
-    weapons: allocations.weapons ?? 0,
+  const installed = {
+    engines: Object.values(config?.components?.drives ?? {}).some(Boolean),
+    shields: Boolean(config?.components?.shield),
+    sensors: Boolean(config?.components?.sensor),
+    cooling: Boolean(config?.components?.cooling),
+    weapons: (config?.components?.weapons?.length ?? 0) > 0,
   };
+  const power = Object.fromEntries(
+    Object.keys(installed).map((system) => [system, installed[system] ? (allocations[system] ?? 0) : 0]),
+  );
   const committed = power.engines + power.shields + power.sensors + power.cooling + power.weapons;
-  power.redlining = committed > (config?.components?.reactor?.nominalOutput ?? Infinity);
+  const nominalOutput = config?.components?.reactor?.nominalOutput;
+  power.redlining = Number.isFinite(nominalOutput) && committed > nominalOutput;
   return power;
 }
 
@@ -106,7 +113,7 @@ function initialRoster(config) {
   return roster;
 }
 
-/** @returns {object} A fresh mutable V1 state for config. */
+/** @returns {object} A fresh mutable schema-v2 state for an effective config. */
 export function createInitialState(config) {
   if (!config || typeof config !== "object") {
     throw new TypeError("createInitialState requires a ship configuration object");
@@ -122,7 +129,7 @@ export function createInitialState(config) {
   return {
     schemaVersion: SCHEMA_VERSION,
     revision: 0,
-    phase: "start",
+    phase: "outsideCombat",
     turnKey: null,
     hull: config.maxHull ?? 0,
     heat: 0,
@@ -150,28 +157,70 @@ export function createInitialState(config) {
   };
 }
 
-/** @returns {{schemaVersion:number, config:object, state:object}} Fresh reference ship data. */
+/** Fresh pure reference data with detached hull, Items, effective config, and state. */
 export function createDefaultShipData() {
-  const config = clone(CANADENSIS_CONFIG);
+  const hull = clone(CANADENSIS_HULL_CONFIG);
+  const items = clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES);
+  const config = materializeShipConfig(hull, items);
   return {
     schemaVersion: SCHEMA_VERSION,
+    hull,
+    items,
     config,
     state: createInitialState(config),
   };
 }
 
-/** @returns {object} A new V1 ship-data object with missing fields filled. */
-export function normalizeShipData(data) {
-  const supplied = data && typeof data === "object" ? data : {};
-  const config = clone(supplied.config ?? CANADENSIS_CONFIG);
+/** Fresh value suitable for persistence at `system.shipCombat`; contains no Item payloads. */
+export function createDefaultShipSystemData() {
+  const config = clone(CANADENSIS_HULL_CONFIG);
+  const effective = materializeShipConfig(config, CANADENSIS_DEFAULT_COMPONENT_SOURCES);
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    config,
+    state: createInitialState(effective),
+  };
+}
+
+/** Fresh Foundry Actor initialization payload with embedded Items kept outside system data. */
+export function createDefaultShipActorData() {
+  return {
+    system: { shipCombat: createDefaultShipSystemData() },
+    items: clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES),
+  };
+}
+
+/** Normalize schema-v2 ship data without filling deliberately empty hull slots. */
+export function normalizeShipData(data, items = undefined) {
+  const supplied = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  if (supplied.schemaVersion !== undefined && supplied.schemaVersion !== SCHEMA_VERSION) {
+    throw new TypeError(`Unsupported ship schema version '${supplied.schemaVersion}'.`);
+  }
+  const config = clone(supplied.config ?? CANADENSIS_HULL_CONFIG);
+  if (!config || typeof config !== "object" || Array.isArray(config) || config.schemaVersion !== SCHEMA_VERSION) {
+    throw new TypeError(`Unsupported hull schema version '${config?.schemaVersion}'.`);
+  }
+  const componentItems = Array.isArray(items)
+    ? items
+    : Array.isArray(supplied.items)
+      ? supplied.items
+      : config.id === CANADENSIS_HULL_CONFIG.id
+        ? CANADENSIS_DEFAULT_COMPONENT_SOURCES
+        : [];
+  const effective = Array.isArray(config.slots)
+    ? materializeShipConfig(config, componentItems)
+    : clone(config);
   const defaults = {
     schemaVersion: SCHEMA_VERSION,
     config,
-    state: createInitialState(config),
+    state: createInitialState(effective),
   };
   const normalized = fillMissing(defaults, supplied);
   normalized.schemaVersion = SCHEMA_VERSION;
   normalized.config = config;
+  normalized.state = normalized.state && typeof normalized.state === "object" && !Array.isArray(normalized.state)
+    ? normalized.state
+    : clone(defaults.state);
   normalized.state.schemaVersion = SCHEMA_VERSION;
   return normalized;
 }

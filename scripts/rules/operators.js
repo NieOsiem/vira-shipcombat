@@ -161,7 +161,8 @@ function profileValues(profile, key) {
 
 function componentEntries(config) {
   const components = config?.components ?? {};
-  return [components.reactor, components.drive, components.shield, components.sensor, components.cooling, ...(components.weapons ?? [])].filter(Boolean);
+  const drives = Object.values(components.drives ?? {}).filter(Boolean);
+  return [components.reactor, ...drives, components.shield, components.sensor, components.cooling, ...(components.weapons ?? [])].filter(Boolean);
 }
 
 function requiredSystem(config, requirement) {
@@ -189,7 +190,7 @@ function faultDestroysSystem(draft, component, requirement) {
     sensor: "sensorFault",
     cooling: "coolingFailure",
     weapon: "weaponMalfunction",
-    drive: "driveFailure",
+    drive: ["portLateral", "starboardLateral"].includes(component.driveRole) ? "maneuveringThrusterFailure" : "driveFailure",
   }[component.class ?? component.type];
   if (wholeComponentChannel && faults.some((condition) => (condition.channelId ?? condition.conditionId) === wholeComponentChannel)) return true;
   if ((component.class ?? component.type) === "shield") {

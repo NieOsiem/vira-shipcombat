@@ -187,7 +187,8 @@ function selectWeighted(entries, random, randomIndex = 0) {
 
 function componentList(config) {
   const components = config?.components ?? {};
-  return [components.reactor, components.drive, components.shield, components.sensor, components.cooling, ...(components.weapons ?? [])].filter(Boolean);
+  const drives = Object.values(components.drives ?? {}).filter(Boolean);
+  return [components.reactor, ...drives, components.shield, components.sensor, components.cooling, ...(components.weapons ?? [])].filter(Boolean);
 }
 
 function componentForTarget(config, componentId) {

@@ -1,6 +1,8 @@
 import {
   COMPONENT_CLASSES,
+  COMPONENT_ITEM_TYPE,
   CORE_COMPONENT_CLASSES,
+  DRIVE_ROLES,
   FATE_POLICIES,
   MOUNT_SIZES,
   OPERATOR_TYPES,
@@ -42,8 +44,8 @@ function tierArray(value) {
   return Object.entries(value).map(([power, tier]) => ({ power: Number(power), ...tier }));
 }
 
-/** @returns {{valid:boolean, errors:object[], warnings:object[]}} */
-export function validateShipConfig(config, { tokenWidth } = {}) {
+/** Validate a detached effective rules snapshot. */
+export function validateEffectiveLoadout(config, { tokenWidth } = {}) {
   const errors = [];
   const warnings = [];
   const error = (code, path, message, details = undefined) => {
@@ -125,11 +127,12 @@ export function validateShipConfig(config, { tokenWidth } = {}) {
     }
   };
 
-  for (const expectedClass of CORE_COMPONENT_CLASSES) {
+  for (const expectedClass of CORE_COMPONENT_CLASSES.filter((componentClass) => componentClass !== "drive")) {
     const component = components[expectedClass];
     const path = `components.${expectedClass}`;
+    if (component === null || component === undefined) continue;
     if (!isObject(component)) {
-      error("COMPONENT_CARDINALITY", path, `Exactly one ${expectedClass} component is required.`);
+      error("COMPONENT_CARDINALITY", path, `At most one ${expectedClass} component may be installed.`);
       continue;
     }
     if (component.class !== expectedClass || !COMPONENT_CLASSES.includes(component.class)) {
@@ -137,15 +140,47 @@ export function validateShipConfig(config, { tokenWidth } = {}) {
     }
     registerId(component, path, expectedClass);
     validateRegions(component.regions, `${path}.regions`, error);
+    if (typeof component.slotId !== "string" || component.slotId.trim() === "") {
+      error("SLOT_REFERENCE_REQUIRED", `${path}.slotId`, "Installed core component must identify its hull slot.");
+    }
   }
-  const allowedComponentKeys = new Set([...CORE_COMPONENT_CLASSES, "weapons"]);
+  const allowedComponentKeys = new Set([
+    ...CORE_COMPONENT_CLASSES.filter((componentClass) => componentClass !== "drive"),
+    "drives",
+    "weapons",
+  ]);
   for (const key of Object.keys(components)) {
     if (!allowedComponentKeys.has(key)) {
       error(
         "UNSUPPORTED_COMPONENT_SLOT",
         `components.${key}`,
-        "V1 permits exactly one core component of each class plus the weapons array.",
+        "Effective loadouts permit core components, authoritative drives, and the weapons array.",
       );
+    }
+  }
+  if (!isObject(components.drives)) {
+    error("DRIVES_REQUIRED", "components.drives", "Authoritative drives must be an object, which may be empty.");
+  } else {
+    const validRoles = new Set(["main", "reverse", "portLateral", "starboardLateral"]);
+    for (const [role, drive] of Object.entries(components.drives)) {
+      const path = `components.drives.${role}`;
+      if (!validRoles.has(role)) error("INVALID_DRIVE_ROLE", path, `Unknown installed drive role '${role}'.`);
+      if (!isObject(drive)) {
+        error("INVALID_DRIVE", path, "Installed drive must be an object.");
+        continue;
+      }
+      if (drive.class !== "drive") error("INVALID_COMPONENT_CLASS", `${path}.class`, "Drive component class must be 'drive'.");
+      if (drive.driveRole !== role) error("INVALID_DRIVE_ROLE", `${path}.driveRole`, "Installed drive role must match its hull placement.");
+      if (typeof drive.slotId !== "string" || drive.slotId.trim() === "") {
+        error("SLOT_REFERENCE_REQUIRED", `${path}.slotId`, "Installed drive must identify its hull slot.");
+      }
+      registerId(drive, path, "drive");
+      validateRegions(drive.regions, `${path}.regions`, error);
+      requireNumber(drive.base?.thrust, `${path}.base.thrust`, { min: 0 });
+      if (role === "portLateral" || role === "starboardLateral") {
+        requireNumber(drive.base?.rotation, `${path}.base.rotation`, { min: 0 });
+      }
+      validateRecoveryWork(drive.recoveryWork, `${path}.recoveryWork`, error);
     }
   }
   if (isObject(config.capabilityProfile)) {
@@ -158,9 +193,6 @@ export function validateShipConfig(config, { tokenWidth } = {}) {
     if (!Array.isArray(hardware)) {
       error("EVASION_HARDWARE_REQUIRED", "capabilityProfile.evasionHardware", "Evasion hardware must be an array.");
     } else {
-      if (config.evasionReserve > 0 && hardware.length === 0) {
-        error("EVASION_HARDWARE_REQUIRED", "capabilityProfile.evasionHardware", "An Evasion-capable ship must identify its hardware.");
-      }
       for (const [index, entry] of hardware.entries()) {
         const path = `capabilityProfile.evasionHardware[${index}]`;
         if (!isObject(entry) || !componentById.has(entry.componentId) || typeof entry.channel !== "string" || entry.channel === "") {
@@ -181,17 +213,13 @@ export function validateShipConfig(config, { tokenWidth } = {}) {
     validateRecoveryWork(reactor.recoveryWork, "components.reactor.recoveryWork", error);
   }
 
-  validateTiers(components.drive, "components.drive", "drive", error);
-  if (isObject(components.drive)) {
-    for (const axis of ["forward", "retro", "port", "starboard", "rotation"]) {
-      requireNumber(components.drive.base?.[axis], `components.drive.base.${axis}`, { min: 0 });
-    }
-    if (!isObject(components.drive.recoveryWork)) {
-      error("RECOVERY_WORK_REQUIRED", "components.drive.recoveryWork", "Drive must define both recovery Work values.");
-    } else {
-      validateRecoveryWork(components.drive.recoveryWork.drive, "components.drive.recoveryWork.drive", error);
-      validateRecoveryWork(components.drive.recoveryWork.maneuveringThrusters, "components.drive.recoveryWork.maneuveringThrusters", error);
-    }
+  const engines = config.powerSystems?.engines;
+  const hasInstalledDrives = isObject(components.drives)
+    && Object.values(components.drives).some((drive) => isObject(drive));
+  if (!isObject(engines)) {
+    error("ENGINE_POWER_SYSTEM_REQUIRED", "powerSystems.engines", "Engine Power tiers must be defined in the shared Power system.");
+  } else {
+    validateTiers(engines, "powerSystems.engines", "drive", error, { allowEmpty: !hasInstalledDrives });
   }
 
   validateShield(components.shield, error, requireNumber);
@@ -263,6 +291,11 @@ export function validateShipConfig(config, { tokenWidth } = {}) {
   return { valid: errors.length === 0, errors, warnings };
 }
 
+/** Public compatibility name for effective snapshot validation. */
+export function validateShipConfig(config, options = {}) {
+  return validateEffectiveLoadout(config, options);
+}
+
 function validateRegions(regions, path, error) {
   if (!Array.isArray(regions) || regions.length === 0) {
     error("REGIONS_REQUIRED", path, "Every installed component must have explicit region membership.");
@@ -282,11 +315,11 @@ function validateRecoveryWork(value, path, error) {
   }
 }
 
-function validateTiers(component, path, kind, error) {
+function validateTiers(component, path, kind, error, { allowEmpty = false } = {}) {
   if (!isObject(component)) return;
   const tiers = tierArray(component.tiers);
   if (tiers.length === 0) {
-    error("POWER_TIERS_REQUIRED", `${path}.tiers`, "At least one Power tier is required.");
+    if (!allowEmpty) error("POWER_TIERS_REQUIRED", `${path}.tiers`, "At least one Power tier is required.");
     return;
   }
   const powers = new Set();
@@ -459,7 +492,7 @@ function validateTraits(traits, path, error) {
     if (seen.has(trait.id)) error("DUPLICATE_TRAIT", `${traitPath}.id`, `Trait '${trait.id}' is duplicated.`);
     seen.add(trait.id);
     if (RESERVED_INCOMPLETE_TRAITS.includes(trait.id)) {
-      error("RESERVED_INCOMPLETE_TRAIT", `${traitPath}.id`, `Trait '${trait.id}' has no complete V1 rule and cannot be active.`);
+      error("RESERVED_INCOMPLETE_TRAIT", `${traitPath}.id`, `Trait '${trait.id}' is not implemented for automated play and cannot be active.`);
       return;
     }
     if (!SUPPORTED_TRAITS.includes(trait.id)) {
@@ -515,9 +548,17 @@ function validatePowerConfig(config, weapons, error, requireNumber) {
       requireNumber(value, `${path}.allocations.${system}`, { min: 0, integer: true });
       if (isFiniteNumber(value)) total += value;
       if (system !== "weapons" && Number.isInteger(value)) {
-        const componentName = { engines: "drive", shields: "shield", sensors: "sensor", cooling: "cooling" }[system];
-        const powers = new Set(tierArray(config.components?.[componentName]?.tiers).map((tier) => tier.power));
-        if (!powers.has(value)) error("UNSUPPORTED_POWER_TIER", `${path}.allocations.${system}`, `No ${system} tier exists at Power ${value}.`);
+        const componentName = { shields: "shield", sensors: "sensor", cooling: "cooling" }[system];
+        const installed = system === "engines"
+          ? isObject(config.components?.drives) && Object.values(config.components.drives).some(isObject)
+          : Boolean(config.components?.[componentName]);
+        const component = installed
+          ? (system === "engines" ? config.powerSystems?.engines : config.components?.[componentName])
+          : null;
+        if (component) {
+          const powers = new Set(tierArray(component.tiers).map((tier) => tier.power));
+          if (!powers.has(value)) error("UNSUPPORTED_POWER_TIER", `${path}.allocations.${system}`, `No ${system} tier exists at Power ${value}.`);
+        }
       }
     }
     const redline = config.components?.reactor?.redlineOutput;
@@ -526,7 +567,7 @@ function validatePowerConfig(config, weapons, error, requireNumber) {
       const overclock = weapon.modes?.overclock?.overrides?.powerRating;
       return sum + Math.max(weapon.powerRating ?? 0, overclock ?? 0);
     }, 0);
-    if (isFiniteNumber(preset.allocations?.weapons) && preset.allocations.weapons > maxWeapons) {
+    if (weapons.length > 0 && isFiniteNumber(preset.allocations?.weapons) && preset.allocations.weapons > maxWeapons) {
       error("WEAPONS_POWER_EXCEEDS_LOADOUT", `${path}.allocations.weapons`, "Weapons allocation exceeds all supported weapon reservations.");
     }
   });
@@ -628,5 +669,223 @@ function validateCriticalPools(config, componentById, error, requireString, requ
       }
     }
   }
+}
+
+function validationCollector() {
+  const errors = [];
+  return {
+    errors,
+    error(code, path, message, details = undefined) {
+      const entry = { code, path, message };
+      if (details !== undefined) entry.details = details;
+      errors.push(entry);
+    },
+    result() {
+      return { valid: errors.length === 0, errors, warnings: [] };
+    },
+  };
+}
+
+/** Validate an Actor-persisted schema-v2 hull without requiring its component Items. */
+export function validateHullConfig(config) {
+  const validation = validationCollector();
+  const { error } = validation;
+  if (!isObject(config)) {
+    error("HULL_CONFIG_REQUIRED", "config", "Hull configuration must be an object.");
+    return validation.result();
+  }
+  if (config.schemaVersion !== SCHEMA_VERSION) {
+    error("UNSUPPORTED_SCHEMA_VERSION", "schemaVersion", `Expected schema version ${SCHEMA_VERSION}.`);
+  }
+  if (typeof config.id !== "string" || config.id.trim() === "") error("REQUIRED_STRING", "id", "Hull ID must be a non-empty stable string.");
+
+  const mountIds = new Set();
+  const slotById = new Map();
+  const installedIds = new Set();
+  const singletonClasses = new Set();
+  if (!Array.isArray(config.slots)) {
+    error("HULL_SLOTS_REQUIRED", "slots", "Hull configuration requires a slots array.");
+  } else {
+    config.slots.forEach((slot, index) => {
+      const path = `slots[${index}]`;
+      if (!isObject(slot)) {
+        error("INVALID_HULL_SLOT", path, "Hull slot must be an object.");
+        return;
+      }
+      if (typeof slot.id !== "string" || slot.id.trim() === "") error("HULL_SLOT_ID_REQUIRED", `${path}.id`, "Hull slot requires an ID.");
+      else if (mountIds.has(slot.id)) error("DUPLICATE_HULL_SLOT", `${path}.id`, "Hull mount ID is duplicated.");
+      else {
+        mountIds.add(slot.id);
+        slotById.set(slot.id, slot);
+      }
+      if (!CORE_COMPONENT_CLASSES.includes(slot.class)) error("INVALID_HULL_SLOT_CLASS", `${path}.class`, "Hull slot class is invalid.");
+      if (!MOUNT_SIZES.includes(slot.size)) error("INVALID_HULL_SLOT_SIZE", `${path}.size`, "Hull slot size is invalid.");
+      const occupied = typeof slot.itemId === "string" && slot.itemId.trim() !== "";
+      if (slot.itemId !== null && slot.itemId !== undefined && !occupied) {
+        error("INVALID_INSTALLATION_REFERENCE", `${path}.itemId`, "Installed Item reference must be a non-empty string or null.");
+      }
+      if (occupied && installedIds.has(slot.itemId)) error("DUPLICATE_INSTALLATION", `${path}.itemId`, "A component Item cannot occupy more than one mount.");
+      if (occupied) installedIds.add(slot.itemId);
+      if (!Array.isArray(slot.regions) || slot.regions.some((region) => !SECTORS.includes(region)) || new Set(slot.regions).size !== slot.regions.length) {
+        error("INVALID_HULL_SLOT_REGIONS", `${path}.regions`, "Hull slot regions must be a unique subset of ship regions.");
+      } else if (occupied && slot.regions.length === 0) {
+        error("INSTALLED_COMPONENT_REGIONS_REQUIRED", `${path}.regions`, "Occupied slots require at least one region.");
+      }
+      if (slot.class === "drive") {
+        if (!["main", "reverse", "portLateral", "starboardLateral"].includes(slot.driveRole)) {
+          error("INVALID_HULL_DRIVE_ROLE", `${path}.driveRole`, "Drive slot requires an exact placement role.");
+        }
+      } else {
+        if (slot.driveRole !== undefined) error("INVALID_HULL_DRIVE_ROLE", `${path}.driveRole`, "Non-drive slots cannot define a drive role.");
+        if (CORE_COMPONENT_CLASSES.includes(slot.class) && singletonClasses.has(slot.class)) {
+          error("DUPLICATE_SINGLETON_SLOT", `${path}.class`, `Hull defines more than one ${slot.class} slot.`);
+        }
+        singletonClasses.add(slot.class);
+      }
+    });
+  }
+
+  const hardpointById = new Map();
+  if (!Array.isArray(config.hardpoints)) {
+    error("HARDPOINTS_REQUIRED", "hardpoints", "Hull configuration requires a hardpoints array.");
+  } else {
+    config.hardpoints.forEach((hardpoint, index) => {
+      const path = `hardpoints[${index}]`;
+      if (!isObject(hardpoint)) {
+        error("INVALID_HARDPOINT", path, "Hardpoint must be an object.");
+        return;
+      }
+      if (typeof hardpoint.id !== "string" || hardpoint.id.trim() === "") error("HARDPOINT_ID_REQUIRED", `${path}.id`, "Hardpoint requires an ID.");
+      else if (mountIds.has(hardpoint.id)) error("DUPLICATE_HULL_SLOT", `${path}.id`, "Hull mount ID is duplicated.");
+      else {
+        mountIds.add(hardpoint.id);
+        hardpointById.set(hardpoint.id, hardpoint);
+      }
+      if (hardpoint.category !== "hardpoint") error("INVALID_WEAPON_CATEGORY", `${path}.category`, "Ordinary hardpoints must use category 'hardpoint'.");
+      if (!MOUNT_SIZES.includes(hardpoint.mountSize)) error("INVALID_MOUNT_SIZE", `${path}.mountSize`, "Hardpoint mount size is invalid.");
+      const occupied = typeof hardpoint.weaponId === "string" && hardpoint.weaponId.trim() !== "";
+      if (hardpoint.weaponId !== null && hardpoint.weaponId !== undefined && !occupied) {
+        error("INVALID_INSTALLATION_REFERENCE", `${path}.weaponId`, "Installed weapon reference must be a non-empty string or null.");
+      }
+      if (occupied && installedIds.has(hardpoint.weaponId)) error("DUPLICATE_INSTALLATION", `${path}.weaponId`, "A component Item cannot occupy more than one mount.");
+      if (occupied) installedIds.add(hardpoint.weaponId);
+      if (!Array.isArray(hardpoint.regions) || hardpoint.regions.some((region) => !SECTORS.includes(region)) || new Set(hardpoint.regions).size !== hardpoint.regions.length) {
+        error("INVALID_HARDPOINT_REGIONS", `${path}.regions`, "Hardpoint regions must be a unique subset of ship regions.");
+      } else if (occupied && hardpoint.regions.length === 0) {
+        error("INSTALLED_COMPONENT_REGIONS_REQUIRED", `${path}.regions`, "Occupied hardpoints require at least one region.");
+      }
+    });
+  }
+
+  const hardware = config.capabilityProfile?.evasionHardware;
+  if (!Array.isArray(hardware)) error("EVASION_HARDWARE_REQUIRED", "capabilityProfile.evasionHardware", "Evasion hardware must be an array.");
+  else hardware.forEach((entry, index) => {
+    const path = `capabilityProfile.evasionHardware[${index}]`;
+    if (!isObject(entry) || typeof entry.slotId !== "string" || !slotById.has(entry.slotId) || typeof entry.channel !== "string" || entry.channel === "") {
+      error("INVALID_EVASION_HARDWARE", path, "Evasion hardware requires a known slot ID and channel.");
+    }
+  });
+
+  if (!Array.isArray(config.weaponPriority)) error("INVALID_PRIORITY", "weaponPriority", "Weapon priority must be an array of hardpoint IDs.");
+  else {
+    const seen = new Set();
+    config.weaponPriority.forEach((id, index) => {
+      if (typeof id !== "string" || !hardpointById.has(id)) error("DANGLING_WEAPON_PRIORITY", `weaponPriority[${index}]`, "Weapon priority references an unknown hardpoint.");
+      else if (seen.has(id)) error("INVALID_PRIORITY", `weaponPriority[${index}]`, "Weapon priority contains a duplicate hardpoint.");
+      seen.add(id);
+    });
+  }
+
+  if (!isObject(config.criticalPools)) error("CRITICAL_POOLS_REQUIRED", "criticalPools", "Critical pools must define all four regions.");
+  else for (const region of SECTORS) {
+    const pool = config.criticalPools[region];
+    if (!Array.isArray(pool)) {
+      error("CRITICAL_POOL_REQUIRED", `criticalPools.${region}`, "Critical pool must be an array.");
+      continue;
+    }
+    pool.forEach((entry, index) => {
+      if (!isObject(entry) || entry.kind !== "fault") return;
+      const path = `criticalPools.${region}[${index}]`;
+      const hasSlot = typeof entry.slotId === "string" && entry.slotId !== "";
+      const hasHardpoint = typeof entry.hardpointId === "string" && entry.hardpointId !== "";
+      if (hasSlot === hasHardpoint) error("INVALID_CRITICAL_REFERENCE", path, "Fault entry must reference exactly one slot or hardpoint.");
+      else {
+        const mount = hasSlot ? slotById.get(entry.slotId) : hardpointById.get(entry.hardpointId);
+        if (!mount) error("DANGLING_CRITICAL_REFERENCE", path, "Fault entry references an unknown hull mount.");
+        else if (!mount.regions?.includes(region)) error("CRITICAL_REGION_MISMATCH", path, "Fault target is not a member of its critical-pool region.");
+      }
+    });
+  }
+  return validation.result();
+}
+
+/** Validate one detached schema-v2 component Item source. */
+export function validateComponentItem(value) {
+  const validation = validationCollector();
+  const { error } = validation;
+  const source = value && typeof value.toObject === "function" ? value.toObject(false) : value;
+  if (!isObject(source)) {
+    error("INVALID_COMPONENT_ITEM", "item", "Component item must be an Item document or plain source.");
+    return validation.result();
+  }
+  const id = source.id ?? source._id;
+  if (typeof id !== "string" || id.trim() === "") error("COMPONENT_ID_REQUIRED", "id", "Component item requires an ID.");
+  if (source.type !== undefined && source.type !== COMPONENT_ITEM_TYPE) error("INVALID_COMPONENT_ITEM_TYPE", "type", "Item is not a ship component.");
+  const system = source.system;
+  if (!isObject(system)) {
+    error("INVALID_COMPONENT_SYSTEM", "system", "Component item requires system data.");
+    return validation.result();
+  }
+  if (system.schemaVersion !== SCHEMA_VERSION) error("UNSUPPORTED_SCHEMA_VERSION", "system.schemaVersion", `Expected schema version ${SCHEMA_VERSION}.`);
+  if (!COMPONENT_CLASSES.includes(system.componentClass)) error("INVALID_COMPONENT_CLASS", "system.componentClass", "Component class is invalid.");
+  if (!MOUNT_SIZES.includes(system.size)) error("INVALID_COMPONENT_SIZE", "system.size", "Component size is invalid.");
+  if (system.componentClass === "drive") {
+    if (!DRIVE_ROLES.includes(system.driveRole) || system.driveRole === "") error("INVALID_DRIVE_ROLE", "system.driveRole", "Drive component requires a valid role.");
+  } else if (system.driveRole !== undefined && system.driveRole !== "") {
+    error("INVALID_DRIVE_ROLE", "system.driveRole", "Non-drive components cannot define a drive role.");
+  }
+  const definition = system.definition;
+  if (!isObject(definition)) {
+    error("COMPONENT_DEFINITION_REQUIRED", "system.definition", "Component item requires a definition.");
+    return validation.result();
+  }
+  const requireNumber = (number, path, { min = -Infinity, strict = false, integer = false } = {}) => {
+    if (!isFiniteNumber(number) || (strict ? number <= min : number < min) || (integer && !Number.isInteger(number))) {
+      error("INVALID_NUMBER", path, "Component definition contains an invalid numeric value.");
+    }
+  };
+  const path = "system.definition";
+  if (system.componentClass === "reactor") {
+    requireNumber(definition.nominalOutput, `${path}.nominalOutput`, { min: 0, strict: true, integer: true });
+    requireNumber(definition.redlineOutput, `${path}.redlineOutput`, { min: 0, strict: true, integer: true });
+    requireNumber(definition.overclockHeat, `${path}.overclockHeat`, { min: 0 });
+    validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+  } else if (system.componentClass === "drive") {
+    requireNumber(definition.base?.thrust, `${path}.base.thrust`, { min: 0 });
+    if (system.driveRole === "lateral") requireNumber(definition.base?.rotation, `${path}.base.rotation`, { min: 0 });
+    validateTiers(definition, path, "drive", error);
+    validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+  } else if (system.componentClass === "shield") {
+    if (!SHIELD_TOPOLOGIES.includes(definition.topology)) error("INVALID_SHIELD_TOPOLOGY", `${path}.topology`, "Shield topology is invalid.");
+    requireNumber(definition.totalBudget, `${path}.totalBudget`, { min: 0, strict: true, integer: true });
+    requireNumber(definition.sectorCap, `${path}.sectorCap`, { min: 0, strict: true, integer: true });
+    requireNumber(definition.rechargeDelay, `${path}.rechargeDelay`, { min: 0, strict: true, integer: true });
+    validateTiers(definition, path, "shield", error);
+    validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+  } else if (system.componentClass === "sensor") {
+    for (const key of ["passiveRange", "passiveStrength", "activeRange", "activeModifier", "ewModifier"]) requireNumber(definition.base?.[key], `${path}.base.${key}`);
+    validateTiers(definition, path, "sensor", error);
+    validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+  } else if (system.componentClass === "cooling") {
+    requireNumber(definition.ventAmount, `${path}.ventAmount`, { min: 0, strict: true });
+    requireNumber(definition.ventCooldown, `${path}.ventCooldown`, { min: 0, integer: true });
+    validateTiers(definition, path, "cooling", error);
+    validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+  } else if (system.componentClass === "weapon") {
+    const weapon = { id: id ?? "", ...definition, mountSize: system.size, hardpointId: "component-preview" };
+    const hardpoints = new Map([["component-preview", { id: "component-preview", category: "hardpoint", mountSize: system.size, weaponId: id }]]);
+    validateWeapon(weapon, path, hardpoints, error, requireNumber);
+  }
+  return validation.result();
 }
 

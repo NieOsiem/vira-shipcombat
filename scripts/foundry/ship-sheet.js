@@ -1,9 +1,14 @@
-import { MODULE_ID, SHIP_TYPE } from "../constants.js";
-import { validateShipConfig } from "../model/validation.js";
-import { CANADENSIS_CONFIG } from "../data/canadensis.js";
-import { nativeVehicleFieldValues } from "../model/native-vehicle.js";
+import { COMPONENT_ITEM_TYPE, MODULE_ID, SHIP_TYPE } from "../constants.js";
 import { buildShipConsoleView } from "./ship-view-model.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
+import {
+  getRefitDenial,
+  installShipComponent,
+  materializeActorConfig,
+  removeShipComponent,
+  resetShipToCanadensis,
+  saveShipHull,
+} from "./refit.js";
 
 import { previewPowerRoute } from "../rules/power.js";
 import { previewDefenseRoute } from "../rules/shields.js";
@@ -13,7 +18,7 @@ import { TRACK_STATUS } from "../rules/sensors.js";
 import { submitShipOperation, rollbackShipOperation, getOperationLog } from "../state/action-queue.js";
 import { setMovementPreview, clearMovementPreview } from "../canvas/overlays.js";
 
-const TABS = ["Overview", "Crew", "Helm", "Power/Defense", "Sensors", "Weapons", "Damage", "Log/Config"];
+const TABS = ["Overview", "Crew", "Helm", "Power/Defense", "Sensors", "Weapons", "Damage", "Refit", "Log/Config"];
 const GROUPS = {
   Overview: ["enterCombat", "startPhase", "coast", "endPhase", "leaveCombat", "refreshResources", "resolveFate"],
   Crew: ["setRoster", "spendResource", "takeControl", "contributeWork"],
@@ -274,10 +279,6 @@ function actorToken(actor) {
   const unique = Array.from(new Map(matches.map((token) => [token.uuid, token])).values());
   return unique.length === 1 ? unique[0] : null;
 }
-function validationTokenWidth(actor) {
-  const width = Number(actorToken(actor)?.width ?? actor?.prototypeToken?.width ?? actor?._source?.prototypeToken?.width ?? 1);
-  return Number.isFinite(width) && width > 0 ? width : 1;
-}
 
 function draftKey(source, type) {
   const uuid = typeof source === "string" ? source : actorToken(source)?.uuid ?? source?.uuid;
@@ -301,15 +302,36 @@ function tierSummary(tiers, valueKey) {
   return (tiers ?? []).map((tier) => `${tier.power}:${tier[valueKey] ?? "—"}`).join(" · ");
 }
 
+function driveSummary(drives) {
+  const labels = {
+    main: "Main",
+    reverse: "Reverse",
+    portLateral: "Port lateral",
+    starboardLateral: "Starboard lateral",
+  };
+  const entries = Object.entries(drives ?? {});
+  if (!entries.length) return "Not installed";
+  return entries.map(([role, drive]) => {
+    const base = drive?.base ?? {};
+    const thrust = base.thrust ?? "—";
+    const rotation = base.rotation == null ? "" : ` · ${base.rotation}° rotation`;
+    return `${labels[role] ?? role}: ${thrust} thrust${rotation}`;
+  }).join(" · ");
+}
+
+function installedSummary(component, value) {
+  return component ? value(component) : "Not installed";
+}
+
 function configurationSummary(config, state) {
-  const drive = config?.components?.drive ?? {};
-  const shield = config?.components?.shield ?? {};
-  const sensor = config?.components?.sensor ?? {};
-  const reactor = config?.components?.reactor ?? {};
-  const cooling = config?.components?.cooling ?? {};
+  const components = config?.components ?? {};
+  const drives = components.drives ?? {};
+  const shield = components.shield;
+  const sensor = components.sensor;
+  const reactor = components.reactor;
+  const cooling = components.cooling;
   const armor = config?.armor ?? {};
-  const base = drive.base ?? {};
-  const sensorBase = sensor.base ?? {};
+  const sensorBase = sensor?.base ?? {};
   return [
     {
       label: "Identity and limits",
@@ -328,8 +350,8 @@ function configurationSummary(config, state) {
     {
       label: "Movement and defense",
       entries: [
-        { label: "Drive base", value: `F ${base.forward ?? "—"} · R ${base.retro ?? "—"} · P ${base.port ?? "—"} · S ${base.starboard ?? "—"} · Rot ${base.rotation ?? "—"}°` },
-        { label: "Drive tiers (Power:multiplier)", value: tierSummary(drive.tiers, "multiplier") || "—" },
+        { label: "Installed drives", value: driveSummary(drives) },
+        { label: "Shared engine tiers (Power:multiplier)", value: tierSummary(config?.powerSystems?.engines?.tiers, "multiplier") || "Not installed" },
         { label: "Safe Velocity", value: config?.safeVelocity ?? "—" },
         { label: "Evasion", value: `${config?.evasionReserve ?? "—"}% reserve · +${config?.evasionAcBonus ?? "—"} AC` },
         { label: "Armor", value: `Fore ${armor.fore ?? "—"} · Port ${armor.port ?? "—"} · Starboard ${armor.starboard ?? "—"} · Aft ${armor.aft ?? "—"}` },
@@ -338,16 +360,62 @@ function configurationSummary(config, state) {
     {
       label: "Power, shields, and sensors",
       entries: [
-        { label: "Reactor", value: `${reactor.nominalOutput ?? "—"} nominal · ${reactor.redlineOutput ?? "—"} redline · ${reactor.overclockHeat ?? "—"} Heat` },
-        { label: "Shields", value: `${shield.topology ?? "—"} · ${shield.totalBudget ?? "—"} budget · ${shield.sectorCap ?? "—"} cap · ${shield.rechargeDelay ?? "—"} delay` },
-        { label: "Shield regeneration (Power:value)", value: tierSummary(shield.tiers, "regeneration") || "—" },
-        { label: "Passive sensors", value: `${sensorBase.passiveRange ?? "—"} range · ${sensorBase.passiveStrength ?? "—"} strength` },
-        { label: "Active sensors", value: `${sensorBase.activeRange ?? "—"} range · ${sensorBase.activeModifier ?? "—"} modifier · ${sensorBase.ewModifier ?? "—"} EW` },
-        { label: "Cooling (Power:value)", value: tierSummary(cooling.tiers, "cooling") || "—" },
-        { label: "Emergency vent", value: `${cooling.ventAmount ?? "—"} Heat · ${cooling.ventCooldown ?? "—"} Start cooldown` },
+        { label: "Reactor", value: installedSummary(reactor, (entry) => `${entry.nominalOutput ?? "—"} nominal · ${entry.redlineOutput ?? "—"} redline · ${entry.overclockHeat ?? "—"} Heat`) },
+        { label: "Shields", value: installedSummary(shield, (entry) => `${entry.topology ?? "—"} · ${entry.totalBudget ?? "—"} budget · ${entry.sectorCap ?? "—"} cap · ${entry.rechargeDelay ?? "—"} delay`) },
+        { label: "Shield regeneration (Power:value)", value: shield ? tierSummary(shield.tiers, "regeneration") || "No tiers" : "Not installed" },
+        { label: "Passive sensors", value: sensor ? `${sensorBase.passiveRange ?? "—"} range · ${sensorBase.passiveStrength ?? "—"} strength` : "Not installed" },
+        { label: "Active sensors", value: sensor ? `${sensorBase.activeRange ?? "—"} range · ${sensorBase.activeModifier ?? "—"} modifier · ${sensorBase.ewModifier ?? "—"} EW` : "Not installed" },
+        { label: "Cooling (Power:value)", value: cooling ? tierSummary(cooling.tiers, "cooling") || "No tiers" : "Not installed" },
+        { label: "Emergency vent", value: cooling ? `${cooling.ventAmount ?? "—"} Heat · ${cooling.ventCooldown ?? "—"} Start cooldown` : "Not installed" },
       ],
     },
   ];
+}
+
+function titleCase(value) {
+  return String(value ?? "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function refitStatus(itemId, state) {
+  if (!itemId) return "Empty · systems degraded";
+  const weapon = state?.weapons?.[itemId] ?? {};
+  const conditions = Object.values(state?.conditions ?? {})
+    .filter((condition) => condition?.componentId === itemId || condition?.targetId === itemId);
+  const severityRank = { destroyed: 5, critical: 4, major: 3, minor: 2, unknown: 1 };
+  const condition = conditions.sort((left, right) =>
+    (severityRank[right?.severity] ?? 0) - (severityRank[left?.severity] ?? 0))[0];
+  if (condition?.severity === "destroyed") return "Destroyed";
+  if (condition?.severity) return `${titleCase(condition.severity)} damage`;
+  if (weapon.status) return titleCase(weapon.status);
+  return "Installed · nominal";
+}
+
+function refitMountView(actor, state, mount, kind) {
+  const hardpoint = kind === "hardpoint";
+  const itemId = hardpoint ? mount.weaponId : mount.itemId;
+  const item = itemId ? actor.items?.get?.(itemId) ?? collectionValues(actor.items).find((entry) => entry?.id === itemId) : null;
+  const installed = Boolean(item);
+  const role = hardpoint ? "Weapon hardpoint" : mount.class === "drive"
+    ? `${titleCase(mount.driveRole)} drive`
+    : titleCase(mount.class);
+  return {
+    id: mount.id,
+    label: mount.label ?? mount.id,
+    kind,
+    role,
+    size: hardpoint ? mount.mountSize : mount.size,
+    regions: (mount.regions ?? []).map(titleCase).join(" · ") || "None",
+    orientation: `${Number(mount.orientation ?? 0)}°`,
+    traverse: hardpoint ? titleCase(mount.traverse ?? "fixed") : "",
+    itemId: installed ? itemId : "",
+    itemName: installed ? item.name ?? itemId : "Empty mount",
+    itemImg: installed ? item.img : "",
+    installed,
+    status: refitStatus(installed ? itemId : null, state),
+    dropLabel: `Drop exact ${hardpoint ? mount.category : mount.class} · ${hardpoint ? mount.mountSize : mount.size}`,
+  };
 }
 
 
@@ -463,7 +531,7 @@ function weaponLineOfSight(sourceToken, targetToken, geometry) {
 }
 
 
-function movementObstacles(sourceToken, geometry, observerState, isGM = globalThis.game?.user?.isGM === true) {
+async function movementObstacles(sourceToken, geometry, observerState, isGM = globalThis.game?.user?.isGM === true) {
   const obstacles = [];
   for (const token of sceneTokenDocuments(geometry.scene)) {
     if (!token || token.uuid === sourceToken.uuid || token.id === sourceToken.id) continue;
@@ -471,14 +539,15 @@ function movementObstacles(sourceToken, geometry, observerState, isGM = globalTh
     const shipCombat = actor?.system?.shipCombat;
     if (actor?.type !== SHIP_TYPE || !shipCombat?.config || !shipCombat?.state) continue;
     if (!isGM && (token.hidden === true || (!actor.isOwner && !liveTrack(observerState, token.uuid)))) continue;
+    const config = await materializeActorConfig(actor);
     obstacles.push({
       id: token.uuid ?? token.id,
       position: tokenCenter(token, geometry),
       velocity: clone(shipCombat.state.velocity ?? { x: 0, y: 0 }),
       facing: Number(token.rotation ?? 0),
       radius: tokenRadius(token, geometry),
-      size: shipCombat.config.size ?? "medium",
-      maxHull: shipCombat.config.maxHull,
+      size: config.size ?? "medium",
+      maxHull: config.maxHull,
       armor: 0,
     });
   }
@@ -560,7 +629,7 @@ function canvasMovementPreview(preview, geometry) {
   return converted;
 }
 
-function movementPreviewInput(payload, token, config, state) {
+async function movementPreviewInput(payload, token, config, state) {
   const geometry = sceneGeometry(token);
   const radius = tokenRadius(token);
   return {
@@ -584,7 +653,7 @@ function movementPreviewInput(payload, token, config, state) {
         maxHull: config.maxHull,
         armor: 0,
       },
-      obstacles: movementObstacles(token, geometry, state),
+      obstacles: await movementObstacles(token, geometry, state),
     },
     geometry,
     targetedCoasts: targetedCoastProjections(state, geometry),
@@ -612,7 +681,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const actor = this.actor ?? this.document;
     const token = actorToken(actor);
     const data = actor.system?.shipCombat ?? {};
-    const config = data.config ?? {};
+    const hullConfig = data.config ?? {};
+    const config = await materializeActorConfig(actor);
     const state = clone(data.state);
     const isGM = game.user.isGM;
     const observer = CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;
@@ -673,6 +743,21 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       json: pretty(entry),
       rollback: entry.kind === "operation" && Boolean(entry.id ?? entry.requestId),
     })) : [];
+    const refitDenial = getRefitDenial(actor);
+    const refitSlots = (hullConfig.slots ?? []).map((slot) => refitMountView(actor, state, slot, "slot"));
+    const refitHardpoints = (hullConfig.hardpoints ?? []).map((hardpoint) => refitMountView(actor, state, hardpoint, "hardpoint"));
+    const referencedItemIds = new Set([
+      ...(hullConfig.slots ?? []).map((slot) => slot.itemId),
+      ...(hullConfig.hardpoints ?? []).map((hardpoint) => hardpoint.weaponId),
+    ]);
+    const refitUnreferencedItems = collectionValues(actor.items)
+      .filter((item) => item.type === COMPONENT_ITEM_TYPE && !referencedItemIds.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        componentClass: titleCase(item.system?.componentClass),
+        size: item.system?.size ?? "Unknown",
+      }));
 
     return foundry.utils.mergeObject(context, {
       actor,
@@ -681,6 +766,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       isGM,
       canOperate,
       unavailableReason,
+      canRefit: !refitDenial,
+      refitDenial,
+      refitSlots,
+      refitHardpoints,
+      refitUnreferencedItems,
       canAdmin: Boolean(isGM && canOperate),
       canEnterCombat: Boolean(isGM && canOperate && state.phase === "outsideCombat"),
       canStartPhase: Boolean(isGM && canOperate && state.phase === "start"),
@@ -699,7 +789,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       turnKey: state.turnKey ?? "—",
       specGroups: configurationSummary(config, state),
       stateJson: pretty(escapeSecrets(state, isGM)),
-      configJson: pretty(config),
+      configJson: pretty(hullConfig),
       log: visibleLog,
     }, { inplace: false });
   }
@@ -767,6 +857,20 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     });
     html.querySelector("form[data-config]")?.addEventListener("submit", (event) => this.#saveConfig(event));
     html.querySelector("[data-canadensis]")?.addEventListener("click", () => this.#resetCanadensis());
+    html.querySelectorAll("[data-refit-drop]").forEach((drop) => {
+      drop.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        if (!drop.hasAttribute("data-refit-disabled")) drop.classList.add("is-dragover");
+      });
+      drop.addEventListener("dragleave", () => drop.classList.remove("is-dragover"));
+      drop.addEventListener("drop", (event) => void this.#dropComponent(event, drop), true);
+    });
+    html.querySelectorAll("[data-refit-item]").forEach((button) => {
+      button.addEventListener("click", () => this.#openComponent(button.dataset.refitItem));
+    });
+    html.querySelectorAll("[data-refit-remove]").forEach((button) => {
+      button.addEventListener("click", () => void this.#removeComponent(button.dataset.refitRemove, button));
+    });
     html.querySelectorAll("[data-rollback]").forEach((button) => {
       button.addEventListener("click", () => this.#rollback(button.dataset.rollback));
     });
@@ -787,6 +891,54 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     html.querySelectorAll("[data-tab-panel]").forEach((element) => {
       element.hidden = element.dataset.tabPanel !== id;
     });
+  }
+
+  #openComponent(itemId) {
+    try {
+      const item = this.actor.items?.get?.(itemId) ?? collectionValues(this.actor.items).find((entry) => entry?.id === itemId);
+      if (!item) throw new Error("The component Item is no longer available.");
+      const sheet = item.sheet;
+      if (!sheet) throw new Error("The component Item sheet is unavailable.");
+      if (sheet.rendered) sheet.bringToFront();
+      else sheet.render({ force: true });
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
+  }
+
+  async #dropComponent(event, drop) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    drop.classList.remove("is-dragover");
+    try {
+      const denial = getRefitDenial(this.actor);
+      if (denial) throw new Error(denial);
+      const data = globalThis.TextEditor?.getDragEventData?.(event)
+        ?? JSON.parse(event.dataTransfer?.getData("text/plain") || "{}");
+      if (data?.type !== "Item") throw new Error("Drop a ship component Item on this mount.");
+      const ItemClass = globalThis.Item?.implementation ?? globalThis.CONFIG?.Item?.documentClass;
+      const sourceItem = await ItemClass?.fromDropData?.(data);
+      if (!sourceItem) throw new Error("The dropped Item could not be resolved.");
+      await installShipComponent(this.actor, drop.dataset.mountId, sourceItem);
+      ui.notifications.info(`${sourceItem.name ?? "Component"} installed.`);
+      await this.render();
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
+  }
+
+  async #removeComponent(mountId, button) {
+    try {
+      const denial = getRefitDenial(this.actor);
+      if (denial) throw new Error(denial);
+      button.disabled = true;
+      const removed = await removeShipComponent(this.actor, mountId);
+      if (removed) ui.notifications.info(`${removed.name ?? "Component"} removed; the mount is now degraded.`);
+      await this.render();
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+      button.disabled = false;
+    }
   }
 
   #distribute(button) {
@@ -819,16 +971,16 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const output = form.querySelector("[data-preview]");
     if (!output) return;
     const actor = this.actor;
-    const config = actor.system.shipCombat.config;
     const state = clone(actor.system.shipCombat.state);
     const type = form.dataset.livePreview;
     try {
+      const config = await materializeActorConfig(actor);
       const data = elementFormData(form);
       const operation = uiOperation(type, data, config, state);
       if (type === "maneuver" || type === "rotate") {
         const token = actorToken(actor);
         if (!token) throw new Error("Place this ship on the active Scene to preview movement.");
-        const assembled = movementPreviewInput(operation.payload, token, config, state);
+        const assembled = await movementPreviewInput(operation.payload, token, config, state);
         const result = {
           ...previewManeuver(assembled.input),
           targetedCoasts: assembled.targetedCoasts,
@@ -858,11 +1010,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         if (!sourceToken) throw new Error("Place this ship on the active scene to preview an attack.");
         const geometry = sceneGeometry(sourceToken);
         const targetState = clone(targetActor.system.shipCombat.state);
-        const operator = config.operators.find((entry) => entry.id === operation.payload.operatorId);
+        const targetConfig = await materializeActorConfig(targetActor);
+        const operator = config.operators?.find((entry) => entry.id === operation.payload.operatorId);
         const result = previewAttack({
           attackerConfig: config,
           attackerState: state,
-          targetConfig: targetActor.system.shipCombat.config,
+          targetConfig,
           targetState,
           declaration: {
             ...operation.payload,
@@ -897,7 +1050,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const payload = parseObject(form.elements.payload.value);
       const type = form.dataset.rawOperation;
       const actor = this.actor;
-      const config = actor.system.shipCombat.config;
+      const config = await materializeActorConfig(actor);
       const state = clone(actor.system.shipCombat.state);
       let result = payload;
       if (type === "routePower") result = previewPowerRoute(config, state, payload);
@@ -905,7 +1058,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       else if (type === "maneuver" || type === "rotate") {
         const token = actorToken(actor);
         if (!token) throw new Error("Place this ship on the active Scene to preview movement.");
-        const assembled = movementPreviewInput(payload, token, config, state);
+        const assembled = await movementPreviewInput(payload, token, config, state);
         result = {
           ...previewManeuver(assembled.input),
           targetedCoasts: assembled.targetedCoasts,
@@ -922,11 +1075,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         if (!sourceToken) throw new Error("Place this ship on the active scene to preview an attack.");
         const geometry = sceneGeometry(sourceToken);
         const targetState = clone(targetActor.system.shipCombat.state);
-        const operator = config.operators.find((entry) => entry.id === payload.operatorId);
+        const targetConfig = await materializeActorConfig(targetActor);
+        const operator = config.operators?.find((entry) => entry.id === payload.operatorId);
         result = previewAttack({
           attackerConfig: config,
           attackerState: state,
-          targetConfig: targetActor.system.shipCombat.config,
+          targetConfig,
           targetState,
           declaration: {
             ...payload,
@@ -954,9 +1108,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     event.preventDefault();
     const type = element.dataset.uiOperation;
     const data = elementFormData(element);
-    const config = this.actor.system.shipCombat.config;
     const state = clone(this.actor.system.shipCombat.state);
     try {
+      const config = await materializeActorConfig(this.actor);
       const operation = uiOperation(type, data, config, state);
       if (TARGET_OPERATIONS.has(type) && operation.targetUuids.length !== 1) {
         throw new Error("Select one valid contact.");
@@ -1010,16 +1164,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 
   async #saveConfig(event) {
     event.preventDefault();
-    if (!game.user.isGM) return ui.notifications.error("Active GM only.");
     try {
-      const config = parseObject(event.currentTarget.elements.config.value, "Configuration");
-      const validation = validateShipConfig(config, { tokenWidth: validationTokenWidth(this.actor) });
-      if (!validation.valid) throw new Error(validation.errors.map((entry) => entry.message ?? `${entry.path}: ${entry.code}`).join("\\n"));
-      await this.actor.update({
-        "system.shipCombat.config": foundry.data.operators.ForcedReplacement.create(config),
-        ...nativeVehicleFieldValues(config, this.actor.system.shipCombat.state),
-      }, { diff: false });
-      ui.notifications.info("Ship configuration saved; combat state was not changed.");
+      const denial = getRefitDenial(this.actor);
+      if (denial) throw new Error(denial);
+      const hullConfig = parseObject(event.currentTarget.elements.config.value, "Hull configuration");
+      await saveShipHull(this.actor, hullConfig);
+      ui.notifications.info("Hull configuration saved and installed components rematerialized.");
       await this.render();
     } catch (error) {
       ui.notifications.error(errorText(error));
@@ -1027,17 +1177,16 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   }
 
   async #resetCanadensis() {
-    if (!game.user.isGM) return;
-    if (!globalThis.confirm("Replace this ship's configuration with the exact Canadensis configuration? Combat state will not be changed.")) return;
-    const config = clone(CANADENSIS_CONFIG);
-    const validation = validateShipConfig(config, { tokenWidth: validationTokenWidth(this.actor) });
-    if (!validation.valid) return ui.notifications.error("Bundled Canadensis configuration is invalid.");
-    await this.actor.update({
-      "system.shipCombat.config": foundry.data.operators.ForcedReplacement.create(config),
-      ...nativeVehicleFieldValues(config, this.actor.system.shipCombat.state),
-    }, { diff: false });
-    ui.notifications.info("Canadensis configuration restored; combat state was not changed.");
-    await this.render();
+    try {
+      const denial = getRefitDenial(this.actor);
+      if (denial) throw new Error(denial);
+      if (!globalThis.confirm("Replace this hull and its installed component copies with the Canadensis configuration?")) return;
+      await resetShipToCanadensis(this.actor);
+      ui.notifications.info("Canadensis hull and fresh component copies restored.");
+      await this.render();
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
   }
 
   async #rollback(id) {

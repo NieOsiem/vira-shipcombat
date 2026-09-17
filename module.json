@@ -28,8 +28,24 @@
   "documentTypes": {
     "Actor": {
       "ship": {}
+    },
+    "Item": {
+      "component": {}
     }
   },
+  "packs": [
+    {
+      "name": "ship-components",
+      "label": "Ship Components",
+      "path": "packs/ship-components",
+      "type": "Item",
+      "system": "dnd5e",
+      "ownership": {
+        "PLAYER": "OBSERVER",
+        "ASSISTANT": "OBSERVER"
+      }
+    }
+  ],
   "esmodules": [
     "scripts/vira-shipcombat.js"
   ],

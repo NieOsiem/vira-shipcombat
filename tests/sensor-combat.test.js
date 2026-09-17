@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { CANADENSIS_IDS } from "../scripts/data/canadensis.js";
 import { createDefaultShipData, createInitialState } from "../scripts/model/defaults.js";
 import {
   TRACK_STATUS,
@@ -33,11 +34,7 @@ import {
 } from "../scripts/rules/conditions.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 
-const IDS = Object.freeze({
-  gunner: "canadensis-gunner-sensor",
-  railgun: "canadensis-twin-railgun",
-  portMacrocannon: "canadensis-port-macrocannon",
-});
+const GUNNER = "canadensis-gunner-sensor";
 
 function clone(value) {
   return structuredClone(value);
@@ -62,7 +59,7 @@ function expectViolation(callback, code) {
 }
 
 function prepareAttack({
-  weaponId = IDS.railgun,
+  weaponId = CANADENSIS_IDS.railgun,
   attackerPosition = { x: 0, y: 0 },
   targetPosition = { x: 0, y: -30 },
   targetFacing = 0,
@@ -71,7 +68,7 @@ function prepareAttack({
   const attacker = freshShip();
   const target = freshShip();
   attacker.state.phase = "active";
-  attacker.state.resources.actions[IDS.gunner] = 1;
+  attacker.state.resources.actions[GUNNER] = 1;
   attacker.state.weapons[weaponId].status = "online";
   attacker.state.tracks.target = {
     targetUuid: "target",
@@ -86,7 +83,7 @@ function prepareAttack({
   const declaration = {
     targetUuid: "target",
     weaponId,
-    operatorId: IDS.gunner,
+    operatorId: GUNNER,
     attackerPosition,
     targetPosition,
     attackerVelocity: { x: 0, y: 0 },
@@ -267,7 +264,7 @@ describe("sensor signatures and tracks", () => {
     const first = freshShip();
     const second = freshShip();
     source.state.phase = "active";
-    source.state.resources.actions[IDS.gunner] = 1;
+    source.state.resources.actions[GUNNER] = 1;
     const ships = {
       source: { config: source.config, state: source.state, token: { x: 0, y: 0 } },
       first: { config: first.config, state: first.state, token: { x: 0, y: -10 } },
@@ -278,7 +275,7 @@ describe("sensor signatures and tracks", () => {
       sourceUuid: "source",
       targetUuids: ["first", "second"],
       expectedRevisions: { source: 0, first: 0, second: 0 },
-      payload: { operatorId: IDS.gunner },
+      payload: { operatorId: GUNNER },
     };
     const inputShips = clone(ships);
     const inputBefore = clone(inputShips);
@@ -299,7 +296,7 @@ describe("sensor signatures and tracks", () => {
       first: { state: TRACK_STATUS.CONTACT },
       second: { state: TRACK_STATUS.CONTACT },
     });
-    expect(result.shipStates.source.resources.actions[IDS.gunner]).toBe(0);
+    expect(result.shipStates.source.resources.actions[GUNNER]).toBe(0);
     expect(inputShips).toEqual(inputBefore);
   });
 
@@ -599,13 +596,13 @@ describe("attack previews, commitment, and damage", () => {
     const source = freshShip();
     const target = freshShip();
     source.state.phase = "active";
-    source.state.resources.actions[IDS.gunner] = 1;
+    source.state.resources.actions[GUNNER] = 1;
     const operation = {
       type: "ping",
       sourceUuid: "source",
       targetUuids: ["target"],
       expectedRevisions: { source: 1, target: 0 },
-      payload: { operatorId: IDS.gunner },
+      payload: { operatorId: GUNNER },
     };
     const ships = {
       source: { config: source.config, state: source.state, token: { x: 0, y: 0 } },
@@ -615,7 +612,7 @@ describe("attack previews, commitment, and damage", () => {
 
     expectViolation(() => executeShipOperation(operation, { ships, rollD20: () => 20 }), "STALE_SHIP_REVISION");
     expect({ operation, ships }).toEqual(before);
-    expect(source.state.resources.actions[IDS.gunner]).toBe(1);
+    expect(source.state.resources.actions[GUNNER]).toBe(1);
   });
 
   test("natural 1 always misses and natural 20 always produces at least one capped hit", () => {
@@ -626,7 +623,7 @@ describe("attack previews, commitment, and damage", () => {
 
   test("Barrage spends physical rounds once and resolves effective projectiles sequentially", () => {
     const { attacker, target, declaration } = prepareAttack({
-      weaponId: IDS.portMacrocannon,
+      weaponId: CANADENSIS_IDS.portMacrocannon,
       targetPosition: { x: -30, y: 0 },
       targetFacing: 90,
       firingSolution: true,
@@ -644,9 +641,9 @@ describe("attack previews, commitment, and damage", () => {
 
     expect(result.gm.roll).toMatchObject({ natural: 19, hit: true, effectiveHits: 2 });
     expect(result.gm.commitment.barrage).toEqual({ rounds: 4, penalty: -2, maximumEffectiveHits: 2 });
-    expect(attacker.state.weapons[IDS.portMacrocannon].readiness).toBe(16);
+    expect(attacker.state.weapons[CANADENSIS_IDS.portMacrocannon].readiness).toBe(16);
     expect(attacker.state.heat).toBe(4);
-    expect(attacker.state.resources.actions[IDS.gunner]).toBe(0);
+    expect(attacker.state.resources.actions[GUNNER]).toBe(0);
     expect(attacker.state.tracks.target.firingSolution).toBe(false);
     expect(result.gm.damage.projectiles).toHaveLength(2);
     expect(result.gm.damage.projectiles[0]).toMatchObject({
@@ -687,6 +684,26 @@ describe("attack previews, commitment, and damage", () => {
     expect(Object.hasOwn(result.public, "armor")).toBe(false);
   });
 
+  test("shieldless damage on an empty loadout reaches Hull without degraded-state errors", () => {
+    const target = freshShip();
+    target.config.components = { drives: {}, weapons: [] };
+    target.config.weaponPriority = [];
+    target.state = createInitialState(target.config);
+
+    const result = resolveProjectile(target.config, target.state, {
+      sector: "fore",
+      damage: { shield: 20, hull: 8, heat: 0 },
+      armorPiercing: 3,
+    });
+
+    expect(result.gm).toMatchObject({
+      shield: { active: false, activeBefore: 0, after: 0, collapsed: false },
+      breakthrough: { fraction: 1, hullFraction: 1 },
+      hull: { listed: 8, transmitted: 8, taken: 8, before: 50, after: 42 },
+    });
+    expect(target.state.hull).toBe(42);
+  });
+
   test("natural-20 criticals deterministically select and then escalate the same condition", () => {
     const target = freshShip();
     target.state.power.shields = 0;
@@ -702,23 +719,30 @@ describe("attack previews, commitment, and damage", () => {
     };
 
     const first = resolveAttack(target.config, target.state, { ...clone(attack), random: () => 0 }, helpers);
-    const conditionId = `${IDS.railgun}:weaponMalfunction`;
+    const conditionKey = first.gm.conditionEvent.applications[0].key;
     expect(first.gm.conditionEvent).toMatchObject({
       kind: "critical",
-      conditionId,
       critical: true,
       aimed: false,
       tiers: 1,
       applications: [{ before: "healthy", after: "minor", applied: 1 }],
     });
-    expect(target.state.conditions[conditionId].severity).toBe("minor");
+    expect(target.state.conditions[conditionKey]).toMatchObject({
+      kind: "fault",
+      channelId: "weaponMalfunction",
+      componentId: CANADENSIS_IDS.railgun,
+      severity: "minor",
+    });
+    expect(target.config.components.weapons.some(({ id }) => id === CANADENSIS_IDS.railgun)).toBe(true);
 
     const second = resolveAttack(target.config, target.state, { ...clone(attack), random: () => 0 }, helpers);
-    expect(second.gm.conditionEvent).toMatchObject({
-      conditionId,
-      applications: [{ before: "minor", after: "major", applied: 1 }],
+    expect(second.gm.conditionEvent.applications).toMatchObject([
+      { key: conditionKey, before: "minor", after: "major", applied: 1 },
+    ]);
+    expect(target.state.conditions[conditionKey]).toMatchObject({
+      componentId: CANADENSIS_IDS.railgun,
+      severity: "major",
     });
-    expect(target.state.conditions[conditionId].severity).toBe("major");
   });
 
   test("a Hazard escalates only on its second End processing", () => {
@@ -748,9 +772,9 @@ describe("attack previews, commitment, and damage", () => {
 
   test("automatic readiness and manual reload complete through their distinct transitions", () => {
     const ship = freshShip();
-    ship.state.weapons[IDS.railgun].status = "online";
-    ship.state.weapons[IDS.railgun].readiness = 0;
-    const automatic = advanceWeaponRecovery(ship.config, ship.state, { weaponId: IDS.railgun });
+    ship.state.weapons[CANADENSIS_IDS.railgun].status = "online";
+    ship.state.weapons[CANADENSIS_IDS.railgun].readiness = 0;
+    const automatic = advanceWeaponRecovery(ship.config, ship.state, { weaponId: CANADENSIS_IDS.railgun });
     expect(automatic.public).toMatchObject({
       eligible: true,
       recovered: 1,
@@ -758,19 +782,19 @@ describe("attack previews, commitment, and damage", () => {
       after: 1,
       complete: true,
     });
-    expect(ship.state.weapons[IDS.railgun]).toMatchObject({ readiness: 1, reloadProgress: 0 });
+    expect(ship.state.weapons[CANADENSIS_IDS.railgun]).toMatchObject({ readiness: 1, reloadProgress: 0 });
 
-    ship.state.weapons[IDS.portMacrocannon].readiness = 19;
-    const begun = beginWeaponReload(ship.config, ship.state, { weaponId: IDS.portMacrocannon });
+    ship.state.weapons[CANADENSIS_IDS.portMacrocannon].readiness = 19;
+    const begun = beginWeaponReload(ship.config, ship.state, { weaponId: CANADENSIS_IDS.portMacrocannon });
     expect(begun.public).toMatchObject({ started: true, current: 0, required: 1, readiness: 19 });
-    expect(ship.state.weapons[IDS.portMacrocannon].reloadWork).toEqual({ current: 0, baseRequired: 1, required: 1 });
+    expect(ship.state.weapons[CANADENSIS_IDS.portMacrocannon].reloadWork).toEqual({ current: 0, baseRequired: 1, required: 1 });
 
     const completed = contributeWeaponReload(ship.config, ship.state, {
-      weaponId: IDS.portMacrocannon,
+      weaponId: CANADENSIS_IDS.portMacrocannon,
       amount: 1,
     });
     expect(completed.public).toMatchObject({ amount: 1, current: 1, required: 1, complete: true, before: 19, after: 20 });
-    expect(ship.state.weapons[IDS.portMacrocannon]).toMatchObject({ readiness: 20, reloadWork: null });
+    expect(ship.state.weapons[CANADENSIS_IDS.portMacrocannon]).toMatchObject({ readiness: 20, reloadWork: null });
   });
 
   test("Non-Lethal zero Hull resolves fate as disabled instead of pending or destroyed", () => {

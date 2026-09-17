@@ -198,6 +198,8 @@ const SENSOR_TYPES = new Set([
   OPERATION_TYPES.BREAK_LOCK,
   OPERATION_TYPES.BURN_THROUGH,
 ]);
+const DRIVE_COMPONENT_ROLES = Object.freeze(["main", "reverse", "portLateral", "starboardLateral"]);
+
 const GM_EVENT_ONLY_TYPES = new Set([
   ...GM_TYPES,
   ...SENSOR_TYPES,
@@ -398,6 +400,21 @@ function tokenTransform(ship, position, facing, context) {
 function driveCapabilities(ship) {
   return getDriveCapabilities(ship.config, ship.state);
 }
+function installedComponents(config) {
+  const components = config?.components ?? {};
+  const drives = DRIVE_COMPONENT_ROLES
+    .map((role) => components.drives?.[role])
+    .filter(Boolean);
+  return [
+    components.reactor,
+    ...drives,
+    components.shield,
+    components.sensor,
+    components.cooling,
+    ...(components.weapons ?? []),
+  ].filter(Boolean);
+}
+
 
 function obstacleSnapshots(source, drafts, context) {
   const obstacles = [];
@@ -840,14 +857,8 @@ export function executeShipOperation(operation, context) {
       } else if (request.type === OPERATION_TYPES.DEEP_SCAN) {
         result = deepScan(source.state, {
           ...input,
-          identifiedSubsystems: [
-            target.config?.components?.reactor,
-            target.config?.components?.drive,
-            target.config?.components?.shield,
-            target.config?.components?.sensor,
-            target.config?.components?.cooling,
-            ...(target.config?.components?.weapons ?? []),
-          ].filter(Boolean).map(({ id, label, class: componentClass, regions }) => ({ id, label, class: componentClass, regions })),
+          identifiedSubsystems: installedComponents(target.config)
+            .map(({ id, label, class: componentClass, regions }) => ({ id, label, class: componentClass, regions })),
           telemetry: targetObservation(source, target, request, context),
         });
       } else result = calculateFiringSolution(source.state, input);

@@ -1,25 +1,6 @@
-import {
-  COMPONENT_IDS,
-  SCHEMA_VERSION,
-  SECTORS,
-  TRAIT_IDS,
-} from "../constants.js";
-
-const ids = Object.freeze({
-  reactor: "canadensis-reactor",
-  drive: "canadensis-drive",
-  shield: "canadensis-shield",
-  sensor: "canadensis-sensor",
-  cooling: "canadensis-cooling",
-  railgun: "canadensis-twin-railgun",
-  laser: "canadensis-pulse-laser",
-  portMacrocannon: "canadensis-port-macrocannon",
-  starboardMacrocannon: "canadensis-starboard-macrocannon",
-  prowHardpoint: "canadensis-hardpoint-prow",
-  dorsalHardpoint: "canadensis-hardpoint-dorsal",
-  portHardpoint: "canadensis-hardpoint-port",
-  starboardHardpoint: "canadensis-hardpoint-starboard",
-});
+import { SCHEMA_VERSION, SECTORS } from "../constants.js";
+import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "./canadensis-components.js";
+import { materializeShipConfig } from "../model/equipment.js";
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -27,253 +8,94 @@ function deepFreeze(value) {
   return Object.freeze(value);
 }
 
-const barrageProfiles = [
-  { rounds: 1, attackPenalty: 0, maxEffectiveHits: 1 },
-  { rounds: 4, attackPenalty: -2, maxEffectiveHits: 2 },
-  { rounds: 6, attackPenalty: -3, maxEffectiveHits: 3 },
-  { rounds: 8, attackPenalty: -4, maxEffectiveHits: 4 },
-  { rounds: 10, attackPenalty: -5, maxEffectiveHits: 5 },
-];
+const slots = Object.freeze({
+  reactor: "canadensis-slot-reactor",
+  shield: "canadensis-slot-shield",
+  sensor: "canadensis-slot-sensor",
+  cooling: "canadensis-slot-cooling",
+  mainDrive: "canadensis-slot-main-drive",
+  reverseDrive: "canadensis-slot-reverse-drive",
+  portLateralDrive: "canadensis-slot-port-lateral-drive",
+  starboardLateralDrive: "canadensis-slot-starboard-lateral-drive",
+});
 
-const hardpoints = [
-  {
-    id: ids.prowHardpoint,
-    label: "Prow",
-    category: "hardpoint",
-    mountSize: "medium",
-    orientation: 0,
-    traverse: "fixed",
-    weaponId: ids.railgun,
-  },
-  {
-    id: ids.dorsalHardpoint,
-    label: "Dorsal",
-    category: "hardpoint",
-    mountSize: "medium",
-    orientation: 0,
-    traverse: "fixed",
-    weaponId: ids.laser,
-  },
-  {
-    id: ids.portHardpoint,
-    label: "Port",
-    category: "hardpoint",
-    mountSize: "medium",
-    orientation: -90,
-    traverse: "fixed",
-    weaponId: ids.portMacrocannon,
-  },
-  {
-    id: ids.starboardHardpoint,
-    label: "Starboard",
-    category: "hardpoint",
-    mountSize: "medium",
-    orientation: 90,
-    traverse: "fixed",
-    weaponId: ids.starboardMacrocannon,
-  },
-];
-
-function macrocannon(id, label, hardpointId, region) {
-  return {
-    id,
-    label,
-    class: "weapon",
-    hardpointId,
-    regions: [region],
-    category: "hardpoint",
-    mountSize: "medium",
-    accuracy: 0,
-    damage: { shield: 6, hull: 8, heat: 0 },
-    armorPiercing: 1,
-    projectileClass: "medium",
-    range: { optimal: 30, maximum: 60 },
-    arc: 120,
-    powerRating: 1,
-    bootTime: 0,
-    firingHeat: { amount: 1, per: "physicalRound" },
-    signatureSpike: -1,
-    recoveryWork: 1,
-    readiness: {
-      type: "magazine",
-      capacity: 20,
-      recovery: "manualWork",
-      work: 1,
-    },
-    traits: [{ id: TRAIT_IDS.barrage, profiles: barrageProfiles }],
-    modes: {
-      nominal: { overrides: {} },
-      overclock: {
-        overrides: {
-          powerRating: 2,
-          accuracy: 1,
-          firingHeat: { amount: 2, per: "physicalRound" },
-        },
-      },
-    },
-  };
-}
-
-const weapons = [
-  {
-    id: ids.railgun,
-    label: "Twin Railgun",
-    class: "weapon",
-    hardpointId: ids.prowHardpoint,
-    regions: ["fore"],
-    category: "hardpoint",
-    mountSize: "medium",
-    accuracy: -1,
-    damage: { shield: 4, hull: 12, heat: 0 },
-    armorPiercing: 3,
-    projectileClass: "fast",
-    range: { optimal: 60, maximum: 120 },
-    arc: 90,
-    powerRating: 2,
-    bootTime: 2,
-    firingHeat: { amount: 3, per: "shot" },
-    signatureSpike: -2,
-    recoveryWork: 2,
-    readiness: {
-      type: "readyShot",
-      capacity: 1,
-      recovery: "automaticStart",
-      eligibleStarts: 1,
-    },
-    traits: [],
-    modes: {
-      nominal: { overrides: {} },
-      overclock: {
-        overrides: {
-          powerRating: 3,
-          damage: { hull: 15 },
-          firingHeat: { amount: 5, per: "shot" },
-        },
-      },
-    },
-  },
-  {
-    id: ids.laser,
-    label: "Pulse Laser",
-    class: "weapon",
-    hardpointId: ids.dorsalHardpoint,
-    regions: ["fore"],
-    category: "hardpoint",
-    mountSize: "medium",
-    accuracy: 2,
-    damage: { shield: 10, hull: 5, heat: 2 },
-    armorPiercing: 0,
-    projectileClass: "instant",
-    range: { optimal: 40, maximum: 80 },
-    arc: 180,
-    powerRating: 2,
-    bootTime: 1,
-    firingHeat: { amount: 2, per: "shot" },
-    signatureSpike: -3,
-    recoveryWork: 2,
-    readiness: {
-      type: "charges",
-      capacity: 3,
-      recovery: "automaticStart",
-      eligibleStarts: 1,
-    },
-    traits: [],
-    modes: {
-      nominal: { overrides: {} },
-      overclock: {
-        overrides: {
-          powerRating: 3,
-          damage: { shield: 13, heat: 3 },
-          firingHeat: { amount: 3, per: "shot" },
-        },
-      },
-    },
-  },
-  macrocannon(
-    ids.portMacrocannon,
-    "Port Training Macrocannon",
-    ids.portHardpoint,
-    "port",
-  ),
-  macrocannon(
-    ids.starboardMacrocannon,
-    "Starboard Training Macrocannon",
-    ids.starboardHardpoint,
-    "starboard",
-  ),
-];
+const ids = Object.freeze({
+  reactor: "CanadReactor0001",
+  shield: "CanadShield00001",
+  sensor: "CanadSensor00001",
+  cooling: "CanadCooling0001",
+  drive: "CanadMainDrive01",
+  mainDrive: "CanadMainDrive01",
+  reverseDrive: "CanadRevDrive001",
+  portLateralDrive: "CanadLateralA001",
+  starboardLateralDrive: "CanadLateralB001",
+  railgun: "CanadRailgun0001",
+  laser: "CanadLaser000001",
+  portMacrocannon: "CanadMacrocanA01",
+  starboardMacrocannon: "CanadMacrocanB01",
+  prowHardpoint: "canadensis-hardpoint-prow",
+  dorsalHardpoint: "canadensis-hardpoint-dorsal",
+  portHardpoint: "canadensis-hardpoint-port",
+  starboardHardpoint: "canadensis-hardpoint-starboard",
+});
 
 const operators = [
-  {
-    id: "canadensis-pilot-commander",
-    label: "Pilot / Commander",
-    type: "npc",
-    ratings: { piloting: 5, gunnery: 3, sensors: 3, engineering: 3 },
-    defaultAssignment: { kind: "command", slot: 0 },
-  },
-  {
-    id: "canadensis-gunner-sensor",
-    label: "Gunner / Sensor Operator",
-    type: "npc",
-    ratings: { piloting: 2, gunnery: 5, sensors: 5, engineering: 3 },
-    defaultAssignment: { kind: "command", slot: 1 },
-  },
-  {
-    id: "canadensis-damage-control",
-    label: "Damage-Control Crew",
-    type: "npc",
-    ratings: { piloting: 1, gunnery: 2, sensors: 2, engineering: 5 },
-    defaultAssignment: { kind: "crew", slot: 0 },
-  },
-  {
-    id: "canadensis-loader-general",
-    label: "Loader / General Crew",
-    type: "npc",
-    ratings: { piloting: 2, gunnery: 4, sensors: 2, engineering: 3 },
-    defaultAssignment: { kind: "crew", slot: 1 },
-  },
+  { id: "canadensis-pilot-commander", label: "Pilot / Commander", type: "npc", ratings: { piloting: 5, gunnery: 3, sensors: 3, engineering: 3 }, defaultAssignment: { kind: "command", slot: 0 } },
+  { id: "canadensis-gunner-sensor", label: "Gunner / Sensor Operator", type: "npc", ratings: { piloting: 2, gunnery: 5, sensors: 5, engineering: 3 }, defaultAssignment: { kind: "command", slot: 1 } },
+  { id: "canadensis-damage-control", label: "Damage-Control Crew", type: "npc", ratings: { piloting: 1, gunnery: 2, sensors: 2, engineering: 5 }, defaultAssignment: { kind: "crew", slot: 0 } },
+  { id: "canadensis-loader-general", label: "Loader / General Crew", type: "npc", ratings: { piloting: 2, gunnery: 4, sensors: 2, engineering: 3 }, defaultAssignment: { kind: "crew", slot: 1 } },
 ];
+
+function fault(id, reference, channelId, sector = null) {
+  return { id, kind: "fault", ...reference, channelId, sector, weight: 1 };
+}
+
+function hazard(channelId, sector = null) {
+  return { id: `${channelId}:${sector ?? "ship"}`, kind: "hazard", componentId: null, channelId, sector, weight: 1 };
+}
 
 const criticalPools = {
   fore: [
-    { id: `weaponMalfunction:${ids.railgun}`, kind: "fault", componentId: ids.railgun, channelId: "weaponMalfunction", sector: null, weight: 1 },
-    { id: `weaponMalfunction:${ids.laser}`, kind: "fault", componentId: ids.laser, channelId: "weaponMalfunction", sector: null, weight: 1 },
-    { id: `sensorFault:${ids.sensor}`, kind: "fault", componentId: ids.sensor, channelId: "sensorFault", sector: null, weight: 1 },
-    { id: `shieldEmitterDamage:${ids.shield}:fore`, kind: "fault", componentId: ids.shield, channelId: "shieldEmitterDamage", sector: "fore", weight: 1 },
-    { id: "fire:fore", kind: "hazard", componentId: null, channelId: "fire", sector: "fore", weight: 1 },
-    { id: "breach:fore", kind: "hazard", componentId: null, channelId: "breach", sector: "fore", weight: 1 },
+    fault(`weaponMalfunction:${ids.prowHardpoint}`, { hardpointId: ids.prowHardpoint }, "weaponMalfunction"),
+    fault(`weaponMalfunction:${ids.dorsalHardpoint}`, { hardpointId: ids.dorsalHardpoint }, "weaponMalfunction"),
+    fault(`sensorFault:${slots.sensor}`, { slotId: slots.sensor }, "sensorFault"),
+    fault(`driveFailure:${slots.reverseDrive}`, { slotId: slots.reverseDrive }, "driveFailure"),
+    fault(`shieldEmitterDamage:${slots.shield}:fore`, { slotId: slots.shield }, "shieldEmitterDamage", "fore"),
+    hazard("fire", "fore"),
+    hazard("breach", "fore"),
   ],
   port: [
-    { id: `weaponMalfunction:${ids.portMacrocannon}`, kind: "fault", componentId: ids.portMacrocannon, channelId: "weaponMalfunction", sector: null, weight: 1 },
-    { id: `shieldEmitterDamage:${ids.shield}:port`, kind: "fault", componentId: ids.shield, channelId: "shieldEmitterDamage", sector: "port", weight: 1 },
-    { id: `maneuveringThrusterFailure:${ids.drive}`, kind: "fault", componentId: ids.drive, channelId: "maneuveringThrusterFailure", sector: null, weight: 1 },
-    { id: "electricalCascade:ship", kind: "hazard", componentId: null, channelId: "electricalCascade", sector: null, weight: 1 },
-    { id: "fire:port", kind: "hazard", componentId: null, channelId: "fire", sector: "port", weight: 1 },
-    { id: "breach:port", kind: "hazard", componentId: null, channelId: "breach", sector: "port", weight: 1 },
+    fault(`weaponMalfunction:${ids.portHardpoint}`, { hardpointId: ids.portHardpoint }, "weaponMalfunction"),
+    fault(`shieldEmitterDamage:${slots.shield}:port`, { slotId: slots.shield }, "shieldEmitterDamage", "port"),
+    fault(`maneuveringThrusterFailure:${slots.portLateralDrive}`, { slotId: slots.portLateralDrive }, "maneuveringThrusterFailure"),
+    hazard("electricalCascade"),
+    hazard("fire", "port"),
+    hazard("breach", "port"),
   ],
   starboard: [
-    { id: `weaponMalfunction:${ids.starboardMacrocannon}`, kind: "fault", componentId: ids.starboardMacrocannon, channelId: "weaponMalfunction", sector: null, weight: 1 },
-    { id: `shieldEmitterDamage:${ids.shield}:starboard`, kind: "fault", componentId: ids.shield, channelId: "shieldEmitterDamage", sector: "starboard", weight: 1 },
-    { id: `maneuveringThrusterFailure:${ids.drive}`, kind: "fault", componentId: ids.drive, channelId: "maneuveringThrusterFailure", sector: null, weight: 1 },
-    { id: "electricalCascade:ship", kind: "hazard", componentId: null, channelId: "electricalCascade", sector: null, weight: 1 },
-    { id: "fire:starboard", kind: "hazard", componentId: null, channelId: "fire", sector: "starboard", weight: 1 },
-    { id: "breach:starboard", kind: "hazard", componentId: null, channelId: "breach", sector: "starboard", weight: 1 },
+    fault(`weaponMalfunction:${ids.starboardHardpoint}`, { hardpointId: ids.starboardHardpoint }, "weaponMalfunction"),
+    fault(`shieldEmitterDamage:${slots.shield}:starboard`, { slotId: slots.shield }, "shieldEmitterDamage", "starboard"),
+    fault(`maneuveringThrusterFailure:${slots.starboardLateralDrive}`, { slotId: slots.starboardLateralDrive }, "maneuveringThrusterFailure"),
+    hazard("electricalCascade"),
+    hazard("fire", "starboard"),
+    hazard("breach", "starboard"),
   ],
   aft: [
-    { id: `driveFailure:${ids.drive}`, kind: "fault", componentId: ids.drive, channelId: "driveFailure", sector: null, weight: 1 },
-    { id: `maneuveringThrusterFailure:${ids.drive}`, kind: "fault", componentId: ids.drive, channelId: "maneuveringThrusterFailure", sector: null, weight: 1 },
-    { id: `reactorFault:${ids.reactor}`, kind: "fault", componentId: ids.reactor, channelId: "reactorFault", sector: null, weight: 1 },
-    { id: `coolingFailure:${ids.cooling}`, kind: "fault", componentId: ids.cooling, channelId: "coolingFailure", sector: null, weight: 1 },
-    { id: `shieldEmitterDamage:${ids.shield}:aft`, kind: "fault", componentId: ids.shield, channelId: "shieldEmitterDamage", sector: "aft", weight: 1 },
-    { id: "reactorInstability:ship", kind: "hazard", componentId: null, channelId: "reactorInstability", sector: null, weight: 1 },
-    { id: "fire:aft", kind: "hazard", componentId: null, channelId: "fire", sector: "aft", weight: 1 },
-    { id: "breach:aft", kind: "hazard", componentId: null, channelId: "breach", sector: "aft", weight: 1 },
+    fault(`driveFailure:${slots.mainDrive}`, { slotId: slots.mainDrive }, "driveFailure"),
+    fault(`reactorFault:${slots.reactor}`, { slotId: slots.reactor }, "reactorFault"),
+    fault(`coolingFailure:${slots.cooling}`, { slotId: slots.cooling }, "coolingFailure"),
+    fault(`shieldEmitterDamage:${slots.shield}:aft`, { slotId: slots.shield }, "shieldEmitterDamage", "aft"),
+    hazard("reactorInstability"),
+    hazard("fire", "aft"),
+    hazard("breach", "aft"),
   ],
 };
 
 export const CANADENSIS_IDS = ids;
+export const CANADENSIS_SLOT_IDS = slots;
 
-export const CANADENSIS_CONFIG = deepFreeze({
+/** Schema-v2 Actor-persisted hull: hull data and embedded Item IDs only. */
+export const CANADENSIS_HULL_CONFIG = deepFreeze({
   schemaVersion: SCHEMA_VERSION,
   id: "canadensis-training-corvette",
   label: "Canadensis Training Corvette",
@@ -294,99 +116,28 @@ export const CANADENSIS_CONFIG = deepFreeze({
     physicalRepair: true,
     work: true,
     evasionHardware: [
-      { componentId: ids.drive, channel: "drive" },
-      { componentId: ids.drive, channel: "maneuveringThrusters" },
+      { slotId: slots.mainDrive, channel: "drive" },
+      { slotId: slots.portLateralDrive, channel: "maneuveringThrusters" },
+      { slotId: slots.starboardLateralDrive, channel: "maneuveringThrusters" },
     ],
   },
   armor: { fore: 3, port: 2, starboard: 2, aft: 2 },
-  components: {
-    reactor: {
-      id: ids.reactor,
-      label: "Academy Reactor",
-      class: COMPONENT_IDS.reactor,
-      nominalOutput: 12,
-      redlineOutput: 14,
-      overclockHeat: 4,
-      recoveryWork: 6,
-      regions: ["aft"],
-    },
-    drive: {
-      id: ids.drive,
-      label: "Training Drive Assembly",
-      class: COMPONENT_IDS.drive,
-      base: { forward: 6, retro: 3, port: 2, starboard: 2, rotation: 60 },
-      tiers: [
-        { power: 0, multiplier: 0, online: false },
-        { power: 1, multiplier: 0.5, online: true },
-        { power: 2, multiplier: 0.75, online: true },
-        { power: 3, multiplier: 1, online: true },
-        { power: 4, multiplier: 1.25, online: true, overclock: true, overclockHeat: 3 },
-      ],
-      recoveryWork: { drive: 4, maneuveringThrusters: 3 },
-      regions: ["aft", "port", "starboard"],
-    },
-    shield: {
-      id: ids.shield,
-      label: "Training Deflector",
-      class: COMPONENT_IDS.shield,
-      topology: "directional",
-      sectors: SECTORS,
-      totalBudget: 60,
-      sectorCap: 24,
-      rechargeDelay: 1,
-      tiers: [
-        { power: 0, online: false, regeneration: 0 },
-        { power: 1, online: true, regeneration: 0 },
-        { power: 2, online: true, regeneration: 4 },
-        { power: 3, online: true, regeneration: 8 },
-        { power: 4, online: true, regeneration: 10, overclock: true, overclockHeat: 2 },
-      ],
-      recoveryWork: 3,
-      emitters: SECTORS.map((sector) => ({
-        id: `${ids.shield}:${sector}`,
-        sector,
-        regions: [sector],
-      })),
-      regions: SECTORS,
-    },
-    sensor: {
-      id: ids.sensor,
-      label: "Academy Sensor Array",
-      class: COMPONENT_IDS.sensor,
-      base: {
-        passiveRange: 100,
-        passiveStrength: 10,
-        activeRange: 150,
-        activeModifier: 0,
-        ewModifier: 0,
-      },
-      tiers: [
-        { power: 0, online: false, rangeMultiplier: 0, passiveStrength: 0, activeModifier: 0 },
-        { power: 1, online: true, rangeMultiplier: 0.5, passiveStrength: 8, activeModifier: -2 },
-        { power: 2, online: true, rangeMultiplier: 1, passiveStrength: 10, activeModifier: 0 },
-        { power: 3, online: true, rangeMultiplier: 1.25, passiveStrength: 12, activeModifier: 2, overclock: true, overclockHeat: 2 },
-      ],
-      recoveryWork: 3,
-      regions: ["fore"],
-    },
-    cooling: {
-      id: ids.cooling,
-      label: "Training Cooling Array",
-      class: COMPONENT_IDS.cooling,
-      tiers: [
-        { power: 0, cooling: 2 },
-        { power: 1, cooling: 4 },
-        { power: 2, cooling: 6 },
-        { power: 3, cooling: 8 },
-      ],
-      ventAmount: 10,
-      ventCooldown: 2,
-      recoveryWork: 3,
-      regions: ["aft"],
-    },
-    weapons,
-  },
-  hardpoints,
+  slots: [
+    { id: slots.reactor, label: "Reactor", class: "reactor", size: "medium", regions: ["aft"], orientation: 180, itemId: ids.reactor },
+    { id: slots.shield, label: "Shield", class: "shield", size: "medium", regions: [...SECTORS], orientation: 0, itemId: ids.shield },
+    { id: slots.sensor, label: "Sensor", class: "sensor", size: "medium", regions: ["fore"], orientation: 0, itemId: ids.sensor },
+    { id: slots.cooling, label: "Cooling", class: "cooling", size: "medium", regions: ["aft"], orientation: 180, itemId: ids.cooling },
+    { id: slots.mainDrive, label: "Main Drive", class: "drive", driveRole: "main", size: "medium", regions: ["aft"], orientation: 0, itemId: ids.mainDrive },
+    { id: slots.reverseDrive, label: "Reverse Drive", class: "drive", driveRole: "reverse", size: "medium", regions: ["fore"], orientation: 180, itemId: ids.reverseDrive },
+    { id: slots.portLateralDrive, label: "Port Lateral Drive", class: "drive", driveRole: "portLateral", size: "medium", regions: ["port", "aft"], orientation: -90, itemId: ids.portLateralDrive },
+    { id: slots.starboardLateralDrive, label: "Starboard Lateral Drive", class: "drive", driveRole: "starboardLateral", size: "medium", regions: ["starboard", "aft"], orientation: 90, itemId: ids.starboardLateralDrive },
+  ],
+  hardpoints: [
+    { id: ids.prowHardpoint, label: "Prow", category: "hardpoint", mountSize: "medium", regions: ["fore"], orientation: 0, traverse: "fixed", weaponId: ids.railgun },
+    { id: ids.dorsalHardpoint, label: "Dorsal", category: "hardpoint", mountSize: "medium", regions: ["fore"], orientation: 0, traverse: "fixed", weaponId: ids.laser },
+    { id: ids.portHardpoint, label: "Port", category: "hardpoint", mountSize: "medium", regions: ["port"], orientation: -90, traverse: "fixed", weaponId: ids.portMacrocannon },
+    { id: ids.starboardHardpoint, label: "Starboard", category: "hardpoint", mountSize: "medium", regions: ["starboard"], orientation: 90, traverse: "fixed", weaponId: ids.starboardMacrocannon },
+  ],
   powerPresets: [
     { id: "balanced-combat", label: "Balanced Combat", allocations: { engines: 3, shields: 3, sensors: 2, cooling: 1, weapons: 3 } },
     { id: "all-guns", label: "All Guns", allocations: { engines: 2, shields: 2, sensors: 1, cooling: 1, weapons: 6 } },
@@ -395,10 +146,16 @@ export const CANADENSIS_CONFIG = deepFreeze({
     { id: "silent-running", label: "Silent Running", allocations: { engines: 1, shields: 1, sensors: 1, cooling: 0, weapons: 0 } },
   ],
   sheddingPriority: ["sensors", "engines", "shields", "cooling", "weapons"],
-  weaponPriority: [ids.railgun, ids.laser, ids.portMacrocannon, ids.starboardMacrocannon],
+  weaponPriority: [ids.prowHardpoint, ids.dorsalHardpoint, ids.portHardpoint, ids.starboardHardpoint],
   operators,
   criticalPools,
 });
+
+/** Detached effective reference retained for pure rules/public compatibility. */
+export const CANADENSIS_CONFIG = deepFreeze(materializeShipConfig(
+  CANADENSIS_HULL_CONFIG,
+  CANADENSIS_DEFAULT_COMPONENT_SOURCES,
+));
 
 export const CANADENSIS_ENCOUNTER_DEFAULTS = deepFreeze({
   hull: 50,
@@ -412,44 +169,11 @@ export const CANADENSIS_ENCOUNTER_DEFAULTS = deepFreeze({
   },
   weaponConfiguration: "anti-armor",
   weapons: {
-    [ids.railgun]: {
-      status: "online",
-      mode: "nominal",
-      bootCounter: 0,
-      readiness: 1,
-      reloadProgress: 0,
-      reloadWork: null,
-    },
-    [ids.laser]: {
-      status: "off",
-      mode: "nominal",
-      bootCounter: 0,
-      readiness: 3,
-      reloadProgress: 0,
-      reloadWork: null,
-    },
-    [ids.portMacrocannon]: {
-      status: "online",
-      mode: "nominal",
-      bootCounter: 0,
-      readiness: 20,
-      reloadProgress: 0,
-      reloadWork: null,
-    },
-    [ids.starboardMacrocannon]: {
-      status: "off",
-      mode: "nominal",
-      bootCounter: 0,
-      readiness: 20,
-      reloadProgress: 0,
-      reloadWork: null,
-    },
+    [ids.railgun]: { status: "online", mode: "nominal", bootCounter: 0, readiness: 1, reloadProgress: 0, reloadWork: null },
+    [ids.laser]: { status: "off", mode: "nominal", bootCounter: 0, readiness: 3, reloadProgress: 0, reloadWork: null },
+    [ids.portMacrocannon]: { status: "online", mode: "nominal", bootCounter: 0, readiness: 20, reloadProgress: 0, reloadWork: null },
+    [ids.starboardMacrocannon]: { status: "off", mode: "nominal", bootCounter: 0, readiness: 20, reloadProgress: 0, reloadWork: null },
   },
-  work: {},
-  conditions: {},
-  timeline: 0,
-  rotationSpent: 0,
-  velocity: { x: 0, y: 0 },
-  evasion: { armed: false, reserved: 0 },
-  ventCooldown: 0,
+  work: {}, conditions: {}, timeline: 0, rotationSpent: 0,
+  velocity: { x: 0, y: 0 }, evasion: { armed: false, reserved: 0 }, ventCooldown: 0,
 });

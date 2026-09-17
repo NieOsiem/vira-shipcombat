@@ -86,12 +86,32 @@ function flatPenalty(state, channel, table) {
 }
 
 function componentForSystem(config, system) {
-  const components = config.components ?? {};
-  if (system === "engines") return components.drive;
+  if (system === "engines") return config?.powerSystems?.engines;
+  const components = config?.components ?? {};
   if (system === "shields") return components.shield;
   if (system === "sensors") return components.sensor;
   if (system === "cooling") return components.cooling;
   return null;
+}
+
+function systemInstalled(config, system) {
+  const components = config?.components ?? {};
+  if (system === "engines") return Object.values(components.drives ?? {}).some(Boolean);
+  if (system === "shields") return Boolean(components.shield);
+  if (system === "sensors") return Boolean(components.sensor);
+  if (system === "cooling") return Boolean(components.cooling);
+  return true;
+}
+
+function missingSystem(config, system, power) {
+  if (power === 0 || systemInstalled(config, system)) return false;
+  const code = {
+    engines: "MISSING_ENGINES",
+    shields: "MISSING_SHIELD",
+    sensors: "MISSING_SENSOR",
+    cooling: "MISSING_COOLING",
+  }[system];
+  violation(code, `Ship has no installed ${system} hardware`, { system, power });
 }
 
 function systemNames() {
@@ -141,8 +161,12 @@ function validateNonnegativeInteger(value, code, field) {
   }
 }
 
-function tierFor(config, system, power) {
+function tierFor(config, system, power, { passive = false } = {}) {
   if (system === "weapons") return { power };
+  if (!systemInstalled(config, system)) {
+    if (power > 0 && !passive) missingSystem(config, system, power);
+    return { power, online: false, overclock: false };
+  }
   const component = componentForSystem(config, system);
   const tier = component?.tiers?.find((candidate) => candidate.power === power);
   if (!tier) {
@@ -153,6 +177,7 @@ function tierFor(config, system, power) {
 
 function lowerTier(config, system, power) {
   if (system === "weapons") return power > 0 ? power - 1 : null;
+  if (!systemInstalled(config, system)) return power > 0 ? 0 : null;
   const powers = (componentForSystem(config, system)?.tiers ?? [])
     .map((tier) => tier.power)
     .filter((candidate) => Number.isSafeInteger(candidate) && candidate < power)
@@ -170,8 +195,9 @@ function totalPower(allocation) {
   return systemNames().reduce((total, system) => total + allocation[system], 0);
 }
 function emissionState(config, committed) {
-  const nominal = config.components?.reactor?.nominalOutput;
-  validateNonnegativeInteger(nominal, "INVALID_REACTOR_OUTPUT", "nominalOutput");
+  const reactor = config?.components?.reactor;
+  const nominal = reactor?.nominalOutput ?? 0;
+  if (reactor) validateNonnegativeInteger(nominal, "INVALID_REACTOR_OUTPUT", "nominalOutput");
   const fraction = nominal === 0 ? (committed === 0 ? 0 : Infinity) : committed / nominal;
   let band;
   let signatureModifier;
@@ -200,7 +226,7 @@ function emissionState(config, committed) {
     percent: fraction * 100,
     band,
     signatureModifier,
-    powerAdjustedSignature: (config.baseSignature ?? 0) + signatureModifier,
+    powerAdjustedSignature: (config?.baseSignature ?? 0) + signatureModifier,
   };
 }
 
@@ -324,17 +350,24 @@ function validateStagedWeaponTransitions(config, state, stagedWeapons, states) {
 }
 
 function reactorCeilings(config, state) {
-  const reactor = config.components?.reactor;
-  if (!reactor) violation("MISSING_REACTOR", "Ship has no reactor configuration");
+  const reactor = config?.components?.reactor;
+  if (!reactor) {
+    return {
+      nominal: 0,
+      redline: 0,
+      maximum: 0,
+      redlineAvailable: false,
+      fault: "healthy",
+      multiplier: 0,
+      flatPenalty: 0,
+    };
+  }
   validateNonnegativeInteger(reactor.nominalOutput, "INVALID_REACTOR_OUTPUT", "nominalOutput");
   validateNonnegativeInteger(reactor.redlineOutput, "INVALID_REACTOR_OUTPUT", "redlineOutput");
   const fault = highestSeverity(
     state,
     "reactorFault",
-    (condition) =>
-      (!condition.targetId && !condition.componentId) ||
-      condition.targetId === reactor.id ||
-      condition.componentId === reactor.id,
+    (condition) => (condition.componentId ?? condition.targetId) === reactor.id,
   );
   const multiplier = REACTOR_MULTIPLIER[fault];
   const penalty =
@@ -354,6 +387,7 @@ function stagedAllocation(config, state, staged) {
   for (const system of systemNames()) {
     if (source[system] != null && typeof source[system] !== "object") allocation[system] = source[system];
     validateNonnegativeInteger(allocation[system], "INVALID_POWER_ALLOCATION", system);
+    missingSystem(config, system, allocation[system]);
     tierFor(config, system, allocation[system]);
   }
   return allocation;
@@ -413,7 +447,7 @@ function enteringOverclockHeat(config, beforeAllocation, afterAllocation, before
   const entries = [];
   let heat = 0;
   for (const system of ["engines", "shields", "sensors", "cooling"]) {
-    const before = tierFor(config, system, beforeAllocation[system]);
+    const before = tierFor(config, system, beforeAllocation[system], { passive: true });
     const after = tierFor(config, system, afterAllocation[system]);
     if (!before.overclock && after.overclock) {
       const amount = after.overclockHeat ?? componentForSystem(config, system)?.overclockHeat ?? 0;
@@ -424,7 +458,7 @@ function enteringOverclockHeat(config, beforeAllocation, afterAllocation, before
     }
   }
   if (!beforeRedlining && afterRedlining) {
-    const amount = config.components?.reactor?.overclockHeat ?? 0;
+    const amount = config?.components?.reactor?.overclockHeat ?? 0;
     if (amount > 0) {
       heat += amount;
       entries.push({ system: "reactor", heat: amount });
@@ -437,7 +471,7 @@ export function getPowerState(config, state) {
   const allocation = currentAllocation(state);
   for (const system of systemNames()) {
     validateNonnegativeInteger(allocation[system], "INVALID_POWER_ALLOCATION", system);
-    tierFor(config, system, allocation[system]);
+    tierFor(config, system, allocation[system], { passive: true });
   }
   const ceilings = reactorCeilings(config, state);
   const weapons = mergedWeaponStates(config, state, null);
@@ -451,7 +485,10 @@ export function getPowerState(config, state) {
     allocation,
     committed,
     unused: Math.max(0, ceilings.maximum - committed),
-    legal: committed <= ceilings.maximum && weaponReserved <= allocation.weapons,
+    legal:
+      committed <= ceilings.maximum &&
+      weaponReserved <= allocation.weapons &&
+      systemNames().every((system) => systemInstalled(config, system) || allocation[system] === 0),
     redlining: committed > ceilings.nominal,
     emission: emissionState(config, committed),
     ceilings,
@@ -535,7 +572,7 @@ export function commitPowerRoute(config, state, staged) {
 
 function orderedSheddingSystems(config, state) {
   const systems = systemNames();
-  const configured = (state?.sheddingPriority ?? config.sheddingPriority ?? []).filter((system) => systems.includes(system));
+  const configured = (state?.sheddingPriority ?? config?.sheddingPriority ?? []).filter((system) => systems.includes(system));
   const missing = systems.filter((system) => !configured.includes(system)).sort();
   return [...configured, ...missing].reverse();
 }
@@ -581,6 +618,13 @@ export function applyPowerShedding(config, state) {
   const allocation = { ...before.allocation };
   const events = [];
   let committed = before.committed;
+  for (const system of systemNames()) {
+    if (systemInstalled(config, system) || allocation[system] === 0) continue;
+    const from = allocation[system];
+    allocation[system] = 0;
+    committed -= from;
+    events.push({ type: "tierShed", system, from, to: 0 });
+  }
   for (const system of orderedSheddingSystems(config, state)) {
     while (committed > before.ceilings.maximum) {
       const lowered = lowerTier(config, system, allocation[system]);
@@ -605,7 +649,7 @@ export function applyPowerShedding(config, state) {
   const redlining = committed > before.ceilings.nominal;
   let heatAdded = 0;
   if (!wasRedlining && redlining) {
-    heatAdded = config.components?.reactor?.overclockHeat ?? 0;
+    heatAdded = config?.components?.reactor?.overclockHeat ?? 0;
     if (heatAdded) state.heat = Math.max(0, (state.heat ?? 0) + heatAdded);
   }
   state.power.redlining = redlining;
@@ -700,7 +744,7 @@ export function applyMaintainedOverclockHeat(config, state) {
   const sources = [];
   let heatAdded = 0;
   for (const system of ["engines", "shields", "sensors", "cooling"]) {
-    const tier = tierFor(config, system, power.allocation[system]);
+    const tier = tierFor(config, system, power.allocation[system], { passive: true });
     if (!tier.overclock) continue;
     const amount = tier.overclockHeat ?? componentForSystem(config, system)?.overclockHeat ?? 0;
     if (amount > 0) {
@@ -709,13 +753,14 @@ export function applyMaintainedOverclockHeat(config, state) {
     }
   }
   if (power.redlining) {
-    const amount = config.components?.reactor?.overclockHeat ?? 0;
+    const amount = config?.components?.reactor?.overclockHeat ?? 0;
     if (amount > 0) {
       heatAdded += amount;
       sources.push({ system: "reactor", heat: amount });
     }
   }
   if (heatAdded) state.heat = Math.max(0, (state.heat ?? 0) + heatAdded);
+  state.power ??= {};
   state.power.redlining = power.redlining;
   return { heatAdded, sources, redlining: power.redlining };
 }

@@ -65,7 +65,8 @@ function expireEffects(state, timing, key) {
 
 function passiveCooling(config, draft) {
   const component = config?.components?.cooling;
-  if (!component) throw new RuleViolation("COOLING_COMPONENT_REQUIRED", "The ship has no Cooling component.");
+  const before = Math.max(0, Number(draft.heat ?? 0));
+  if (!component) return { before, available: 0, removed: 0, heat: before, faultSeverity: "healthy" };
   const power = Number(draft?.power?.cooling ?? 0);
   const tier = (component.tiers ?? []).find((candidate) => Number(candidate.power) === power);
   if (!tier) throw new RuleViolation("COOLING_POWER_TIER_INVALID", "Committed Cooling Power has no installed tier.", { power });
@@ -73,10 +74,10 @@ function passiveCooling(config, draft) {
   const healthy = Number(tier.cooling ?? tier.output ?? 0);
   if (!Number.isFinite(healthy) || healthy < 0) throw new RuleViolation("INVALID_COOLING_OUTPUT", "Cooling output must be nonnegative and finite.");
   const available = healthy > 0 && fault.coolingMultiplier > 0 ? Math.max(1, Math.floor(healthy * fault.coolingMultiplier)) : 0;
-  const before = Math.max(0, Number(draft.heat ?? 0));
+  const coolingBefore = before;
   const removed = Math.min(before, available);
-  draft.heat = before - removed;
-  return { before, available, removed, heat: draft.heat, faultSeverity: fault.severity };
+  draft.heat = coolingBefore - removed;
+  return { before: coolingBefore, available, removed, heat: draft.heat, faultSeverity: fault.severity };
 }
 
 function tickEntryCounters(draft, entry) {

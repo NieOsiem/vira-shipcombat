@@ -1,17 +1,20 @@
-import { MODULE_ID, SHIP_TYPE } from "../constants.js";
-import { createDefaultShipData, normalizeShipData } from "../model/defaults.js";
+import { COMPONENT_ITEM_TYPE, INTERNAL_UPDATE_OPTION as INTERNAL_UPDATE, MODULE_ID, SHIP_TYPE } from "../constants.js";
+import { normalizeShipData } from "../model/defaults.js";
+import { materializeShipConfig } from "../model/equipment.js";
+import { validateComponentItem, validateEffectiveLoadout } from "../model/validation.js";
 import { nativeVehicleFieldChanges } from "../model/native-vehicle.js";
 
 import { submitShipOperation } from "../state/action-queue.js";
 import { isActiveGM } from "../socket.js";
 import { createGmEventMessages, publishOperationEvents } from "./chat.js";
+import { isInternalComponentMutation, migrateShipActor } from "./migration.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
 
-const INTERNAL_UPDATE = "viraShipCombatInternal";
 const POSITION_FIELDS = Object.freeze(["x", "y", "rotation"]);
 let hooksRegistered = false;
 let hookWork = Promise.resolve();
 const INITIATIVE_PATCH = Symbol.for(`${MODULE_ID}.shipInitiativePatch`);
+let activeGmAuthority = false;
 
 function activeGm() {
   return isActiveGM();
@@ -44,19 +47,111 @@ function clone(value) {
   return foundry.utils.deepClone(value);
 }
 
-function fillMissing(defaults, supplied) {
-  if (supplied === undefined) return clone(defaults);
-  if (Array.isArray(defaults) || !defaults || typeof defaults !== "object") return clone(supplied);
-  if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)) return clone(supplied);
-  const result = clone(supplied);
-  for (const [key, defaultValue] of Object.entries(defaults)) {
-    result[key] = fillMissing(defaultValue, supplied[key]);
-  }
-  return result;
+function forcedReplacement(value) {
+  return foundry.data.operators.ForcedReplacement.create(value);
 }
+
 
 function sameData(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function collectionValues(collection) {
+  if (!collection) return [];
+  if (Array.isArray(collection.contents)) return collection.contents;
+  if (typeof collection.values === "function") return [...collection.values()];
+  return Array.from(collection);
+}
+
+function componentItems(actor) {
+  return collectionValues(actor?.items).filter((item) => item?.type === COMPONENT_ITEM_TYPE);
+}
+
+function embeddedShipComponent(item) {
+  const actor = item?.parent;
+  return item?.type === COMPONENT_ITEM_TYPE
+    && actor?.documentName === "Actor"
+    && actor.type === SHIP_TYPE;
+}
+
+function allowComponentMutation(item, options) {
+  if (!embeddedShipComponent(item) || isInternalComponentMutation(options)) return true;
+  if (!activeGm()) return false;
+  return item.parent.system?.shipCombat?.state?.phase === "outsideCombat";
+}
+
+function componentUpdateSource(item, changes) {
+  if (typeof item?.clone === "function") {
+    const prospective = item.clone(changes, { keepId: true });
+    if (typeof prospective?.toObject === "function") return prospective.toObject(false);
+  }
+  const source = typeof item?.toObject === "function" ? item.toObject(false) : clone(item);
+  const expanded = foundry.utils.expandObject(changes ?? {});
+  return foundry.utils.mergeObject(source, expanded, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true,
+    overwrite: true,
+  });
+}
+
+function validationMessage(label, validation) {
+  const details = validation.errors
+    .slice(0, 5)
+    .map(({ path, message }) => `${path}: ${message}`)
+    .join(" ");
+  const remaining = validation.errors.length - 5;
+  return `${label}: ${details}${remaining > 0 ? ` (+${remaining} more)` : ""}`;
+}
+
+function validateProspectiveComponentUpdate(item, changes) {
+  const source = componentUpdateSource(item, changes);
+  const componentValidation = validateComponentItem(source);
+  if (!componentValidation.valid) return validationMessage("Invalid ship component", componentValidation);
+  if (!embeddedShipComponent(item) || !componentIsReferenced(item)) return "";
+
+  try {
+    const actor = item.parent;
+    const itemId = item.id ?? item._id;
+    const items = componentItems(actor).map((candidate) => candidate.id === itemId ? source : candidate);
+    const effective = materializeShipConfig(actor.system.shipCombat.config, items);
+    const loadoutValidation = validateEffectiveLoadout(effective, { tokenWidth: 1 });
+    return loadoutValidation.valid ? "" : validationMessage("Component would invalidate this ship", loadoutValidation);
+  } catch (error) {
+    return error?.message ?? String(error);
+  }
+}
+
+function allowComponentUpdate(item, changes, options, userId) {
+  if (isInternalComponentMutation(options)) return true;
+  if (!allowComponentMutation(item, options)) {
+    if (userId === game.user?.id) ui.notifications.error("Only the active GM may refit embedded ship components outside combat.");
+    return false;
+  }
+  if (item?.type !== COMPONENT_ITEM_TYPE) return true;
+  let denial;
+  try {
+    denial = validateProspectiveComponentUpdate(item, changes);
+  } catch (error) {
+    denial = error?.message ?? String(error);
+  }
+  if (!denial) return true;
+  if (userId === game.user?.id) ui.notifications.error(denial);
+  return false;
+}
+
+function componentIsReferenced(item) {
+  const id = item?.id ?? item?._id;
+  const config = item?.parent?.system?.shipCombat?.config;
+  if (typeof id !== "string" || !id || !config) return false;
+  return (config.slots ?? []).some((slot) => slot?.itemId === id)
+    || (config.hardpoints ?? []).some((hardpoint) => hardpoint?.weaponId === id);
+}
+
+function allowComponentDeletion(item, options) {
+  if (!embeddedShipComponent(item) || isInternalComponentMutation(options)) return true;
+  if (componentIsReferenced(item)) return false;
+  return allowComponentMutation(item, options);
 }
 
 function assignmentOperatorId(assignment) {
@@ -87,27 +182,30 @@ async function enforceOperatorOwnership(subject) {
   for (const userId of assignedUserIds(shipData)) {
     const user = game.users.get(userId);
     if (!user || user.isGM) continue;
-    if (actor.ownership?.[userId] !== observer) ownershipUpdates[`ownership.${userId}`] = observer;
+    const current = actor.ownership?.[userId] ?? actor.ownership?.default ?? 0;
+    if (current < observer) ownershipUpdates[`ownership.${userId}`] = observer;
   }
   if (Object.keys(ownershipUpdates).length) {
     await actor.update(ownershipUpdates, { [INTERNAL_UPDATE]: true });
   }
 }
 
-/** Fill absent ship fields and synchronize the stock D&D5e vehicle presentation. */
+/** Migrate, normalize, and synchronize one world or synthetic ship Actor in its own context. */
 async function initializeActorShipData(actor) {
   if (actor?.type !== SHIP_TYPE || !activeGm()) return false;
+  const migrated = await migrateShipActor(actor);
   const current = clone(actor.system?.shipCombat ?? {});
-  const merged = fillMissing(createDefaultShipData(), current);
-  const normalized = normalizeShipData(merged);
+  const items = componentItems(actor);
+  const normalized = normalizeShipData(current, items);
+  const effective = materializeShipConfig(normalized.config, items);
   const shipChanged = !sameData(current, normalized);
-  const update = nativeVehicleFieldChanges(actor, normalized.config, normalized.state);
-  if (shipChanged) update["system.shipCombat"] = normalized;
+  const update = nativeVehicleFieldChanges(actor, effective, normalized.state);
+  if (shipChanged) update["system.shipCombat"] = forcedReplacement(normalized);
   if (Object.keys(update).length) {
     await actor.update(update, { [INTERNAL_UPDATE]: true });
   }
   await enforceOperatorOwnership(actor);
-  return shipChanged || Object.keys(update).length > 0;
+  return migrated || shipChanged || Object.keys(update).length > 0;
 }
 
 /** Fill only absent ship-data fields, retaining every value already stored by the token actor. */
@@ -282,6 +380,24 @@ async function submitAdministrativeReposition(token, proposed, options) {
   }
 }
 
+function sceneTokensForActor(actor) {
+  const tokens = [];
+  for (const scene of game.scenes ?? []) {
+    for (const token of scene.tokens ?? []) {
+      if (token?.actorId === actor?.id) {
+        tokens.push(token);
+        continue;
+      }
+      if (!token?.actorId) {
+        const tokenActor = token?.actor;
+        const baseActor = tokenActor?.baseActor ?? tokenActor?.token?.baseActor ?? tokenActor;
+        if (baseActor?.id === actor?.id) tokens.push(token);
+      }
+    }
+  }
+  return tokens;
+}
+
 function initializeLoadedTokens() {
   for (const scene of game.scenes) {
     for (const token of scene.tokens) {
@@ -293,6 +409,18 @@ function initializeLoadedActors() {
   for (const actor of game.actors) {
     if (actor.type === SHIP_TYPE) schedule("Failed to initialize ship actor", () => initializeActorShipData(actor));
   }
+}
+
+function sweepWhenActiveGm() {
+  const authority = activeGm();
+  if (!authority) {
+    activeGmAuthority = false;
+    return;
+  }
+  if (activeGmAuthority) return;
+  activeGmAuthority = true;
+  initializeLoadedActors();
+  initializeLoadedTokens();
 }
 
 
@@ -323,16 +451,17 @@ export function registerShipHooks() {
   });
 
   Hooks.on("updateActor", (actor, changes, options) => {
-    if (actor.type !== SHIP_TYPE) return;
-    if (options?.[INTERNAL_UPDATE] && !changes.system) return;
-    const tokens = actor.getActiveTokens(false, true)
-      .map((token) => token.document ?? token)
-      .filter(isShipToken);
+    if (actor.type !== SHIP_TYPE || options?.[INTERNAL_UPDATE]) return;
+    const tokens = sceneTokensForActor(actor).filter(isShipToken);
     schedule("Failed to reconcile ship actor", async () => {
       await initializeActorShipData(actor);
       for (const token of tokens) await initializeTokenShipData(token);
     });
   });
+
+  Hooks.on("preCreateItem", (item, _data, options) => allowComponentMutation(item, options));
+  Hooks.on("preUpdateItem", (item, changes, options, userId) => allowComponentUpdate(item, changes, options, userId));
+  Hooks.on("preDeleteItem", (item, options) => allowComponentDeletion(item, options));
 
   Hooks.on("preUpdateToken", (token, changes, options, userId) => {
     if (!isShipToken(token) || options?.[INTERNAL_UPDATE] || !hasPositionChange(changes)) return true;
@@ -384,8 +513,8 @@ export function registerShipHooks() {
     });
   });
 
-  if (activeGm()) {
-    initializeLoadedActors();
-    initializeLoadedTokens();
-  }
+  Hooks.on("updateUser", () => sweepWhenActiveGm());
+  Hooks.on("userConnected", () => sweepWhenActiveGm());
+
+  sweepWhenActiveGm();
 }

@@ -1,4 +1,6 @@
-import { RuleViolation } from "../constants.js";
+import { COMPONENT_ITEM_TYPE, RuleViolation } from "../constants.js";
+import { migrateShipActor } from "../foundry/migration.js";
+import { materializeShipConfig } from "../model/equipment.js";
 import { nativeVehicleFieldValues } from "../model/native-vehicle.js";
 
 
@@ -54,18 +56,30 @@ export async function resolveTokenDocument(uuid) {
   return document;
 }
 
+function componentItems(actor) {
+  const collection = actor?.items;
+  if (!collection) return [];
+  const items = Array.isArray(collection.contents)
+    ? collection.contents
+    : typeof collection.values === "function"
+      ? [...collection.values()]
+      : Array.from(collection);
+  return items.filter((item) => item?.type === COMPONENT_ITEM_TYPE);
+}
+
 export function readShipRecord(tokenDocument) {
-  const shipCombat = tokenDocument.actor?.system?.shipCombat;
+  const actor = tokenDocument.actor;
+  const shipCombat = actor?.system?.shipCombat;
   if (!shipCombat?.config || !shipCombat?.state) {
     throw new RuleViolation("SHIP_STATE_MISSING", "The token actor has no ship combat configuration or state.", {
       uuid: tokenDocument.uuid,
     });
   }
+  const config = materializeShipConfig(shipCombat.config, componentItems(actor));
   return {
     uuid: tokenDocument.uuid,
     tokenDocument,
-    actor: tokenDocument.actor,
-    config: cloneDocumentData(shipCombat.config),
+    config,
     state: cloneDocumentData(shipCombat.state),
     token: snapshotTokenTransform(tokenDocument),
   };
@@ -85,10 +99,11 @@ export async function writeShipState(tokenDocument, state) {
   // Synthetic actors persist into TokenDocument delta data; linked actors persist into
   // their world Actor. Both paths intentionally use the token's actor context.
   const actor = tokenDocument.actor;
+  const config = materializeShipConfig(actor.system.shipCombat.config, componentItems(actor));
   const replacement = globalThis.foundry.data.operators.ForcedReplacement.create(cloneDocumentData(state));
   return actor.update({
     "system.shipCombat.state": replacement,
-    ...nativeVehicleFieldValues(actor.system.shipCombat.config, state),
+    ...nativeVehicleFieldValues(config, state),
   }, { viraShipCombatInternal: true, diff: false });
 }
 
@@ -107,6 +122,7 @@ export async function loadShipRecords(uuids) {
   for (const uuid of uuids) {
     if (records.has(uuid)) continue;
     const tokenDocument = await resolveTokenDocument(uuid);
+    await migrateShipActor(tokenDocument.actor);
     records.set(uuid, readShipRecord(tokenDocument));
   }
   return records;

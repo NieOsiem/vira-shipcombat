@@ -51,18 +51,36 @@ function tierAt(component, power) {
 }
 
 export function getDriveCapabilities(config, state) {
-  const drive = config?.components?.drive ?? {};
-  const tier = tierAt(drive, Number(state?.power?.engines ?? 0));
-  const driveFault = getFaultEffects(config, state, { componentId: drive.id, channel: "driveFailure" });
-  const thrusterFault = getFaultEffects(config, state, { componentId: drive.id, channel: "maneuveringThrusterFailure" });
-  const base = drive.base ?? {};
+  const drives = config?.components?.drives ?? {};
+  const tier = tierAt(config?.powerSystems?.engines, Number(state?.power?.engines ?? 0));
   const multiplier = Number(tier.multiplier ?? 0);
+  const main = drives.main;
+  const reverse = drives.reverse;
+  const port = drives.portLateral;
+  const starboard = drives.starboardLateral;
+  const mainFault = main
+    ? getFaultEffects(config, state, { componentId: main.id, channel: "driveFailure" })
+    : null;
+  const reverseFault = reverse
+    ? getFaultEffects(config, state, { componentId: reverse.id, channel: "driveFailure" })
+    : null;
+  const portFault = port
+    ? getFaultEffects(config, state, { componentId: port.id, channel: "maneuveringThrusterFailure" })
+    : null;
+  const starboardFault = starboard
+    ? getFaultEffects(config, state, { componentId: starboard.id, channel: "maneuveringThrusterFailure" })
+    : null;
+  const portMultiplier = Number(portFault?.lateralMultiplier ?? portFault?.capabilityMultiplier ?? 0);
+  const starboardMultiplier = Number(starboardFault?.lateralMultiplier ?? starboardFault?.capabilityMultiplier ?? 0);
   return {
-    forward: Number(base.forward ?? 0) * multiplier * Number(driveFault.forwardMultiplier ?? driveFault.capabilityMultiplier ?? 1),
-    retro: Number(base.retro ?? 0) * multiplier * Number(driveFault.retroMultiplier ?? driveFault.capabilityMultiplier ?? 1),
-    port: Number(base.port ?? 0) * multiplier * Number(thrusterFault.lateralMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
-    starboard: Number(base.starboard ?? 0) * multiplier * Number(thrusterFault.lateralMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
-    rotation: Number(base.rotation ?? 0) * multiplier * Number(thrusterFault.rotationMultiplier ?? thrusterFault.capabilityMultiplier ?? 1),
+    forward: Number(main?.base?.thrust ?? 0) * multiplier * Number(mainFault?.forwardMultiplier ?? mainFault?.capabilityMultiplier ?? 0),
+    retro: Number(reverse?.base?.thrust ?? 0) * multiplier * Number(reverseFault?.retroMultiplier ?? reverseFault?.capabilityMultiplier ?? 0),
+    port: Number(port?.base?.thrust ?? 0) * multiplier * portMultiplier,
+    starboard: Number(starboard?.base?.thrust ?? 0) * multiplier * starboardMultiplier,
+    rotation: multiplier * (
+      (Number(port?.base?.rotation ?? 0) * Number(portFault?.rotationMultiplier ?? portFault?.capabilityMultiplier ?? 0))
+      + (Number(starboard?.base?.rotation ?? 0) * Number(starboardFault?.rotationMultiplier ?? starboardFault?.capabilityMultiplier ?? 0))
+    ),
   };
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { CANADENSIS_IDS } from "../scripts/data/canadensis.js";
 import { createDefaultShipData, createInitialState } from "../scripts/model/defaults.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 import { trackKey } from "../scripts/rules/sensors.js";
@@ -9,6 +10,7 @@ const TARGET_A = "Scene.test.Token.target-a";
 const TARGET_B = "Scene.test.Token.target-b";
 const PILOT = "canadensis-pilot-commander";
 const GUNNER = "canadensis-gunner-sensor";
+const DAMAGE_CONTROL = "canadensis-damage-control";
 
 function clone(value) {
   return structuredClone(value);
@@ -228,16 +230,16 @@ describe("authority invariants", () => {
     const toggled = executeShipOperation(
       request("toggleWeapon", SOURCE, [], {
         operatorId: GUNNER,
-        weaponId: "canadensis-twin-railgun",
+        weaponId: CANADENSIS_IDS.railgun,
         status: "off",
       }),
       context([[SOURCE, source]], { isGM: false, userId: "operator-user" }),
     );
-    expect(toggled.shipStates[SOURCE].weapons["canadensis-twin-railgun"].status).toBe("off");
+    expect(toggled.shipStates[SOURCE].weapons[CANADENSIS_IDS.railgun].status).toBe("off");
     expect(toggled.shipStates[SOURCE].resources.actions[GUNNER]).toBe(0);
   });
 
-  test("immediate fault consequences shed Power, drop Evasion, and invalidate sensor tracks", () => {
+  test("immediate fault consequences shed Power and invalidate sensors without coupling drive roles", () => {
     const source = ship(SOURCE);
     source.state.phase = "active";
     assignedUser(source, GUNNER, "operator-user");
@@ -262,7 +264,7 @@ describe("authority invariants", () => {
       kind: "fault",
       conditionId: "driveFailure",
       channelId: "driveFailure",
-      componentId: source.config.components.drive.id,
+      componentId: source.config.components.drives.main.id,
       severity: "destroyed",
     };
     source.state.conditions.sensor = {
@@ -276,7 +278,7 @@ describe("authority invariants", () => {
     const result = executeShipOperation(
       request("toggleWeapon", SOURCE, [], {
         operatorId: GUNNER,
-        weaponId: "canadensis-twin-railgun",
+        weaponId: CANADENSIS_IDS.railgun,
         status: "off",
       }),
       context([[SOURCE, source]], { isGM: false, userId: "operator-user" }),
@@ -285,9 +287,67 @@ describe("authority invariants", () => {
     const committed = ["engines", "shields", "sensors", "cooling", "weapons"]
       .reduce((total, system) => total + state.power[system], 0);
     expect(committed).toBeLessThanOrEqual(11);
-    expect(state.evasion.armed).toBe(false);
+    expect(state.evasion.armed).toBe(true);
     expect(state.tracks[trackKey(TARGET_A)].state).toBe("undetected");
     expect(state.tracks[trackKey(TARGET_A)].firingSolution).toBe(false);
+  });
+
+  test("the other lateral remains independently repairable while its counterpart is destroyed", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "active";
+    source.state.resources.orders[DAMAGE_CONTROL] = 1;
+    assignedUser(source, DAMAGE_CONTROL, "repair-user");
+    source.state.conditions.port = {
+      kind: "fault",
+      conditionId: "maneuveringThrusterFailure",
+      componentId: source.config.components.drives.portLateral.id,
+      severity: "destroyed",
+    };
+    source.state.conditions.starboard = {
+      kind: "fault",
+      conditionId: "maneuveringThrusterFailure",
+      componentId: source.config.components.drives.starboardLateral.id,
+      severity: "minor",
+    };
+
+    const result = executeShipOperation(
+      request("repair", SOURCE, [], { operatorId: DAMAGE_CONTROL, conditionId: "starboard" }),
+      context([[SOURCE, source]], { isGM: false, userId: "repair-user" }),
+    );
+
+    expect(result.shipStates[SOURCE].conditions.port).toMatchObject({
+      componentId: source.config.components.drives.portLateral.id,
+      severity: "destroyed",
+    });
+    expect(result.shipStates[SOURCE].conditions.starboard).toBeUndefined();
+    expect(result.shipStates[SOURCE].resources.orders[DAMAGE_CONTROL]).toBe(0);
+  });
+
+  test("requested subsystem operations reject atomically on an empty loadout", () => {
+    const source = ship(SOURCE);
+    source.config.components = { drives: {}, weapons: [] };
+    source.config.weaponPriority = [];
+    source.state = createInitialState(source.config);
+    source.state.phase = "active";
+    source.state.resources.actions[GUNNER] = 1;
+    source.state.controls.defense = { operatorId: GUNNER };
+    assignedUser(source, GUNNER, "operator-user");
+
+    const cases = [
+      ["routeDefense", { operatorId: GUNNER }, "MISSING_SHIELD"],
+      ["cooling", { operatorId: GUNNER }, "COOLING_COMPONENT_REQUIRED"],
+      ["ping", { operatorId: GUNNER }, "SENSORS_OFFLINE"],
+    ];
+    for (const [type, payload, code] of cases) {
+      const authority = context([[SOURCE, source]], { isGM: false, userId: "operator-user" });
+      const operationRequest = request(type, SOURCE, [], payload);
+      const before = clone({ ships: authority.ships, request: operationRequest });
+      expect(errorCode(() => executeShipOperation(
+        operationRequest,
+        authority,
+      ))).toBe(code);
+      expect({ ships: authority.ships, request: operationRequest }).toEqual(before);
+    }
   });
 });
 
@@ -300,7 +360,7 @@ describe("multi-ship replacement scope and event privacy", () => {
     assignedUser(source, GUNNER, "gunner-user");
     source.state.resources.actions[GUNNER] = 1;
     source.state.tracks[TARGET_A] = { state: "targeted", firingSolution: true, effectiveAc: 10 };
-    const weaponId = "canadensis-twin-railgun";
+    const weaponId = CANADENSIS_IDS.railgun;
     source.state.weapons[weaponId].readiness = 1;
 
     const result = executeShipOperation(

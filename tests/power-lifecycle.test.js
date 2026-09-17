@@ -86,6 +86,31 @@ describe("Power routing and weapon lifecycle", () => {
     expect(state).toEqual(before);
   });
 
+  test("a missing reactor accepts an all-zero route and rejects positive power atomically", () => {
+    const { config, state } = freshShip((candidate) => {
+      delete candidate.components.reactor;
+    });
+    const allocation = { engines: 0, shields: 0, sensors: 0, cooling: 0, weapons: 0 };
+    const weaponStates = Object.fromEntries(
+      Object.keys(state.weapons).map((weaponId) => [weaponId, { status: "off" }]),
+    );
+
+    const routed = commitPowerRoute(config, state, { allocation, weaponStates });
+    expect(routed).toMatchObject({
+      allocation,
+      committed: 0,
+      unused: 0,
+      ceilings: { nominal: 0, maximum: 0 },
+    });
+
+    const before = clone(state);
+    captureViolation(
+      () => commitPowerRoute(config, state, { allocation: { ...allocation, engines: 1 } }),
+      "REACTOR_CAPACITY_EXCEEDED",
+    );
+    expect(state).toEqual(before);
+  });
+
   test("weapon reservations are validated against the complete staged result", () => {
     const legal = freshShip();
     const staged = {
@@ -298,6 +323,7 @@ describe("shield allocation, collapse, and recovery", () => {
 describe("ordered lifecycle transactions", () => {
   test("dispatcher Start runs the ordered batch and ticks only entry counters once", () => {
     const record = freshShip();
+    record.state.phase = "start";
     record.state.heat = 10;
     record.state.ventCooldown = 2;
     record.state.weapons[CANADENSIS_IDS.railgun].status = "booting";
@@ -362,6 +388,33 @@ describe("ordered lifecycle transactions", () => {
     });
   });
 
+  test("an empty loadout completes the passive combat lifecycle without component errors", () => {
+    const record = freshShip((config) => {
+      config.components = { drives: {}, weapons: [] };
+      config.weaponPriority = [];
+    });
+    const phases = [];
+    const operations = [
+      ["combat.enter", { turnKey: "round-empty" }],
+      ["phase.start", { turnKey: "round-empty" }],
+      ["coast", {}],
+      ["phase.end", { endKey: "round-empty" }],
+      ["combat.leave", {}],
+    ];
+
+    for (const [type, payload] of operations) {
+      const result = executeShipOperation(
+        gmRequest(type, payload),
+        gmContext(record),
+      );
+      record.state = clone(result.shipStates[SOURCE]);
+      phases.push(record.state.phase);
+    }
+
+    expect(phases).toEqual(["start", "active", "end", "start", "outsideCombat"]);
+    expect(record.state).toMatchObject({ hull: record.config.maxHull, heat: 0 });
+  });
+
   test("End completes every ordered step after Hull reaches zero and resolves Fate last", () => {
     const { config, state } = freshShip();
     state.phase = "end";
@@ -401,6 +454,7 @@ describe("ordered lifecycle transactions", () => {
     const record = freshShip((config) => {
       config.components.cooling.tiers.find(({ power }) => power === 1).cooling = -1;
     });
+    record.state.phase = "start";
     record.state.heat = 9;
     record.state.effects = [{ id: "expires", expiresAt: "nextStart" }];
     record.state.evasion = { armed: true, reserved: 0.2 };

@@ -1,6 +1,9 @@
 export const MODULE_ID = "vira-shipcombat";
 export const SHIP_TYPE = `${MODULE_ID}.ship`;
-export const SCHEMA_VERSION = 1;
+export const COMPONENT_ITEM_TYPE = `${MODULE_ID}.component`;
+export const SCHEMA_VERSION = 2;
+export const INTERNAL_UPDATE_OPTION = "viraShipCombatInternal";
+export const INTERNAL_REFIT_OPTION = "viraShipCombatRefit";
 
 export const SECTORS = Object.freeze(["fore", "port", "starboard", "aft"]);
 export const COMPONENT_CLASSES = Object.freeze([
@@ -11,6 +14,7 @@ export const COMPONENT_CLASSES = Object.freeze([
   "cooling",
   "weapon",
 ]);
+export const DRIVE_ROLES = Object.freeze(["", "main", "reverse", "lateral"]);
 export const CORE_COMPONENT_CLASSES = Object.freeze([
   "reactor",
   "drive",
@@ -25,7 +29,7 @@ export const POWER_SYSTEMS = Object.freeze([
   "cooling",
   "weapons",
 ]);
-export const WEAPON_CATEGORIES = Object.freeze(["hardpoint", "special"]);
+export const WEAPON_CATEGORIES = Object.freeze(["hardpoint"]);
 export const MOUNT_SIZES = Object.freeze([
   "tiny",
   "small",

@@ -148,6 +148,8 @@
             {{#if manualReload}}<div class="ship-action-row">{{#if reloadWork}}<span>Reload {{reloadLabel}}</span><button type="button" data-ui-operation="reload" {{#unless ../canAct}}disabled{{/unless}}>Contribute reload Work</button><button type="button" data-ui-operation="cancelReload" {{#unless ../canAct}}disabled{{/unless}}>Cancel reload</button>{{else}}<button type="button" data-ui-operation="beginReload" {{#unless ../canAct}}disabled{{/unless}}>Begin reload</button>{{/if}}</div>{{/if}}
             <div class="ship-weapon-footer"><p class="ship-preview-line" data-preview aria-live="polite"></p><button class="ship-primary ship-fire-button" type="submit" {{#unless ../canAttack}}disabled{{/unless}}><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> Fire</button></div>
           </form>
+        {{else}}
+          <p class="ship-empty">No weapons are installed. Open the Refit tab to inspect hardpoints and install compatible weapon Items.</p>
         {{/each}}
       </div>
     </section>
@@ -160,15 +162,85 @@
       </div>
     </section>
 
+    <section id="panel-refit" class="ship-console-panel ship-refit-layout" role="tabpanel" data-tab-panel="refit" {{#unless tabState.refit.active}}hidden{{/unless}}>
+      <div class="ship-panel-heading">
+        <div><span class="ship-kicker">Hull integration</span><h2>Refit</h2></div>
+        <span class="ship-readout">{{phase}}</span>
+      </div>
+      {{#if refitDenial}}<p class="ship-console-notice ship-refit-denial" data-refit-denial role="status"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{refitDenial}}</p>{{else}}<p class="ship-muted">Drop a compatible ship component Item onto a mount. The ship receives a fresh embedded copy.</p>{{/if}}
+
+      <section aria-labelledby="refit-slot-heading">
+        <div class="ship-panel-heading"><div><span class="ship-kicker">Hull systems</span><h3 id="refit-slot-heading">Component slots</h3></div></div>
+        <div class="ship-refit-grid">
+          {{#each refitSlots}}
+            <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-mount-id="{{id}}">
+              <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{status}}</span></header>
+              <dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div></dl>
+              {{#if installed}}
+                <button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" title="Open component Item sheet">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<span><small>Installed Item</small><strong>{{itemName}}</strong></span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+              {{else}}
+                <div class="ship-empty"><strong>Empty mount</strong><span>Ship capability is degraded until compatible hardware is installed.</span></div>
+              {{/if}}
+              <div class="ship-refit-drop" data-refit-drop data-mount-id="{{id}}" {{#unless ../canRefit}}data-refit-disabled{{/unless}}><i class="fa-solid fa-download" aria-hidden="true"></i><span>{{dropLabel}}</span></div>
+              {{#if installed}}<div class="ship-action-row"><button type="button" data-refit-item="{{itemId}}">Open Item</button><button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove</button></div>{{/if}}
+            </article>
+          {{else}}<p class="ship-empty">This hull defines no component slots.</p>{{/each}}
+        </div>
+      </section>
+
+      <section aria-labelledby="refit-hardpoint-heading">
+        <div class="ship-panel-heading"><div><span class="ship-kicker">Weapons integration</span><h3 id="refit-hardpoint-heading">Hardpoints</h3></div></div>
+        <div class="ship-refit-grid">
+          {{#each refitHardpoints}}
+            <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-mount-id="{{id}}">
+              <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{status}}</span></header>
+              <dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div><div><dt>Traverse</dt><dd>{{traverse}}</dd></div></dl>
+              {{#if installed}}
+                <button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" title="Open component Item sheet">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<span><small>Installed Item</small><strong>{{itemName}}</strong></span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+              {{else}}
+                <div class="ship-empty"><strong>Empty hardpoint</strong><span>No weapon is available from this mount.</span></div>
+              {{/if}}
+              <div class="ship-refit-drop" data-refit-drop data-mount-id="{{id}}" {{#unless ../canRefit}}data-refit-disabled{{/unless}}><i class="fa-solid fa-download" aria-hidden="true"></i><span>{{dropLabel}}</span></div>
+              {{#if installed}}<div class="ship-action-row"><button type="button" data-refit-item="{{itemId}}">Open Item</button><button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove</button></div>{{/if}}
+            </article>
+          {{else}}<p class="ship-empty">This hull defines no hardpoints.</p>{{/each}}
+        </div>
+      </section>
+
+      <section aria-labelledby="refit-unreferenced-heading">
+        <div class="ship-panel-heading"><div><span class="ship-kicker">Retained hardware</span><h3 id="refit-unreferenced-heading">Unreferenced component Items</h3></div></div>
+        <p class="ship-muted">Advanced hull edits retain embedded component Items that are no longer referenced by a slot or hardpoint. These Items provide no ship capability while unreferenced. Open their structured Item sheets to inspect them.</p>
+        <div class="ship-refit-grid">
+          {{#each refitUnreferencedItems}}
+            <article class="ship-refit-card">
+              <header><h3>{{name}}</h3><span class="ship-status-chip">Unreferenced</span></header>
+              <dl class="ship-refit-meta"><div><dt>Class</dt><dd>{{componentClass}}</dd></div><div><dt>Size</dt><dd>{{size}}</dd></div></dl>
+              <button type="button" data-refit-item="{{id}}" aria-label="Open structured Item sheet for {{name}}">Open Item</button>
+            </article>
+          {{else}}<p class="ship-empty">No unreferenced component Items.</p>{{/each}}
+        </div>
+      </section>
+
+      <details class="ship-card ship-console-config">
+        <summary>Advanced hull JSON</summary>
+        <p class="ship-muted">Hull structure only. Installed component definitions live in embedded Items and are never baked into this JSON. Removing a mount reference retains its Item in Unreferenced component Items above; it does not delete the Item.</p>
+        <form data-config>
+          <fieldset {{#unless canRefit}}disabled{{/unless}}>
+            <label>Validated hull configuration JSON<textarea name="config" rows="20" spellcheck="false">{{configJson}}</textarea></label>
+            <div class="ship-action-row"><button type="submit">Validate and save hull</button><button type="button" data-canadensis>Reset hull and components to Canadensis…</button></div>
+          </fieldset>
+        </form>
+      </details>
+    </section>
+
     <section id="panel-log-config" class="ship-console-panel" role="tabpanel" data-tab-panel="log-config" {{#unless tabState.log-config.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><div><span class="ship-kicker">Administration</span><h2>Log &amp; Configuration</h2></div></div>
+      <div class="ship-panel-heading"><div><span class="ship-kicker">Administration</span><h2>Log &amp; Diagnostics</h2></div></div>
       {{#if isGM}}
         <section class="ship-card"><header><div><span class="ship-kicker">Authority journal</span><h3>Recent operations</h3></div></header>{{#if log}}<ol class="ship-console-log">{{#each log}}<li class="{{#unless ok}}is-error{{/unless}}"><div><strong>{{type}}</strong><span>{{timestamp}}</span></div><details><summary>Operation detail</summary><pre>{{json}}</pre></details>{{#if rollback}}<button type="button" data-rollback="{{id}}">Roll back operation</button>{{/if}}</li>{{/each}}</ol>{{else}}<p class="ship-empty">No logged operations.</p>{{/if}}</section>
         <section class="ship-card ship-console-specifications" aria-label="Installed ship configuration"><header><div><span class="ship-kicker">Reference data</span><h3>Installed configuration</h3></div></header><div class="ship-console-specification-groups">{{#each specGroups}}<section><h4>{{label}}</h4><dl>{{#each entries}}<div><dt>{{label}}</dt><dd>{{value}}</dd></div>{{/each}}</dl></section>{{/each}}</div></section>
         <details class="ship-card ship-diagnostics"><summary>Raw operation console</summary><p class="ship-muted">Diagnostic escape hatch. Normal play should use the purpose-built controls in the other tabs.</p><div class="ship-console-actions">{{#each rawActions}}<form class="ship-operation" data-raw-operation="{{type}}"><fieldset {{#if disabled}}disabled{{/if}}><legend>{{group}} · {{type}}</legend>{{#if targeted}}<label>Target Token UUID(s)<input name="targets" type="text" placeholder="Scene.…Token.…"></label>{{/if}}<label>Payload JSON<textarea name="payload" rows="4" spellcheck="false">{}</textarea></label><p class="ship-console-help">{{help}}</p><details><summary>Raw preview</summary><pre data-preview aria-live="polite"></pre></details><button type="submit">Commit {{type}}</button>{{#if reason}}<p class="ship-console-reason">{{reason}}</p>{{/if}}</fieldset></form>{{/each}}</div></details>
         <details class="ship-card ship-diagnostics"><summary>Raw ship state</summary><pre class="ship-console-state">{{stateJson}}</pre></details>
-        <details class="ship-card ship-console-config"><summary>Ship configuration JSON</summary><p>Saving configuration never changes combat state.</p><form data-config><label>Validated configuration JSON<textarea name="config" rows="20" spellcheck="false">{{configJson}}</textarea></label><div class="ship-action-row"><button type="submit">Validate and save configuration</button><button type="button" data-canadensis>Reset to exact Canadensis config…</button></div></form></details>
-      {{else}}<p class="ship-empty">Operation history and configuration are available only to the GM.</p>{{/if}}
+      {{else}}<p class="ship-empty">Operation history and diagnostics are available only to the GM.</p>{{/if}}
     </section>
   </div>
 </section>

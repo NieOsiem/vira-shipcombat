@@ -7,6 +7,8 @@ import { validateShipConfig } from "./model/validation.js";
 import { registerShipActor } from "./foundry/ship-registration.js";
 import { registerShipSheet } from "./foundry/ship-sheet.js";
 import { registerShipHooks } from "./foundry/hooks.js";
+import { registerShipComponent } from "./foundry/component-registration.js";
+import { registerShipComponentSheet } from "./foundry/component-sheet.js";
 import {
   getOperationLog,
   initializeShipAuthority,
@@ -61,8 +63,10 @@ function initializeDocuments() {
   environmentError = getEnvironmentError();
   if (environmentError) return;
 
+  registerShipComponent();
   registerShipActor();
   registerShipSheet();
+  registerShipComponentSheet();
   initComplete = true;
 }
 

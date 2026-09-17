@@ -24,9 +24,13 @@ function violation(code, message, details = {}) {
 }
 
 function shieldConfig(config) {
-  const shield = config.components?.shield;
+  const shield = config?.components?.shield;
   if (!shield) violation("MISSING_SHIELD", "Ship has no shield configuration");
   return shield;
+}
+
+function hasShield(config) {
+  return Boolean(config?.components?.shield);
 }
 
 function sectorsFor(config) {
@@ -254,6 +258,51 @@ function bypasses(input, channel) {
   return bypass?.[channel] === true;
 }
 
+function resolveUnshieldedDamage(config, state, input) {
+  const sector = input.sector;
+  if (!DIRECTIONAL_SECTORS.includes(sector)) {
+    violation("INVALID_SHIELD_SECTOR", `Invalid impact sector: ${sector}`, { sector });
+  }
+  const shieldDamage = input.shieldDamage ?? 0;
+  const hullDamage = input.hullDamage ?? 0;
+  const heatDamage = input.heatDamage ?? 0;
+  const armorPiercing = input.armorPiercing ?? input.ap ?? 0;
+  requireNonnegativeInteger(shieldDamage, "INVALID_DAMAGE", "shieldDamage");
+  requireNonnegativeInteger(hullDamage, "INVALID_DAMAGE", "hullDamage");
+  requireNonnegativeInteger(heatDamage, "INVALID_DAMAGE", "heatDamage");
+  requireNonnegativeInteger(armorPiercing, "INVALID_ARMOR_PIERCING", "armorPiercing");
+  if (state.hull != null) requireNonnegativeInteger(state.hull, "INVALID_HULL", "hull");
+  requireNonnegativeInteger(state.heat ?? 0, "INVALID_HEAT", "heat");
+  const armor = armorAt(config, sector);
+  const effectiveArmor = Math.max(0, armor - armorPiercing);
+  const hullDamageTaken = Math.max(0, hullDamage - effectiveArmor);
+  if (state.hull != null) state.hull = Math.max(0, state.hull - hullDamageTaken);
+  state.heat = (state.heat ?? 0) + heatDamage;
+  return {
+    sector,
+    armorSector: sector,
+    fieldActive: false,
+    shieldBefore: 0,
+    activeShield: 0,
+    shieldAfter: 0,
+    shieldDamageApplied: 0,
+    collapsed: false,
+    rechargeCounter: 0,
+    penetratingFraction: 1,
+    hullFraction: 1,
+    heatFraction: 1,
+    transmittedHull: hullDamage,
+    transmittedHeat: heatDamage,
+    armor,
+    armorPiercing,
+    effectiveArmor,
+    hullDamageTaken,
+    hullAfter: state.hull,
+    heatAfter: state.heat,
+    capacityLosses: [],
+  };
+}
+
 export function allocateRegeneration(total, weights) {
   requireNonnegativeInteger(total, "INVALID_REGENERATION_BUDGET", "total");
   if (!weights || typeof weights !== "object" || Array.isArray(weights)) {
@@ -299,6 +348,15 @@ export function allocateRegeneration(total, weights) {
 }
 
 export function applyShieldCapacityClamping(config, state) {
+  if (!hasShield(config)) {
+    return {
+      capacities: {},
+      charge: {},
+      destroyedCharge: 0,
+      losses: [],
+      total: 0,
+    };
+  }
   const projection = capacityProjection(config, state);
   applyCapacityProjection(state, projection);
   return {
@@ -311,6 +369,17 @@ export function applyShieldCapacityClamping(config, state) {
 }
 
 export function applyShieldRegeneration(config, state) {
+  if (!hasShield(config)) {
+    return {
+      budget: 0,
+      assigned: {},
+      planned: {},
+      gains: {},
+      losses: [],
+      charge: {},
+      regenerated: 0,
+    };
+  }
   const projection = capacityProjection(config, state);
   const shield = shieldConfig(config);
   const tier = shieldTier(config, state);
@@ -368,6 +437,7 @@ export function applyShieldRegeneration(config, state) {
 }
 
 export function tickShieldRecharge(config, state) {
+  if (!hasShield(config)) return { events: [] };
   const events = [];
   state.shields ??= {};
   state.shields.collapse ??= {};
@@ -448,6 +518,7 @@ export function commitDefenseRoute(config, state, staged) {
 
 export function resolveShieldDamage(config, state, input = {}) {
   const requestedSector = input.sector;
+  if (!hasShield(config)) return resolveUnshieldedDamage(config, state, input);
   const sector = impactSector(config, requestedSector);
   const armorSector =
     shieldConfig(config).topology === "bubble" && DIRECTIONAL_SECTORS.includes(requestedSector)
