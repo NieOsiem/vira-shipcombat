@@ -9,6 +9,11 @@ import {
   resetShipToCanadensis,
   saveShipHull,
 } from "./refit.js";
+import {
+  buildOperatorProfileFromActor,
+  ensureActorCrewFeature,
+} from "./crew.js";
+import { openCrewRatingEditor } from "./crew-sheet.js";
 
 import { previewPowerRoute } from "../rules/power.js";
 import { previewDefenseRoute } from "../rules/shields.js";
@@ -143,13 +148,22 @@ function elementFormData(element) {
   return { ...values, ...(element?.dataset ?? {}) };
 }
 
-function rosterPayload(data, config) {
-  const roster = { command: [], crew: [] };
+function rosterPayload(data, config, state) {
+  const roster = clone(state?.roster ?? { command: [], crew: [] });
+  roster.command = Array.isArray(roster.command) ? [...roster.command] : [];
+  roster.crew = Array.isArray(roster.crew) ? [...roster.crew] : [];
   for (const kind of ["command", "crew"]) {
     const capacity = Number(config?.[`${kind}Capacity`] ?? 0);
     for (let slot = 0; slot < capacity; slot += 1) {
-      const operatorId = data[`${kind}-${slot}`];
-      if (operatorId) roster[kind].push({ operatorId, slot });
+      const key = `${kind}-${slot}`;
+      if (key in data) {
+        const operatorId = data[key];
+        roster[kind] = roster[kind].filter((entry) => {
+          const entryOp = typeof entry === "string" ? entry : entry?.operatorId ?? entry?.id;
+          return entry.slot !== slot && (!operatorId || entryOp !== operatorId);
+        });
+        if (operatorId) roster[kind].push({ operatorId, slot });
+      }
     }
   }
   return roster;
@@ -162,7 +176,7 @@ function uiOperation(type, data, config, state) {
   switch (type) {
     case "setRoster":
       return {
-        payload: { gmOverride: true, roster: rosterPayload(data, config) },
+        payload: { gmOverride: true, roster: rosterPayload(data, config, state) },
         targetUuids: [],
       };
     case "takeControl":
@@ -1468,6 +1482,42 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         true,
       );
     });
+    html.querySelectorAll("[data-roster-slot]").forEach((slotEl) => {
+      slotEl.addEventListener(
+        "dragover",
+        (event) => void this.#dragRoster(event, slotEl),
+      );
+      slotEl.addEventListener("dragleave", (event) => {
+        if (!slotEl.contains(event.relatedTarget)) {
+          slotEl.classList.remove("is-dragover");
+        }
+      });
+      slotEl.addEventListener(
+        "drop",
+        (event) => void this.#dropRoster(event, slotEl),
+        true,
+      );
+    });
+    html.querySelectorAll("[data-roster-remove]").forEach((button) => {
+      button.addEventListener(
+        "click",
+        () => void this.#unassignRosterSlot(button.dataset.rosterRemove),
+      );
+    });
+    html.querySelectorAll("[data-roster-edit]").forEach((button) => {
+      button.addEventListener(
+        "click",
+        () => void this.#editRosterActor(button.dataset.rosterEdit),
+      );
+    });
+    html.querySelectorAll("[data-roster-actor]").forEach((element) => {
+      element.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const actorId = element.dataset.rosterActor;
+        const actor = globalThis.game?.actors?.get(actorId);
+        actor?.sheet?.render(true);
+      });
+    });
     html.querySelectorAll("[data-refit-item]").forEach((button) => {
       button.addEventListener(
         "click",
@@ -2655,6 +2705,135 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       if (button.isConnected) {
         button.disabled = Boolean(getRefitDenial(this.actor));
       }
+    }
+  }
+
+  #dragRoster(event, slot) {
+    event.preventDefault();
+    slot.classList.add("is-dragover");
+  }
+
+  async #dropRoster(event, slot) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    slot.classList.remove("is-dragover");
+    try {
+      if (!globalThis.game?.user?.isGM && !this.#canAct) {
+        throw new Error("Only the active GM or authorized operator can modify station assignments.");
+      }
+      const data = globalThis.TextEditor?.getDragEventData?.(event) ??
+        JSON.parse(event.dataTransfer?.getData("text/plain") || "{}");
+      if (data?.type !== "Actor") {
+        throw new Error("Drop a PC or NPC Actor on this station slot.");
+      }
+      const ActorClass = globalThis.Actor?.implementation ?? globalThis.CONFIG?.Actor?.documentClass;
+      const droppedActor = await ActorClass?.fromDropData?.(data);
+      if (!droppedActor) {
+        throw new Error("The dropped Actor could not be resolved.");
+      }
+      if (droppedActor.type === SHIP_TYPE) {
+        throw new Error("A ship cannot be assigned to a station slot.");
+      }
+
+      const kind = slot.dataset.kind;
+      const slotIndex = Number(slot.dataset.slot);
+      await this.#assignActorToSlot(droppedActor, kind, slotIndex);
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
+  }
+
+  async #assignActorToSlot(droppedActor, kind, slotIndex) {
+    await ensureActorCrewFeature(droppedActor);
+    const profile = buildOperatorProfileFromActor(droppedActor);
+
+    const ship = this.actor;
+    const config = ship.system?.shipCombat?.config ?? {};
+    const state = ship.system?.shipCombat?.state ?? {};
+
+    // 1. Update operators array on the ship actor
+    const operators = Array.isArray(config.operators) ? [...config.operators] : [];
+    const existingIndex = operators.findIndex((o) => o.id === profile.id || (profile.actorId && o.actorId === profile.actorId));
+    if (existingIndex >= 0) {
+      operators[existingIndex] = { ...operators[existingIndex], ...profile };
+    } else {
+      operators.push(profile);
+    }
+    await ship.update({ "system.shipCombat.config.operators": operators });
+
+    // 2. Prepare next roster with duplicate slot and actor removal
+    const currentRoster = clone(state.roster ?? { command: [], crew: [] });
+    currentRoster.command = Array.isArray(currentRoster.command) ? [...currentRoster.command] : [];
+    currentRoster.crew = Array.isArray(currentRoster.crew) ? [...currentRoster.crew] : [];
+
+    const isTarget = (entry, k, idx) => {
+      const opId = typeof entry === "string" ? entry : entry?.operatorId ?? entry?.id;
+      const slot = typeof entry === "object" && entry?.slot != null ? entry.slot : idx;
+      if (k === kind && slot === slotIndex) return true;
+      if (opId === profile.id) return true;
+      const entryProfile = operators.find((o) => o.id === opId);
+      if (profile.actorId && (entry?.actorId === profile.actorId || entryProfile?.actorId === profile.actorId)) {
+        return true;
+      }
+      return false;
+    };
+
+    currentRoster.command = currentRoster.command.filter((entry, idx) => !isTarget(entry, "command", idx));
+    currentRoster.crew = currentRoster.crew.filter((entry, idx) => !isTarget(entry, "crew", idx));
+    currentRoster[kind].push({ operatorId: profile.id, slot: slotIndex });
+
+    // 3. Commit roster via operation or direct write
+    const token = actorToken(ship);
+    if (token) {
+      await this.#commitOperation(
+        "setRoster",
+        { gmOverride: true, roster: currentRoster },
+        [],
+        state.revision,
+      );
+    } else {
+      await ship.update({ "system.shipCombat.state.roster": currentRoster });
+    }
+
+    ui.notifications.info(`Assigned ${profile.label} to ${kind === "command" ? "Command" : "Crew"} ${slotIndex + 1}.`);
+    await this.render();
+  }
+
+  async #unassignRosterSlot(key) {
+    try {
+      const [kind, slotStr] = key.split("-");
+      const slotIndex = Number(slotStr);
+      const ship = this.actor;
+      const state = ship.system?.shipCombat?.state ?? {};
+      const currentRoster = clone(state.roster ?? { command: [], crew: [] });
+      currentRoster[kind] = (currentRoster[kind] ?? []).filter((entry, idx) => {
+        const slot = typeof entry === "object" && entry?.slot != null ? entry.slot : idx;
+        return slot !== slotIndex;
+      });
+
+      const token = actorToken(ship);
+      if (token) {
+        await this.#commitOperation(
+          "setRoster",
+          { gmOverride: true, roster: currentRoster },
+          [],
+          state.revision,
+        );
+      } else {
+        await ship.update({ "system.shipCombat.state.roster": currentRoster });
+      }
+
+      await this.render();
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
+  }
+
+  async #editRosterActor(actorId) {
+    if (!actorId) return;
+    const actor = globalThis.game?.actors?.get(actorId);
+    if (actor) {
+      await openCrewRatingEditor(actor);
     }
   }
 

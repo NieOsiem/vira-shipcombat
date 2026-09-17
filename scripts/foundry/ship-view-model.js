@@ -140,6 +140,10 @@ function operatorViews(config, state) {
       slot: entry.slot,
       resource,
       remaining,
+      img: profile.img ?? null,
+      actorId: profile.actorId ?? null,
+      type: profile.type ?? "npc",
+      typeLabel: (profile.type ?? "npc").toUpperCase(),
       ratings: {
         piloting: whole(profile?.ratings?.piloting),
         gunnery: whole(profile?.ratings?.gunnery),
@@ -194,6 +198,41 @@ function rosterSlots(config, state) {
           label: profile.label ?? profile.id,
           selected: profile.id === selected,
         })),
+      };
+    });
+  return {
+    command: makeSlots("command", config?.commandCapacity),
+    crew: makeSlots("crew", config?.crewCapacity),
+  };
+}
+
+function stationSlots(config, state, allOperators) {
+  const operatorsBySlot = new Map(
+    allOperators.map((op) => [`${op.kind}-${op.slot}`, op]),
+  );
+  const profiles = config?.operators ?? [];
+  const makeSlots = (kind, capacity) =>
+    Array.from({ length: whole(capacity) }, (_, slot) => {
+      const key = `${kind}-${slot}`;
+      const operator = operatorsBySlot.get(key) ?? null;
+      const kindLabel = kind === "command" ? "Command" : "Crew";
+      const slotNumber = slot + 1;
+      return {
+        kind,
+        kindLabel,
+        slot,
+        slotNumber,
+        label: `${kindLabel} ${slotNumber}`,
+        field: key,
+        occupied: Boolean(operator),
+        empty: !operator,
+        operator,
+        options: profiles.map((profile) => ({
+          id: profile.id,
+          label: profile.label ?? profile.id,
+          selected: profile.id === operator?.id,
+        })),
+        dropLabel: `Drop PC or NPC into ${kindLabel} ${slotNumber}`,
       };
     });
   return {
@@ -597,10 +636,12 @@ export function buildShipConsoleView(
   const shields = shieldView(config, state);
   const sensor = getSensorStats(config, state);
   const signature = getCurrentSignature(config, state);
-  const operators = operatorViews(config, state)
+  const allOperators = operatorViews(config, state);
+  const operators = allOperators
     .filter((operator) =>
       operatorUserId == null || operator.userId === operatorUserId
     );
+  const stationSlotsView = stationSlots(config, state, allOperators);
   const controls = state?.controls ?? {};
   const defaults = {
     helm: bestOperator(operators, "piloting", holderId(controls.helm)),
@@ -697,6 +738,7 @@ export function buildShipConsoleView(
       revision: whole(state?.revision),
     },
     operators,
+    stationSlots: stationSlotsView,
     defaults,
     roster: rosterSlots(config, state),
     power,

@@ -1,0 +1,70 @@
+<div class="ship-crew-qualifications-sheet">
+  <header class="ship-crew-header">
+    <img class="ship-crew-portrait" src="{{img}}" alt="{{label}}">
+    <div class="ship-crew-title">
+      <h2>{{label}}</h2>
+      <p class="ship-muted">{{actorName}} · Ship Combat Station Qualifications</p>
+    </div>
+  </header>
+
+  <fieldset class="ship-card">
+    <legend>Operator Profile</legend>
+    <div class="ship-form-row">
+      <label>Operator Type
+        <select name="type">
+          {{#each typeOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+          {{/each}}
+        </select>
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="ship-card">
+    <legend>Station Ratings (1–10)</legend>
+    <div class="ship-ratings-form-grid">
+      <label class="ship-rating-field">
+        <span>Piloting <output data-rating-output="piloting">{{ratings.piloting}}</output></span>
+        <input type="range" min="1" max="10" step="1" name="ratings.piloting" value="{{ratings.piloting}}">
+      </label>
+
+      <label class="ship-rating-field">
+        <span>Gunnery <output data-rating-output="gunnery">{{ratings.gunnery}}</output></span>
+        <input type="range" min="1" max="10" step="1" name="ratings.gunnery" value="{{ratings.gunnery}}">
+      </label>
+
+      <label class="ship-rating-field">
+        <span>Sensors <output data-rating-output="sensors">{{ratings.sensors}}</output></span>
+        <input type="range" min="1" max="10" step="1" name="ratings.sensors" value="{{ratings.sensors}}">
+      </label>
+
+      <label class="ship-rating-field">
+        <span>Engineering <output data-rating-output="engineering">{{ratings.engineering}}</output></span>
+        <input type="range" min="1" max="10" step="1" name="ratings.engineering" value="{{ratings.engineering}}">
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="ship-card">
+    <legend>Capabilities</legend>
+    <div class="ship-checkbox-grid">
+      <label class="ship-checkbox-label">
+        <input type="checkbox" name="capabilities.work" {{#if capabilities.work}}checked{{/if}}>
+        <span>Physical Work (Damage control, manual reload, component repairs)</span>
+      </label>
+      <label class="ship-checkbox-label">
+        <input type="checkbox" name="capabilities.repairDrone" {{#if capabilities.repairDrone}}checked{{/if}}>
+        <span>Repair Drone (Remote or automated work capability)</span>
+      </label>
+      <label class="ship-checkbox-label">
+        <input type="checkbox" name="capabilities.selfRepair" {{#if capabilities.selfRepair}}checked{{/if}}>
+        <span>Self-Repair (Internal automated restoration)</span>
+      </label>
+    </div>
+  </fieldset>
+
+  <footer class="ship-form-actions">
+    <button type="submit" class="ship-primary"><i class="fa-solid fa-save"></i> Save Qualifications</button>
+  </footer>
+</div>
+

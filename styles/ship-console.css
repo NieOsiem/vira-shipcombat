@@ -1991,3 +1991,233 @@
     border: 0;
   }
 }
+
+/* ==========================================================================
+   Crew Stations & Drag-and-Drop Slot Styling
+   ========================================================================== */
+
+.ship-crew-section-heading {
+  margin-bottom: 0.35rem;
+}
+
+.ship-crew-section-heading h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ship-text-primary, #e2e8f0);
+}
+
+.ship-operator-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+
+.ship-operator-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--ship-border, rgba(255, 255, 255, 0.15));
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.ship-operator-avatar:hover {
+  border-color: var(--ship-accent, #58a6ff);
+  transform: scale(1.05);
+}
+
+.ship-operator-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.ship-operator-name {
+  margin: 0;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.ship-operator-name:hover {
+  color: var(--ship-accent, #58a6ff);
+  text-decoration: underline;
+}
+
+.ship-operator-card--empty {
+  border: 1px dashed var(--ship-border, rgba(255, 255, 255, 0.2));
+  background: rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.ship-operator-card.is-dragover,
+.ship-operator-card--empty.is-dragover {
+  border-color: var(--ship-accent, #58a6ff) !important;
+  background: rgba(88, 166, 255, 0.15) !important;
+  box-shadow: 0 0 12px rgba(88, 166, 255, 0.3);
+  transform: scale(1.01);
+}
+
+.ship-slot-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.25rem 0.75rem;
+  text-align: center;
+}
+
+.ship-slot-dropzone i {
+  font-size: 1.6rem;
+  color: var(--ship-muted, #94a3b8);
+}
+
+.ship-slot-dropzone-text h4 {
+  margin: 0.1rem 0 0;
+  font-size: 0.9rem;
+  color: var(--ship-text-primary, #e2e8f0);
+}
+
+.ship-slot-picker {
+  margin-top: auto;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--ship-border, rgba(255, 255, 255, 0.08));
+}
+
+.ship-slot-picker-form {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.ship-slot-picker-form select {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.4rem;
+}
+
+.ship-slot-picker-form button {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.ship-slot-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--ship-border, rgba(255, 255, 255, 0.08));
+}
+
+.ship-slot-action-btn {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ship-border, rgba(255, 255, 255, 0.15));
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ship-text-primary, #e2e8f0);
+}
+
+.ship-slot-action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--ship-accent, #58a6ff);
+}
+
+.ship-slot-action-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+/* ==========================================================================
+   Crew Qualifications Sheet & In-Line Feature Badge
+   ========================================================================== */
+
+.ship-crew-qualifications-sheet {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.5rem;
+}
+
+.ship-crew-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ship-crew-portrait {
+  width: 50px;
+  height: 50px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--ship-border, rgba(255, 255, 255, 0.2));
+}
+
+.ship-crew-title h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.ship-ratings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+.ship-rating-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ship-rating-field span {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.ship-rating-field output {
+  font-weight: 700;
+  color: var(--ship-accent, #58a6ff);
+}
+
+.ship-checkbox-grid {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.ship-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.vira-crew-qualifications-badge {
+  padding: 0.5rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 5px;
+  margin: 0.4rem 0;
+}
+
+.vira-chip {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75em;
+  background: rgba(88, 166, 255, 0.2);
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  border-radius: 3px;
+  color: #58a6ff;
+  font-weight: 600;
+}

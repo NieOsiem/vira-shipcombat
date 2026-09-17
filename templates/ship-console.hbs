@@ -43,30 +43,132 @@
     </section>
 
     <section id="panel-crew" class="ship-console-panel" role="tabpanel" aria-label="Crew" data-tab-panel="crew" {{#unless tabState.crew.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Crew</h2></div>
-      <div class="ship-operator-grid">
-        {{#each view.operators}}
-          <form class="ship-card ship-operator-card">
-            <header><div><span class="ship-kicker">{{kindLabel}} {{slot}}</span><h3>{{label}}</h3></div><strong>{{remaining}} {{resource}}</strong></header>
-            <input type="hidden" name="operatorId" value="{{id}}">
-            <dl class="ship-rating-grid"><div><dt>Pilot</dt><dd>{{ratings.piloting}}</dd></div><div><dt>Gunnery</dt><dd>{{ratings.gunnery}}</dd></div><div><dt>Sensors</dt><dd>{{ratings.sensors}}</dd></div><div><dt>Engineering</dt><dd>{{ratings.engineering}}</dd></div></dl>
-            <p class="ship-muted">Controls: {{controlsLabel}}</p>
-            <div class="ship-segmented"><button type="button" data-ui-operation="takeControl" data-control="helm" {{#unless ../canAct}}disabled{{/unless}}>Helm</button><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless ../canAct}}disabled{{/unless}}>Power</button><button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless ../canAct}}disabled{{/unless}}>Defense</button></div>
-          </form>
-        {{else}}<p class="ship-empty">No assigned crew.</p>{{/each}}
+      <div class="ship-panel-heading"><h2>Crew &amp; Stations</h2><span class="ship-readout">Command {{view.stationSlots.command.length}} · Crew {{view.stationSlots.crew.length}}</span></div>
+
+      <div class="ship-crew-section-heading">
+        <h3>Command Stations (3 Actions)</h3>
+        <small class="ship-muted">Active consoles for maneuvers, routing, targeting, and weapons</small>
       </div>
-      {{#if isGM}}
-        <details class="ship-card ship-roster-editor">
-          <summary>GM roster assignment</summary>
-          <form data-ui-operation="setRoster">
-            <div class="ship-form-grid">
-              {{#each view.roster.command}}<label>{{label}}<select name="{{field}}"><option value="">Unassigned</option>{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}
-              {{#each view.roster.crew}}<label>{{label}}<select name="{{field}}"><option value="">Unassigned</option>{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}
-            </div>
-            <button type="submit" {{#unless canAdmin}}disabled{{/unless}}>Commit roster</button>
-          </form>
-        </details>
-      {{/if}}
+      <div class="ship-operator-grid">
+        {{#each view.stationSlots.command}}
+          {{#if occupied}}
+            <form class="ship-card ship-operator-card" data-roster-slot data-kind="command" data-slot="{{slot}}">
+              <header class="ship-operator-header">
+                {{#if operator.img}}<img class="ship-operator-avatar" src="{{operator.img}}" alt="{{operator.label}}" data-roster-actor="{{operator.actorId}}" title="Click to open character sheet">{{/if}}
+                <div class="ship-operator-title">
+                  <span class="ship-kicker">{{label}} · {{operator.typeLabel}}</span>
+                  <h3 class="ship-operator-name" data-roster-actor="{{operator.actorId}}" title="Click to open character sheet">{{operator.label}}</h3>
+                </div>
+                <strong>{{operator.remaining}} Actions</strong>
+              </header>
+              <input type="hidden" name="operatorId" value="{{operator.id}}">
+              <dl class="ship-rating-grid">
+                <div><dt>Pilot</dt><dd>{{operator.ratings.piloting}}</dd></div>
+                <div><dt>Gunnery</dt><dd>{{operator.ratings.gunnery}}</dd></div>
+                <div><dt>Sensors</dt><dd>{{operator.ratings.sensors}}</dd></div>
+                <div><dt>Engineering</dt><dd>{{operator.ratings.engineering}}</dd></div>
+              </dl>
+              <p class="ship-muted">Controls: {{operator.controlsLabel}}</p>
+              <div class="ship-segmented">
+                <button type="button" data-ui-operation="takeControl" data-control="helm" {{#unless ../canAct}}disabled{{/unless}}>Helm</button>
+                <button type="button" data-ui-operation="takeControl" data-control="power" {{#unless ../canAct}}disabled{{/unless}}>Power</button>
+                <button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless ../canAct}}disabled{{/unless}}>Defense</button>
+              </div>
+              <div class="ship-action-row ship-slot-actions">
+                <button type="button" class="ship-slot-action-btn" data-roster-edit="{{operator.actorId}}" title="Edit character station ratings"><i class="fa-solid fa-pen-to-square"></i> Ratings</button>
+                {{#if ../isGM}}
+                  <button type="button" class="ship-slot-action-btn ship-slot-action-btn--danger" data-roster-remove="command-{{slot}}" title="Unassign character"><i class="fa-solid fa-user-xmark"></i> Eject</button>
+                {{/if}}
+              </div>
+            </form>
+          {{else}}
+            <article class="ship-card ship-operator-card ship-operator-card--empty" data-roster-slot data-kind="command" data-slot="{{slot}}">
+              <div class="ship-slot-dropzone">
+                <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                <div class="ship-slot-dropzone-text">
+                  <span class="ship-kicker">{{label}} · Available</span>
+                  <h4>Drop PC or NPC here</h4>
+                </div>
+              </div>
+              {{#if ../isGM}}
+                <div class="ship-slot-picker">
+                  <form data-ui-operation="setRoster" class="ship-slot-picker-form">
+                    <select name="{{field}}">
+                      <option value="">Or select profile…</option>
+                      {{#each options}}
+                        <option value="{{id}}">{{label}}</option>
+                      {{/each}}
+                    </select>
+                    <button type="submit" {{#unless ../canAdmin}}disabled{{/unless}}>Assign</button>
+                  </form>
+                </div>
+              {{/if}}
+            </article>
+          {{/if}}
+        {{else}}
+          <p class="ship-empty">This hull has no Command Capacity.</p>
+        {{/each}}
+      </div>
+
+      <div class="ship-crew-section-heading" style="margin-top: 1rem;">
+        <h3>Crew Stations (1 Order)</h3>
+        <small class="ship-muted">Support stations for damage control, repairs, and loading</small>
+      </div>
+      <div class="ship-operator-grid">
+        {{#each view.stationSlots.crew}}
+          {{#if occupied}}
+            <form class="ship-card ship-operator-card" data-roster-slot data-kind="crew" data-slot="{{slot}}">
+              <header class="ship-operator-header">
+                {{#if operator.img}}<img class="ship-operator-avatar" src="{{operator.img}}" alt="{{operator.label}}" data-roster-actor="{{operator.actorId}}" title="Click to open character sheet">{{/if}}
+                <div class="ship-operator-title">
+                  <span class="ship-kicker">{{label}} · {{operator.typeLabel}}</span>
+                  <h3 class="ship-operator-name" data-roster-actor="{{operator.actorId}}" title="Click to open character sheet">{{operator.label}}</h3>
+                </div>
+                <strong>{{operator.remaining}} Orders</strong>
+              </header>
+              <input type="hidden" name="operatorId" value="{{operator.id}}">
+              <dl class="ship-rating-grid">
+                <div><dt>Pilot</dt><dd>{{operator.ratings.piloting}}</dd></div>
+                <div><dt>Gunnery</dt><dd>{{operator.ratings.gunnery}}</dd></div>
+                <div><dt>Sensors</dt><dd>{{operator.ratings.sensors}}</dd></div>
+                <div><dt>Engineering</dt><dd>{{operator.ratings.engineering}}</dd></div>
+              </dl>
+              <p class="ship-muted">Supporting order capacity: Damage Control / Recovery Work</p>
+              <div class="ship-action-row ship-slot-actions">
+                <button type="button" class="ship-slot-action-btn" data-roster-edit="{{operator.actorId}}" title="Edit character station ratings"><i class="fa-solid fa-pen-to-square"></i> Ratings</button>
+                {{#if ../isGM}}
+                  <button type="button" class="ship-slot-action-btn ship-slot-action-btn--danger" data-roster-remove="crew-{{slot}}" title="Unassign character"><i class="fa-solid fa-user-xmark"></i> Eject</button>
+                {{/if}}
+              </div>
+            </form>
+          {{else}}
+            <article class="ship-card ship-operator-card ship-operator-card--empty" data-roster-slot data-kind="crew" data-slot="{{slot}}">
+              <div class="ship-slot-dropzone">
+                <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                <div class="ship-slot-dropzone-text">
+                  <span class="ship-kicker">{{label}} · Available</span>
+                  <h4>Drop PC or NPC here</h4>
+                </div>
+              </div>
+              {{#if ../isGM}}
+                <div class="ship-slot-picker">
+                  <form data-ui-operation="setRoster" class="ship-slot-picker-form">
+                    <select name="{{field}}">
+                      <option value="">Or select profile…</option>
+                      {{#each options}}
+                        <option value="{{id}}">{{label}}</option>
+                      {{/each}}
+                    </select>
+                    <button type="submit" {{#unless ../canAdmin}}disabled{{/unless}}>Assign</button>
+                  </form>
+                </div>
+              {{/if}}
+            </article>
+          {{/if}}
+        {{else}}
+          <p class="ship-empty">This hull has no Crew Capacity.</p>
+        {{/each}}
+      </div>
     </section>
 
     <section id="panel-helm" class="ship-console-panel" role="tabpanel" aria-label="Helm" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>

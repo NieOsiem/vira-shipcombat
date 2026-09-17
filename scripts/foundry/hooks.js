@@ -26,6 +26,12 @@ import {
   isInternalComponentMutation,
 } from "./initialization.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
+import { CREW_FEATURE_NAME, getActorCrewData } from "./crew.js";
+import {
+  CrewRatingSheet,
+  openCrewRatingEditor,
+  syncAssignedShips,
+} from "./crew-sheet.js";
 
 const POSITION_FIELDS = Object.freeze(["x", "y", "rotation"]);
 let hooksRegistered = false;
@@ -619,6 +625,53 @@ export function registerShipHooks() {
   hooksRegistered = true;
   installShipInitiative();
 
+  if (globalThis.DocumentSheetConfig?.registerSheet) {
+    globalThis.DocumentSheetConfig.registerSheet(
+      globalThis.Item,
+      MODULE_ID,
+      CrewRatingSheet,
+      { types: ["feat"], label: "Ship Station Qualifications" },
+    );
+  }
+
+  Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
+    const actor = sheet?.actor;
+    if (!actor || actor.type === SHIP_TYPE) return;
+    buttons.unshift({
+      label: "Ship Ratings",
+      class: "vira-shipcombat-ratings",
+      icon: "fa-solid fa-compass",
+      onclick: () => void openCrewRatingEditor(actor),
+    });
+  });
+
+  Hooks.on("getHeaderControlsApplicationV2", (sheet, controls) => {
+    const actor = sheet?.actor;
+    if (!actor || actor.type === SHIP_TYPE) return;
+    controls.unshift({
+      icon: "fa-solid fa-compass",
+      label: "Ship Ratings",
+      action: "openShipRatings",
+      onClick: () => void openCrewRatingEditor(actor),
+    });
+  });
+
+  Hooks.on("updateItem", (item) => {
+    if (item.flags?.[MODULE_ID]?.isCrewRole || item.name === CREW_FEATURE_NAME) {
+      const actor = item.parent;
+      if (actor) {
+        const crewData = getActorCrewData(actor);
+        void syncAssignedShips(actor.id, {
+          ratings: crewData.ratings,
+          type: crewData.type,
+          capabilities: crewData.capabilities,
+          label: actor.name,
+          img: actor.img,
+        });
+      }
+    }
+  });
+
   // Ordinary synchronization is read-only. refreshResources is a turn reset,
   // not a refresh API: calling it here would replenish spent actions and orders.
   for (
@@ -702,7 +755,13 @@ export function registerShipHooks() {
   });
 
   Hooks.on("updateActor", (actor, changes, options, userId) => {
-    if (actor.type !== SHIP_TYPE || options?.[INTERNAL_UPDATE]) return;
+    if (actor.type !== SHIP_TYPE) {
+      if (changes.name || changes.img || changes.prototypeToken) {
+        void syncAssignedShips(actor.id, { label: actor.name, img: actor.img });
+      }
+      return;
+    }
+    if (options?.[INTERNAL_UPDATE]) return;
     const ship = actor.system?.shipCombat;
     const nativeUpdate = ship?.config && ship?.state
       ? shipFieldsFromNativeVehicleChanges(changes, ship.config, ship.state)
