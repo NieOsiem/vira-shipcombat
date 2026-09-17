@@ -7,7 +7,7 @@ import { nativeVehicleFieldChanges } from "../model/native-vehicle.js";
 import { submitShipOperation } from "../state/action-queue.js";
 import { isActiveGM } from "../socket.js";
 import { createGmEventMessages, publishOperationEvents } from "./chat.js";
-import { isInternalComponentMutation, migrateShipActor } from "./migration.js";
+import { isInternalComponentMutation, initializeShipActor } from "./initialization.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
 
 const POSITION_FIELDS = Object.freeze(["x", "y", "rotation"]);
@@ -200,10 +200,10 @@ async function enforceOperatorOwnership(subject) {
   }
 }
 
-/** Migrate, normalize, and synchronize one world or synthetic ship Actor in its own context. */
+/** Initialize, normalize, and synchronize one world or synthetic ship Actor in its own context. */
 async function initializeActorShipData(actor) {
   if (actor?.type !== SHIP_TYPE || !activeGm()) return false;
-  const migrated = await migrateShipActor(actor);
+  const initialized = await initializeShipActor(actor);
   const current = clone(actor.system?.shipCombat ?? {});
   const items = componentItems(actor);
   const normalized = normalizeShipData(current, items);
@@ -212,10 +212,11 @@ async function initializeActorShipData(actor) {
   const update = nativeVehicleFieldChanges(actor, effective, normalized.state);
   if (shipChanged) update["system.shipCombat"] = forcedReplacement(normalized);
   if (Object.keys(update).length) {
-    await actor.update(update, { [INTERNAL_UPDATE]: true });
+    const updated = await actor.update(update, { [INTERNAL_UPDATE]: true });
+    if (!updated) throw new Error("Ship normalization did not update the Actor.");
   }
   await enforceOperatorOwnership(actor);
-  return migrated || shipChanged || Object.keys(update).length > 0;
+  return initialized || shipChanged || Object.keys(update).length > 0;
 }
 
 /** Fill only absent ship-data fields, retaining every value already stored by the token actor. */

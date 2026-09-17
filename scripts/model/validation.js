@@ -202,16 +202,7 @@ export function validateEffectiveLoadout(config, { tokenWidth } = {}) {
     }
   }
 
-  const reactor = components.reactor;
-  if (isObject(reactor)) {
-    requireNumber(reactor.nominalOutput, "components.reactor.nominalOutput", { min: 0, strict: true, integer: true });
-    requireNumber(reactor.redlineOutput, "components.reactor.redlineOutput", { min: 0, strict: true, integer: true });
-    if (isFiniteNumber(reactor.nominalOutput) && isFiniteNumber(reactor.redlineOutput) && reactor.redlineOutput < reactor.nominalOutput) {
-      error("INVALID_REACTOR_LIMITS", "components.reactor.redlineOutput", "Redline output cannot be below nominal output.");
-    }
-    requireNumber(reactor.overclockHeat, "components.reactor.overclockHeat", { min: 0 });
-    validateRecoveryWork(reactor.recoveryWork, "components.reactor.recoveryWork", error);
-  }
+  validateReactor(components.reactor, error, requireNumber);
 
   const engines = config.powerSystems?.engines;
   const hasInstalledDrives = isObject(components.drives)
@@ -349,13 +340,29 @@ function validateTiers(component, path, kind, error, { allowEmpty = false } = {}
   if (!powers.has(0)) error("MISSING_ZERO_POWER_TIER", `${path}.tiers`, "Power tiers must define tier 0.");
 }
 
-function validateShield(shield, error, requireNumber) {
-  if (!isObject(shield)) return;
-  if (!SHIELD_TOPOLOGIES.includes(shield.topology)) error("INVALID_SHIELD_TOPOLOGY", "components.shield.topology", "Shield topology must be directional or bubble.");
+function validateReactor(reactor, error, requireNumber, path = "components.reactor") {
+  if (!isObject(reactor)) return;
+  requireNumber(reactor.nominalOutput, `${path}.nominalOutput`, { min: 0, strict: true, integer: true });
+  requireNumber(reactor.redlineOutput, `${path}.redlineOutput`, { min: 0, strict: true, integer: true });
+  if (isFiniteNumber(reactor.nominalOutput) && isFiniteNumber(reactor.redlineOutput) && reactor.redlineOutput < reactor.nominalOutput) {
+    error("INVALID_REACTOR_LIMITS", `${path}.redlineOutput`, "Redline output cannot be below nominal output.");
+  }
+  requireNumber(reactor.overclockHeat, `${path}.overclockHeat`, { min: 0 });
+  validateRecoveryWork(reactor.recoveryWork, `${path}.recoveryWork`, error);
+}
+
+function validateShieldTopology(shield, path, error) {
+  if (!SHIELD_TOPOLOGIES.includes(shield.topology)) error("INVALID_SHIELD_TOPOLOGY", `${path}.topology`, "Shield topology must be directional or bubble.");
   const expected = shield.topology === "bubble" ? ["bubble"] : SECTORS;
   if (!Array.isArray(shield.sectors) || shield.sectors.length !== expected.length || expected.some((sector) => !shield.sectors.includes(sector))) {
-    error("INVALID_SHIELD_SECTORS", "components.shield.sectors", `Shield sectors must be exactly ${expected.join(", ")}.`);
+    error("INVALID_SHIELD_SECTORS", `${path}.sectors`, `Shield sectors must be exactly ${expected.join(", ")}.`);
   }
+  return expected;
+}
+
+function validateShield(shield, error, requireNumber) {
+  if (!isObject(shield)) return;
+  const expected = validateShieldTopology(shield, "components.shield", error);
   requireNumber(shield.totalBudget, "components.shield.totalBudget", { min: 0, strict: true, integer: true });
   requireNumber(shield.sectorCap, "components.shield.sectorCap", { min: 0, strict: true, integer: true });
   requireNumber(shield.rechargeDelay, "components.shield.rechargeDelay", { min: 0, strict: true, integer: true });
@@ -376,14 +383,14 @@ function validateShield(shield, error, requireNumber) {
   }
 }
 
-function validateSensor(sensor, error, requireNumber) {
+function validateSensor(sensor, error, requireNumber, path = "components.sensor") {
   if (!isObject(sensor)) return;
-  requireNumber(sensor.base?.passiveRange, "components.sensor.base.passiveRange", { min: 0, strict: true });
-  requireNumber(sensor.base?.passiveStrength, "components.sensor.base.passiveStrength");
-  requireNumber(sensor.base?.activeRange, "components.sensor.base.activeRange", { min: 0, strict: true });
-  requireNumber(sensor.base?.activeModifier, "components.sensor.base.activeModifier");
-  requireNumber(sensor.base?.ewModifier, "components.sensor.base.ewModifier");
-  validateRecoveryWork(sensor.recoveryWork, "components.sensor.recoveryWork", error);
+  requireNumber(sensor.base?.passiveRange, `${path}.base.passiveRange`, { min: 0, strict: true });
+  requireNumber(sensor.base?.passiveStrength, `${path}.base.passiveStrength`);
+  requireNumber(sensor.base?.activeRange, `${path}.base.activeRange`, { min: 0, strict: true });
+  requireNumber(sensor.base?.activeModifier, `${path}.base.activeModifier`);
+  requireNumber(sensor.base?.ewModifier, `${path}.base.ewModifier`);
+  validateRecoveryWork(sensor.recoveryWork, `${path}.recoveryWork`, error);
 }
 
 function validateCooling(cooling, error, requireNumber) {
@@ -860,31 +867,29 @@ export function validateComponentItem(value) {
     }
   };
   const path = "system.definition";
+  const usesTiers = ["drive", "shield", "sensor", "cooling"].includes(system.componentClass);
+  if ((usesTiers || definition.tiers !== undefined) && !Array.isArray(definition.tiers)) {
+    error("POWER_TIERS_REQUIRED", `${path}.tiers`, "Component Power tiers must be an array.");
+  } else if (usesTiers) {
+    validateTiers(definition, path, system.componentClass, error);
+  }
   if (system.componentClass === "reactor") {
-    requireNumber(definition.nominalOutput, `${path}.nominalOutput`, { min: 0, strict: true, integer: true });
-    requireNumber(definition.redlineOutput, `${path}.redlineOutput`, { min: 0, strict: true, integer: true });
-    requireNumber(definition.overclockHeat, `${path}.overclockHeat`, { min: 0 });
-    validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+    validateReactor(definition, error, requireNumber, path);
   } else if (system.componentClass === "drive") {
     requireNumber(definition.base?.thrust, `${path}.base.thrust`, { min: 0 });
     if (system.driveRole === "lateral") requireNumber(definition.base?.rotation, `${path}.base.rotation`, { min: 0 });
-    validateTiers(definition, path, "drive", error);
     validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
   } else if (system.componentClass === "shield") {
-    if (!SHIELD_TOPOLOGIES.includes(definition.topology)) error("INVALID_SHIELD_TOPOLOGY", `${path}.topology`, "Shield topology is invalid.");
+    validateShieldTopology(definition, path, error);
     requireNumber(definition.totalBudget, `${path}.totalBudget`, { min: 0, strict: true, integer: true });
     requireNumber(definition.sectorCap, `${path}.sectorCap`, { min: 0, strict: true, integer: true });
     requireNumber(definition.rechargeDelay, `${path}.rechargeDelay`, { min: 0, strict: true, integer: true });
-    validateTiers(definition, path, "shield", error);
     validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
   } else if (system.componentClass === "sensor") {
-    for (const key of ["passiveRange", "passiveStrength", "activeRange", "activeModifier", "ewModifier"]) requireNumber(definition.base?.[key], `${path}.base.${key}`);
-    validateTiers(definition, path, "sensor", error);
-    validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+    validateSensor(definition, error, requireNumber, path);
   } else if (system.componentClass === "cooling") {
     requireNumber(definition.ventAmount, `${path}.ventAmount`, { min: 0, strict: true });
     requireNumber(definition.ventCooldown, `${path}.ventCooldown`, { min: 0, integer: true });
-    validateTiers(definition, path, "cooling", error);
     validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
   } else if (system.componentClass === "weapon") {
     const weapon = { ...definition, id: id ?? "", mountSize: system.size, hardpointId: "component-preview" };

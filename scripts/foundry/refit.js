@@ -1,4 +1,4 @@
-import { COMPONENT_ITEM_TYPE, INTERNAL_REFIT_OPTION, INTERNAL_UPDATE_OPTION, SECTORS } from "../constants.js";
+import { COMPONENT_ITEM_TYPE, INTERNAL_REFIT_OPTION, INTERNAL_UPDATE_OPTION, RuleViolation, SECTORS } from "../constants.js";
 import { CANADENSIS_HULL_CONFIG } from "../data/canadensis.js";
 import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../data/canadensis-components.js";
 import { createInitialState } from "../model/defaults.js";
@@ -529,12 +529,13 @@ async function createFreshItems(actor, prepared) {
 
 async function updateShip(actor, hull, state, effective, observed, itemUpdates = null) {
   assertCurrent(actor, observed);
-  await actor.update({
+  const updated = await actor.update({
     "system.shipCombat.config": forcedReplacement(hull),
     "system.shipCombat.state": forcedReplacement(state),
     ...(itemUpdates ? { items: itemUpdates } : {}),
     ...nativeVehicleFieldValues(effective, state),
   }, refitOptions({ diff: false }));
+  if (!updated) throw new RuleViolation("REFIT_UPDATE_FAILED", "Foundry did not persist the ship refit.");
 }
 
 function referencedItemIds(hull) {

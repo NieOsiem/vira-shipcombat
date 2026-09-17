@@ -199,7 +199,7 @@ function componentById(config, componentId) {
       return value;
     }
   }
-  return null;
+  return Object.values(components.drives ?? {}).find((drive) => drive?.id === componentId) ?? null;
 }
 
 function componentKnown(track, componentId, declaration, helpers) {

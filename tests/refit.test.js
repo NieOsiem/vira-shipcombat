@@ -65,6 +65,7 @@ class FakeActor {
     this.events = [];
     this.nextId = 1;
     this.failNextUpdate = false;
+    this.cancelNextUpdate = false;
   }
 
   async createEmbeddedDocuments(documentName, sources, options) {
@@ -89,6 +90,10 @@ class FakeActor {
     if (this.failNextUpdate) {
       this.failNextUpdate = false;
       throw new Error("simulated update failure");
+    }
+    if (this.cancelNextUpdate) {
+      this.cancelNextUpdate = false;
+      return undefined;
     }
     for (const [path, supplied] of Object.entries(changes)) {
       if (path === "items") continue;
@@ -236,6 +241,22 @@ describe("refit API", () => {
     expect([...actor.items.keys()]).toEqual(beforeIds);
     expect(actor.events.map(({ type }) => type)).toEqual(["create", "update", "delete"]);
     expect(actor.events.at(-1).ids).toEqual(["fresh-0001"]);
+  });
+
+  test.each([
+    ["install", (ship) => refit.installShipComponent(ship, ship.system.shipCombat.config.slots[0].id, CANADENSIS_DEFAULT_COMPONENT_SOURCES[0])],
+    ["remove", (ship) => refit.removeShipComponent(ship, ship.system.shipCombat.config.hardpoints[1].id)],
+    ["reset", (ship) => refit.resetShipToCanadensis(ship)],
+  ])("a canceled %s retains mounted components and discards fresh copies", async (_operation, refitShip) => {
+    const before = clone(actor.system.shipCombat);
+    const beforeItems = [...actor.items.values()].map((item) => item.toObject());
+    actor.cancelNextUpdate = true;
+
+    await expect(refitShip(actor)).rejects.toMatchObject({ name: "RuleViolation", code: "REFIT_UPDATE_FAILED" });
+
+    expect(actor.system.shipCombat).toEqual(before);
+    expect([...actor.items.values()].map((item) => item.toObject())).toEqual(beforeItems);
+    expect(references(actor.system.shipCombat.config).every((id) => actor.items.has(id))).toBe(true);
   });
 
   test("clears a mount and its local state before deleting the old Item", async () => {

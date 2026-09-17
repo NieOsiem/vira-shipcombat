@@ -542,6 +542,65 @@ describe("attack previews, commitment, and damage", () => {
     expect(outOfArc.violations.map(({ code }) => code)).toContain("TARGET_OUT_OF_ARC");
   });
 
+  test.each([
+    ["main", 0, "aft", "driveFailure"],
+    ["reverse", 180, "fore", "driveFailure"],
+    ["portLateral", -90, "port", "maneuveringThrusterFailure"],
+    ["starboardLateral", 90, "starboard", "maneuveringThrusterFailure"],
+  ])("aimed shots can select the installed %s drive in its struck region", (role, targetFacing, sector, channel) => {
+    const { attacker, target, declaration } = prepareAttack({ firingSolution: true, targetFacing });
+    const drive = target.config.components.drives[role];
+    attacker.state.tracks.target.remembered.identifiedSubsystems = [drive.id];
+    declaration.aimedComponentId = drive.id;
+
+    const preview = previewAttack({
+      attackerConfig: attacker.config,
+      attackerState: attacker.state,
+      targetConfig: target.config,
+      targetState: target.state,
+      declaration,
+    });
+
+    expect(preview.legal).toBe(true);
+    expect(preview.violations).toEqual([]);
+    expect(preview.public.struckSector).toBe(sector);
+    expect(preview.commitment.aimedConditionId).toBe(`${drive.id}:${channel}`);
+  });
+
+  test("aimed drive shots still require identification, a regional condition target, and a ready Firing Solution", () => {
+    const { attacker, target, declaration } = prepareAttack({ firingSolution: true });
+    const drive = target.config.components.drives.main;
+    const track = attacker.state.tracks.target;
+    declaration.aimedComponentId = drive.id;
+    const preview = (changes = {}) => previewAttack({
+      attackerConfig: attacker.config,
+      attackerState: attacker.state,
+      targetConfig: target.config,
+      targetState: target.state,
+      declaration: { ...declaration, ...changes },
+    });
+    const expectRejected = (result, code) => {
+      expect(result.legal).toBe(false);
+      expect(result.commitment).toBeNull();
+      expect(result.violations.map((violation) => violation.code)).toEqual([code]);
+    };
+
+    expectRejected(preview(), "AIMED_COMPONENT_UNKNOWN");
+    track.remembered.identifiedSubsystems = [drive.id];
+    expectRejected(preview({ targetFacing: 180 }), "AIMED_COMPONENT_OUT_OF_REGION");
+    expectRejected(preview({ aimedComponentId: "uninstalled-drive" }), "INVALID_AIMED_COMPONENT");
+
+    track.firingSolution = false;
+    expectRejected(preview(), "AIMED_SHOT_REQUIRES_SOLUTION");
+    track.firingSolution = true;
+    target.state.conditions.destroyedDrive = {
+      componentId: drive.id,
+      conditionId: "driveFailure",
+      severity: "destroyed",
+    };
+    expectRejected(preview(), "AIMED_COMPONENT_DESTROYED");
+  });
+
   test("armed Evasion applies the configured AC bonus to attack previews", () => {
     const { attacker, target, declaration } = prepareAttack();
     target.state.evasion = { armed: true, reserved: 0.2 };

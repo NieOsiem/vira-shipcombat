@@ -1,5 +1,5 @@
 import { COMPONENT_ITEM_TYPE, RuleViolation } from "../constants.js";
-import { migrateShipActor } from "../foundry/migration.js";
+import { assertCurrentShipSchema, initializeShipActor } from "../foundry/initialization.js";
 import { materializeShipConfig } from "../model/equipment.js";
 import { nativeVehicleFieldValues } from "../model/native-vehicle.js";
 
@@ -69,6 +69,7 @@ function componentItems(actor) {
 
 export function readShipRecord(tokenDocument) {
   const actor = tokenDocument.actor;
+  assertCurrentShipSchema(actor);
   const shipCombat = actor?.system?.shipCombat;
   if (!shipCombat?.config || !shipCombat?.state) {
     throw new RuleViolation("SHIP_STATE_MISSING", "The token actor has no ship combat configuration or state.", {
@@ -122,7 +123,7 @@ export async function loadShipRecords(uuids) {
   for (const uuid of uuids) {
     if (records.has(uuid)) continue;
     const tokenDocument = await resolveTokenDocument(uuid);
-    await migrateShipActor(tokenDocument.actor);
+    await initializeShipActor(tokenDocument.actor);
     records.set(uuid, readShipRecord(tokenDocument));
   }
   return records;

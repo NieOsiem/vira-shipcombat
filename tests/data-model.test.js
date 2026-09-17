@@ -174,6 +174,87 @@ describe("component Item identity", () => {
   });
 });
 
+describe("standalone component definitions", () => {
+  test("accepts array Power tiers but rejects power-keyed objects before materialization or sheet rendering", () => {
+    const defaults = createDefaultShipData();
+    for (const componentClass of ["drive", "shield", "sensor", "cooling"]) {
+      const item = defaults.items.find(({ system }) => system.componentClass === componentClass);
+      expect(validateComponentItem(item)).toMatchObject({ valid: true, errors: [] });
+      item.system.definition.tiers = Object.fromEntries(item.system.definition.tiers.map(({ power, ...tier }) => [power, tier]));
+      expect(validateComponentItem(item)).toMatchObject({
+        valid: false,
+        errors: [{ code: "POWER_TIERS_REQUIRED", path: "system.definition.tiers" }],
+      });
+    }
+
+    const reactor = defaults.items.find(({ system }) => system.componentClass === "reactor");
+    reactor.system.definition.tiers = {};
+    expect(validateComponentItem(reactor)).toMatchObject({
+      valid: false,
+      errors: [{ code: "POWER_TIERS_REQUIRED", path: "system.definition.tiers" }],
+    });
+
+    const effective = clone(CANADENSIS_CONFIG);
+    for (const component of [effective.powerSystems.engines, effective.components.shield, effective.components.sensor, effective.components.cooling]) {
+      component.tiers = Object.fromEntries(component.tiers.map(({ power, ...tier }) => [power, tier]));
+    }
+    expect(validateShipConfig(effective, { tokenWidth: 1 })).toMatchObject({ valid: true, errors: [] });
+  });
+
+  test("requires exactly the sectors belonging to the shield topology", () => {
+    const defaults = createDefaultShipData();
+    const item = defaults.items.find(({ system }) => system.componentClass === "shield");
+    for (const [topology, sectors] of [
+      ["directional", undefined],
+      ["directional", ["fore", "aft", "port"]],
+      ["directional", ["fore", "aft", "port", "port"]],
+      ["bubble", ["fore"]],
+      ["bubble", ["bubble", "bubble"]],
+    ]) {
+      Object.assign(item.system.definition, { topology, sectors });
+      expect(validateComponentItem(item)).toMatchObject({
+        valid: false,
+        errors: [{ code: "INVALID_SHIELD_SECTORS", path: "system.definition.sectors" }],
+      });
+    }
+    for (const [topology, sectors] of [
+      ["directional", ["aft", "port", "starboard", "fore"]],
+      ["bubble", ["bubble"]],
+    ]) {
+      Object.assign(item.system.definition, { topology, sectors });
+      expect(validateComponentItem(item)).toMatchObject({ valid: true, errors: [] });
+      const effective = materializeShipConfig(defaults.hull, defaults.items);
+      expect(effective.components.shield.emitters.map(({ sector }) => sector)).toEqual(sectors);
+      expect(validateShipConfig(effective, { tokenWidth: 1 })).toMatchObject({ valid: true, errors: [] });
+    }
+  });
+
+  test("requires reactor redline output to meet nominal output", () => {
+    const item = createDefaultShipData().items.find(({ system }) => system.componentClass === "reactor");
+    item.system.definition.redlineOutput = item.system.definition.nominalOutput;
+    expect(validateComponentItem(item)).toMatchObject({ valid: true, errors: [] });
+    item.system.definition.redlineOutput -= 1;
+    expect(validateComponentItem(item)).toMatchObject({
+      valid: false,
+      errors: [{ code: "INVALID_REACTOR_LIMITS", path: "system.definition.redlineOutput" }],
+    });
+  });
+
+  test("requires positive passive and active sensor ranges while allowing signed modifiers", () => {
+    const item = createDefaultShipData().items.find(({ system }) => system.componentClass === "sensor");
+    Object.assign(item.system.definition.base, { passiveRange: 0.5, activeRange: 0.5, activeModifier: -1, ewModifier: -1 });
+    expect(validateComponentItem(item)).toMatchObject({ valid: true, errors: [] });
+    Object.assign(item.system.definition.base, { passiveRange: 0, activeRange: -1 });
+    expect(validateComponentItem(item)).toMatchObject({
+      valid: false,
+      errors: [
+        { code: "INVALID_NUMBER", path: "system.definition.base.passiveRange" },
+        { code: "INVALID_NUMBER", path: "system.definition.base.activeRange" },
+      ],
+    });
+  });
+});
+
 describe("ship data defaults", () => {
   test("returns independent mutable configs, Items, and states without modifying the frozen reference", () => {
     const first = createDefaultShipData();
