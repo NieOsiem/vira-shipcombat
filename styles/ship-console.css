@@ -20,6 +20,34 @@
   color-scheme: dark;
 }
 
+/* Blend Foundry's window header into the console chrome */
+.vira-shipcombat.ship-console .window-header {
+  background: linear-gradient(90deg, #101a22, #0b1218);
+  border-bottom: none;
+  color: var(--ship-muted);
+}
+
+.vira-shipcombat.ship-console .window-header .window-title {
+  color: var(--ship-cyan);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.59rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: normal;
+}
+
+.vira-shipcombat.ship-console .window-header button.header-control {
+  --button-text-color: var(--ship-muted);
+  color: var(--ship-muted);
+  border: none;
+  background: none;
+}
+
+.vira-shipcombat.ship-console .window-header button.header-control:hover {
+  color: var(--ship-cyan);
+}
+
 .vira-shipcombat.ship-console .window-content {
   min-width: 0;
   padding: 0;

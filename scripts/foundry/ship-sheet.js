@@ -1085,9 +1085,17 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   #dragListeners = null;
 
   get title() {
-    return `${
-      this.actor?.name ?? this.document?.name ?? "Ship"
-    } · Ship Console`;
+    const state = this.actor?.system?.shipCombat?.state;
+    const phase = state?.phase ?? "outsideCombat";
+    if (phase === "outsideCombat") return "Outside Combat";
+    const combat = globalThis.game?.combat;
+    const round = Number.isSafeInteger(combat?.round) ? combat.round : "?";
+    const token = actorToken(this.actor);
+    const active = token && (
+      combat?.combatant?.tokenId === token.id ||
+      combat?.combatant?.token?.uuid === token.uuid
+    );
+    return `Combat · Round ${round} · ${active ? "Active" : "Waiting"}`;
   }
 
   async _prepareContext(options) {
