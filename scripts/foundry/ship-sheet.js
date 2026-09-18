@@ -2798,11 +2798,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         : targets.length
         ? "multiple"
         : "none";
+      // The state dot is drawn by the lamp's ::before; the text stays word-only.
       lamp.textContent = targets.length === 1
-        ? `● ONE TARGET — ${contact?.label ?? "Unidentified contact"}`
+        ? `ONE TARGET — ${contact?.label ?? "Unidentified contact"}`
         : targets.length
-        ? `◆ ${targets.length} TARGETS — select one`
-        : "○ NO TARGET";
+        ? `${targets.length} TARGETS — select one`
+        : "NO TARGET";
     }
     html.querySelectorAll("[data-sensor-focus]").forEach((button) => {
       button.dataset.foundryTargeted = String(

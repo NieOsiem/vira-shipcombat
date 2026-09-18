@@ -2624,26 +2624,31 @@
 
 .ship-options-guidance { flex: 1 1 100%; font-weight: 400; letter-spacing: 0.02em; text-transform: none; }
 
+/* Barrage sizes read as words too: the chosen profile is the lit one. */
 .ship-console-layout .ship-barrage-chip {
   position: relative;
   display: inline-flex;
   align-items: baseline;
-  gap: 0.2rem;
+  gap: 0.22rem;
   min-height: 0;
-  padding: 0.08rem 0.3rem;
-  border: 1px solid var(--ship-border);
-  border-radius: 2px;
-  color: var(--ship-muted);
-  background: rgb(0 0 0 / 20%);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  color: #55666e;
+  background: none;
   cursor: pointer;
-  font: 700 0.55rem var(--font-monospace, monospace);
+  font: 700 0.58rem var(--font-monospace, monospace);
+  transition: color 140ms ease, text-shadow 140ms ease;
 }
 
-.ship-barrage-chip > small { color: var(--ship-muted); font-size: 0.48rem; }
+.ship-barrage-chip > small { color: inherit; font-size: 0.48rem; opacity: 0.7; }
 .ship-barrage-chip > input { position: absolute; width: 1px; height: 1px; min-height: 0; margin: 0; padding: 0; opacity: 0; pointer-events: none; }
-.ship-barrage-chip:has(input:checked) { color: var(--ship-amber); border-color: rgb(255 189 82 / 55%); background: rgb(255 189 82 / 14%); }
-.ship-barrage-chip:has(input:focus-visible) { outline: 1px solid var(--ship-cyan); outline-offset: 1px; }
-.ship-barrage-chip--infeasible { border-style: dashed; opacity: 0.45; }
+.ship-barrage-chip:hover { color: var(--ship-text); }
+.ship-barrage-chip:has(input:checked) { color: var(--ship-amber); text-shadow: 0 0 7px rgb(255 189 82 / 70%); }
+.ship-barrage-chip:has(input:checked) > small { opacity: 1; }
+.ship-barrage-chip:has(input:focus-visible) { outline: 1px solid var(--ship-cyan); outline-offset: 3px; }
+.ship-barrage-chip--infeasible { color: #2f3d45; text-shadow: none; }
+.ship-barrage-chip--infeasible > small { opacity: 0.6; }
 
 /* Reload is plain state, always readable: no disclosure to open. */
 .ship-weapon-reload {
@@ -2684,7 +2689,6 @@
   text-transform: uppercase;
 }
 
-.ship-fire-panel [data-target-lamp] { margin-bottom: 0; }
 .ship-fire-panel-body { display: grid; gap: 0.3rem; padding: 0.3rem 0.4rem; }
 
 .ship-fire-line {
@@ -2763,18 +2767,19 @@
   .ship-weapon-card[data-shot="valid"] .ship-fire-text { text-shadow: 0 0 8px var(--ship-red); }
 }
 
-.ship-fire-panel {
-  display: inline-flex;
+.ship-fire-panel [data-target-lamp] {
+  display: flex;
   align-items: center;
   gap: 0.3rem;
-  min-height: 1.35rem;
-  margin-bottom: 0.35rem;
-  padding: 0.15rem 0.35rem;
-  border: 1px solid var(--ship-border);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
   color: var(--ship-muted);
-  background: rgb(0 0 0 / 15%);
-  font: 700 0.58rem var(--font-monospace, monospace);
+  background: none;
+  font: 700 0.56rem var(--font-monospace, monospace);
   text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 
