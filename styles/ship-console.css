@@ -167,7 +167,7 @@
 
 .ship-console-header {
   display: grid;
-  grid-template-columns: 2.55rem minmax(0, auto) minmax(18rem, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) 50%;
   align-items: center;
   gap: 0.75rem;
   flex: 0 0 auto;
@@ -178,20 +178,19 @@
 }
 
 .ship-console-portrait {
-  display: grid;
-  place-items: center;
-  width: 2.55rem;
-  height: 2.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
   overflow: hidden;
-  border: 1px solid var(--ship-border-bright);
-  background: #05090c;
-  clip-path: polygon(12% 0, 88% 0, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0 88%, 0 12%);
 }
 
 .ship-console-portrait img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  border: none;
 }
 
 .ship-console-heading {
