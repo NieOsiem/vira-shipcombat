@@ -18,6 +18,20 @@ const POWER_SYSTEMS = Object.freeze([
   ["cooling", "Cooling"],
   ["weapons", "Weapons"],
 ]);
+const SYSTEM_ICONS = Object.freeze({
+  engines: "fa-solid fa-shuttle-space",
+  shields: "fa-solid fa-shield-halved",
+  sensors: "fa-solid fa-satellite-dish",
+  cooling: "fa-solid fa-snowflake",
+  weapons: "fa-solid fa-crosshairs",
+});
+const SYSTEM_SHORT_LABELS = Object.freeze({
+  engines: "ENG",
+  shields: "SHD",
+  sensors: "SNS",
+  cooling: "COL",
+  weapons: "WPN",
+});
 const SECTORS = Object.freeze(["fore", "port", "starboard", "aft"]);
 const SECTOR_LABELS = Object.freeze({
   fore: "Fore",
@@ -352,6 +366,29 @@ function powerView(config, state) {
     : overdriveAvailable > 0
     ? `0 FREE (${overdriveAvailable} OVERDRIVE)`
     : "0 FREE (AT MAX)";
+  const sensor = getSensorStats(config, state);
+  const regeneration = config?.components?.shield?.tiers?.find((tier) =>
+    tier.power === powerState.allocation.shields
+  )?.regeneration ?? 0;
+  const drives = getDriveCapabilities(config, state);
+  const cooling = config?.components?.cooling?.tiers?.find((tier) =>
+    tier.power === powerState.allocation.cooling
+  )?.cooling ?? 0;
+  const reservingWeapons =
+    Object.values(powerState.weaponReservations).filter((reservation) =>
+      reservation > 0
+    ).length;
+  const reservation =
+    powerState.weaponReserved
+      ? `${powerState.weaponReserved} reserved (${reservingWeapons} wpn)`
+      : "No draw";
+  const summaries = {
+    engines: `${drives.forward} thrust`,
+    shields: `${regeneration} regen`,
+    sensors: sensor.online ? `${sensor.activeRange} active` : "Offline",
+    weapons: reservation,
+    cooling: `${cooling} cooling`,
+  };
 
   return {
     ...powerState,
@@ -361,23 +398,46 @@ function powerView(config, state) {
     overdriveAvailable,
     nominalOutput: nominal,
     redlineOutput: maximum,
-    reservingWeapons:
-      Object.values(powerState.weaponReservations).filter((reservation) =>
-        reservation > 0
-      ).length,
+    reservingWeapons,
     meter: meter(
       committed,
       nominal > 0 ? nominal : maximum,
       redlining ? "danger" : "power",
     ),
     status,
-    systems: POWER_SYSTEMS.map(([id, label]) => ({
-      id,
-      label,
-      value: whole(powerState.allocation[id]),
-      options: powerOptions(config, powerState, id),
-      reservation: id === "weapons" ? whole(powerState.weaponReserved) : null,
-    })),
+    reactor: {
+      nominal,
+      maximum,
+      redline: overdriveTotal,
+      committed,
+      free: Math.max(0, maximum - committed),
+      nominalFree,
+      overdriveAvailable,
+      redlining,
+    },
+    grid: {
+      draw: `${committed} / ${maximum} Power`,
+      free: `${powerState.unused} available`,
+      emission: redlining ? "REDLINE" : (powerState.emission?.band ?? "normal"),
+      heat: "0 Heat on commit",
+    },
+    systems: POWER_SYSTEMS.map(([id, label]) => {
+      const component = componentForSystem(config, id);
+      const overclockTiers = (component?.tiers ?? [])
+        .filter((tier) => tier.overclock)
+        .map((tier) => whole(tier.power));
+      return {
+        id,
+        label,
+        shortLabel: SYSTEM_SHORT_LABELS[id] ?? label,
+        icon: SYSTEM_ICONS[id] ?? "fa-solid fa-circle",
+        value: whole(powerState.allocation[id]),
+        options: powerOptions(config, powerState, id),
+        overclockTiers,
+        reservation: id === "weapons" ? whole(powerState.weaponReserved) : null,
+        effect: summaries[id] ?? "",
+      };
+    }),
     sheddingPriority: prioritySlots(systems, sheddingPriority),
     weaponPriority: prioritySlots(weapons, weaponPriority),
   };

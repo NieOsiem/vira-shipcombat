@@ -346,11 +346,75 @@
     </section>
 
     <section id="panel-power-defense" class="ship-console-panel" role="tabpanel" aria-label="Power" data-tab-panel="power-defense" {{#unless tabState.power-defense.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Power</h2><span class="ship-readout {{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</span></div>
-      <label class="ship-page-operator">Engineer<select data-page-operator="power" data-default="{{view.defaults.power}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+      <div class="ship-panel-heading ship-panel-heading--power">
+        <h2>Power</h2>
+        <label class="ship-page-operator">Engineer<select data-page-operator="power" data-default="{{view.defaults.power}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <span class="ship-readout {{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</span>
+      </div>
       <div class="ship-systems-layout">
         <form class="ship-card" data-ui-operation="routePower" data-live-preview="routePower">
-          <div class="ship-power-grid">{{#each view.power.systems}}<div><span>{{label}}</span><input type="hidden" name="{{id}}" value="{{value}}" data-power-system><div data-power-blocks="{{id}}" role="group" aria-label="{{label}} power"></div><output data-power-effect="{{id}}">{{#if reservation}}{{reservation}} reserved{{/if}}</output></div>{{/each}}</div>
+          <div class="ship-ftl-power">
+            <div class="ship-ftl-reactor" aria-label="Reactor Reserve">
+              <div class="ship-ftl-reactor-stack" data-reactor-stack role="meter" aria-label="Reactor power reserve" aria-valuemin="0" aria-valuemax="{{view.power.reactor.maximum}}" aria-valuenow="{{view.power.reactor.free}}"></div>
+              <div class="ship-ftl-reactor-indicator" title="Reactor reserve: {{view.power.reactor.free}} of {{view.power.reactor.maximum}} available">
+                <i class="fa-solid fa-atom" aria-hidden="true"></i>
+                <small>REACTOR</small>
+              </div>
+            </div>
+
+            <div class="ship-ftl-divider" aria-hidden="true"></div>
+
+            <div class="ship-ftl-systems" role="group" aria-label="Subsystem power allocation">
+              {{#each view.power.systems}}
+                <div class="ship-ftl-system" data-system="{{id}}">
+                  <input type="hidden" name="{{id}}" value="{{value}}" data-power-system>
+                  <div class="ship-ftl-stack" data-power-blocks="{{id}}" role="group" aria-label="{{label}} power"></div>
+                  <button type="button" class="ship-ftl-icon" data-power-icon="{{id}}" aria-label="{{label}}: Left-click increase, Right-click decrease" title="{{label}} · Left-click: +1 · Right-click: −1" {{#unless ../canAct}}disabled{{/unless}}>
+                    <i class="{{icon}}" aria-hidden="true"></i>
+                  </button>
+                  <span class="ship-ftl-system-label">{{shortLabel}}</span>
+                </div>
+              {{/each}}
+            </div>
+
+            <div class="ship-ftl-divider" aria-hidden="true"></div>
+
+            <div class="ship-ftl-readouts" aria-label="System telemetry">
+              <div class="ship-ftl-telemetry-cols">
+                <div class="ship-ftl-telemetry-col">
+                  <span class="ship-kicker">Systems</span>
+                  {{#each view.power.systems}}
+                    <div class="ship-ftl-readout-row">
+                      <span class="ship-ftl-readout-label"><i class="{{icon}}" aria-hidden="true"></i> {{shortLabel}}</span>
+                      <output class="ship-ftl-readout-value" data-power-effect="{{id}}">{{effect}}</output>
+                    </div>
+                  {{/each}}
+                </div>
+
+                <div class="ship-ftl-subdivider" aria-hidden="true"></div>
+
+                <div class="ship-ftl-telemetry-col">
+                  <span class="ship-kicker">Reactor Grid</span>
+                  <div class="ship-ftl-readout-row">
+                    <span class="ship-ftl-readout-label"><i class="fa-solid fa-bolt" aria-hidden="true"></i> PWR</span>
+                    <output class="ship-ftl-readout-value" data-power-grid="draw">{{view.power.grid.draw}}</output>
+                  </div>
+                  <div class="ship-ftl-readout-row">
+                    <span class="ship-ftl-readout-label"><i class="fa-solid fa-battery-half" aria-hidden="true"></i> FREE</span>
+                    <output class="ship-ftl-readout-value" data-power-grid="free">{{view.power.grid.free}}</output>
+                  </div>
+                  <div class="ship-ftl-readout-row">
+                    <span class="ship-ftl-readout-label"><i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i> EMIT</span>
+                    <output class="ship-ftl-readout-value {{#if view.power.redlining}}ship-danger{{/if}}" data-power-grid="emission">{{view.power.grid.emission}}</output>
+                  </div>
+                  <div class="ship-ftl-readout-row">
+                    <span class="ship-ftl-readout-label"><i class="fa-solid fa-fire" aria-hidden="true"></i> HEAT</span>
+                    <output class="ship-ftl-readout-value" data-power-grid="heat">{{view.power.grid.heat}}</output>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           <details class="ship-power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
           <p class="ship-preview-line" data-preview aria-live="polite"></p>
           <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>

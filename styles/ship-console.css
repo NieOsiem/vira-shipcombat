@@ -657,6 +657,26 @@
   min-width: 0;
 }
 
+.ship-panel-heading .ship-page-operator {
+  flex: 0 1 360px;
+  margin-bottom: 0;
+  padding: 0.15rem 0.35rem;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 25%);
+}
+
+.ship-panel-heading .ship-page-operator select {
+  min-height: 1.45rem;
+  height: 1.45rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.68rem;
+}
+
+.ship-panel-heading:has(.ship-page-operator),
+.ship-panel-heading--power {
+  align-items: center;
+}
+
 .ship-form-grid,
 .ship-power-grid {
   display: grid;
@@ -809,46 +829,488 @@
 
 .ship-power-grid small { color: var(--ship-amber); white-space: nowrap; }
 
-.vira-shipcombat.ship-console [data-power-blocks] {
+/* FTL Power Distribution Layout */
+.vira-shipcombat.ship-console .ship-ftl-power {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.15rem;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.45rem;
+  background: radial-gradient(ellipse at 50% 0%, rgb(18 32 44 / 50%) 0%, rgb(8 13 18 / 85%) 100%);
+  border: 1px solid var(--ship-border);
+  border-radius: 4px;
+  box-shadow: inset 0 0 16px rgb(0 0 0 / 40%);
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-divider {
+  width: 1px;
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin-inline: 0.15rem;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--ship-border-bright) 25%,
+    var(--ship-border-bright) 75%,
+    transparent 100%
+  );
+  opacity: 0.6;
+}
+
+/* Left Column: Reactor Reserve */
+.vira-shipcombat.ship-console .ship-ftl-reactor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-reactor-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  align-items: center;
+  width: 26px;
+  height: 96px;
+  min-height: 96px;
+  max-height: 96px;
+  gap: 2px;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  background: rgb(4 8 12 / 50%);
+  border-radius: 2px;
+  box-shadow: inset 0 0 4px rgb(0 0 0 / 60%);
+  overflow: hidden;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-reactor-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 26px;
+  cursor: default;
+  user-select: none;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-reactor-indicator i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-size: 0.85rem;
+  color: var(--ship-cyan);
+  filter: drop-shadow(0 0 3px rgb(62 232 208 / 50%));
+}
+
+.vira-shipcombat.ship-console .ship-ftl-reactor-indicator small {
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.52rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  color: var(--ship-muted);
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Middle Column: Subsystem Power */
+.vira-shipcombat.ship-console .ship-ftl-systems {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: space-around;
+  align-items: flex-end;
+  gap: 0.35rem;
+  user-select: none;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-system {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 28px;
+  gap: 2px;
   min-width: 0;
 }
 
-.vira-shipcombat.ship-console [data-power-blocks] button {
-  flex: 0 0 1.15rem;
-  min-width: 1.15rem;
-  min-height: 1.15rem;
+.vira-shipcombat.ship-console .ship-ftl-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-start;
+  align-items: center;
+  width: 28px;
+  height: 96px;
+  min-height: 96px;
+  max-height: 96px;
+  gap: 2px;
   padding: 0;
-  border-color: var(--ship-border-bright);
-  background: #0a151c;
-  font-size: 0.6rem;
+  margin: 0;
+  box-sizing: border-box;
+  background: rgb(4 8 12 / 50%);
+  border-radius: 2px;
+  box-shadow: inset 0 0 4px rgb(0 0 0 / 60%);
+  overflow: hidden;
 }
 
-.vira-shipcombat.ship-console [data-power-blocks] button[aria-pressed="true"] {
-  color: #051211;
-  border-color: var(--ship-cyan);
+/* Slabs Base Styles */
+.vira-shipcombat.ship-console .ship-ftl-slab {
+  box-sizing: border-box;
+  display: block;
+  width: 28px;
+  height: 5px;
+  min-width: 28px;
+  max-width: 28px;
+  min-height: 5px;
+  max-height: 5px;
+  flex: 0 0 5px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 1px;
+  font-size: 0;
+  line-height: 0;
+  color: transparent;
+  cursor: pointer;
+  background: transparent;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: 1px;
+  box-shadow: 0 0 4px var(--ship-cyan);
+}
+
+/* Reactor Slabs */
+.vira-shipcombat.ship-console .ship-ftl-slab.ship-ftl-slab--reactor {
+  width: 26px;
+  min-width: 26px;
+  max-width: 26px;
+  cursor: default;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.ship-ftl-slab--reactor.is-nominal.is-available {
   background: var(--ship-cyan);
-  box-shadow: 0 0 5px rgb(62 232 208 / 40%);
+  border-color: #8effef;
+  box-shadow:
+    0 0 4px rgb(62 232 208 / 65%),
+    inset 0 1px 1px rgb(255 255 255 / 45%);
 }
 
-.vira-shipcombat.ship-console [data-power-blocks] button:disabled {
-  border-style: dotted;
+.vira-shipcombat.ship-console .ship-ftl-slab.ship-ftl-slab--reactor.is-nominal.is-spent {
+  background: rgb(12 20 26 / 80%);
+  border-color: rgb(38 59 72 / 45%);
+  box-shadow: none;
 }
 
-.vira-shipcombat.ship-console [data-power-effect] {
-  min-width: 3.8rem;
+.vira-shipcombat.ship-console .ship-ftl-slab.ship-ftl-slab--reactor.is-redline.is-available {
+  background: var(--ship-red);
+  border-color: #ff8595;
+  box-shadow:
+    0 0 5px rgb(255 82 103 / 75%),
+    inset 0 1px 1px rgb(255 255 255 / 50%);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.ship-ftl-slab--reactor.is-redline.is-spent {
+  background: rgb(32 12 16 / 70%);
+  border-color: rgb(255 82 103 / 30%);
+  box-shadow: none;
+}
+
+/* System Slabs: Empty & Filled */
+.vira-shipcombat.ship-console .ship-ftl-slab.is-empty {
+  background: rgb(11 18 24 / 90%);
+  border-color: rgb(38 59 72 / 60%);
+  box-shadow: none;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.is-empty:hover:not(:disabled) {
+  border-color: var(--ship-border-bright);
+  background: rgb(20 34 44 / 90%);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.is-filled {
+  background: var(--ship-cyan);
+  border-color: #8effef;
+  box-shadow:
+    0 0 5px rgb(62 232 208 / 75%),
+    inset 0 1px 1px rgb(255 255 255 / 50%);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.is-filled:hover:not(:disabled) {
+  background: #5ff5e0;
+  box-shadow:
+    0 0 8px rgb(62 232 208 / 95%),
+    inset 0 1px 2px rgb(255 255 255 / 80%);
+}
+
+/* System Slabs: Overclock Tier */
+.vira-shipcombat.ship-console .ship-ftl-slab.is-empty.is-overclock {
+  background: rgb(24 18 10 / 80%);
+  border-color: rgb(255 189 82 / 50%);
+  box-shadow: none;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.is-empty.is-overclock:hover:not(:disabled) {
+  border-color: var(--ship-amber);
+  background: rgb(38 28 14 / 90%);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.is-filled.is-overclock {
+  background: var(--ship-amber);
+  border-color: #ffe494;
+  box-shadow:
+    0 0 6px rgb(255 189 82 / 80%),
+    inset 0 1px 1px rgb(255 255 255 / 60%);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.is-filled.is-overclock:hover:not(:disabled) {
+  background: #ffc96e;
+  box-shadow:
+    0 0 9px rgb(255 189 82 / 100%),
+    inset 0 1px 2px rgb(255 255 255 / 85%);
+}
+
+/* System Slabs: Reserved Power */
+.vira-shipcombat.ship-console .ship-ftl-slab.is-empty.is-reserved {
+  background-color: rgb(11 20 28 / 90%);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 2px,
+    rgb(62 232 208 / 25%) 2px,
+    rgb(62 232 208 / 25%) 4px
+  );
+  border-color: rgb(62 232 208 / 50%);
+  box-shadow: inset 0 0 3px rgb(62 232 208 / 15%);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-slab.is-filled.is-reserved {
+  background-color: var(--ship-cyan);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 2px,
+    rgb(8 16 22 / 40%) 2px,
+    rgb(8 16 22 / 40%) 4px
+  );
+  border-color: #8effef;
+  box-shadow:
+    0 0 5px rgb(62 232 208 / 75%),
+    inset 0 1px 1px rgb(255 255 255 / 40%);
+}
+
+/* System Stepper Icon Button */
+.vira-shipcombat.ship-console .ship-ftl-icon {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  max-width: 26px;
+  max-height: 26px;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  border: 1px solid var(--ship-border-bright);
+  background: radial-gradient(circle at 35% 30%, #1e3240 0%, #0d171f 70%, #080d12 100%);
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 12%),
+    0 2px 4px rgb(0 0 0 / 50%);
+  color: var(--ship-cyan);
+  cursor: pointer;
+  line-height: 1;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease, color 0.15s ease;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-icon i {
+  font-size: 0.72rem;
+  line-height: 1;
+  color: inherit;
+  filter: drop-shadow(0 0 2px rgb(62 232 208 / 30%));
+}
+
+.vira-shipcombat.ship-console .ship-ftl-icon:hover:not(:disabled) {
+  border-color: var(--ship-cyan);
+  color: #fff;
+  background: radial-gradient(circle at 35% 30%, #29465a 0%, #11202b 70%, #09131a 100%);
+  box-shadow:
+    0 0 8px rgb(62 232 208 / 55%),
+    inset 0 0 6px rgb(62 232 208 / 25%),
+    inset 0 1px 1px rgb(255 255 255 / 30%);
+  transform: translateY(-1px);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-icon:hover:not(:disabled) i {
+  filter: drop-shadow(0 0 4px rgb(62 232 208 / 70%));
+}
+
+.vira-shipcombat.ship-console .ship-ftl-icon:active:not(:disabled) {
+  transform: translateY(0);
+  background: #0b141b;
+  box-shadow:
+    0 0 4px rgb(62 232 208 / 35%),
+    inset 0 1px 3px rgb(0 0 0 / 70%);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-icon:focus-visible {
+  outline: 2px solid var(--ship-cyan);
+  outline-offset: 2px;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-icon:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+  border-color: var(--ship-border);
+  background: #0b1218;
+  box-shadow: none;
+  transform: none;
+  color: var(--ship-muted);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-icon:disabled i {
+  filter: none;
+}
+
+/* System Label */
+.vira-shipcombat.ship-console .ship-ftl-system-label {
+  display: block;
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.52rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  color: var(--ship-muted);
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Right Column: Telemetry Readouts */
+.vira-shipcombat.ship-console .ship-ftl-readouts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1 1 380px;
+  min-width: 300px;
+  max-width: 440px;
+  gap: 0.2rem;
+  padding: 0.15rem 0.35rem;
+  box-sizing: border-box;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-telemetry-cols {
+  display: flex;
+  align-items: stretch;
+  gap: 0.55rem;
+  width: 100%;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-telemetry-col {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-subdivider {
+  width: 1px;
+  flex: 0 0 1px;
+  align-self: stretch;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--ship-border-bright) 25%,
+    var(--ship-border-bright) 75%,
+    transparent 100%
+  );
+  opacity: 0.4;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-telemetry-col .ship-kicker {
+  margin-bottom: 0.2rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  color: var(--ship-cyan);
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-readout-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding-block: 0.12rem;
+  border-bottom: 1px solid rgb(38 59 72 / 30%);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-readout-row:last-child {
+  border-bottom: none;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-readout-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   color: var(--ship-muted);
   font-family: var(--font-monospace, monospace);
-  font-size: 0.61rem;
-  text-align: right;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
+.vira-shipcombat.ship-console .ship-ftl-readout-label i {
+  width: 0.85rem;
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--ship-border-bright);
+}
+
+.vira-shipcombat.ship-console .ship-ftl-readout-value {
+  min-width: 3.5rem;
+  color: var(--ship-text);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.61rem;
+  font-weight: 600;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vira-shipcombat.ship-console .ship-ftl-readout-value[data-state="invalid"],
 .vira-shipcombat.ship-console [data-power-effect][data-state="invalid"],
+.vira-shipcombat.ship-console .ship-ftl-stack[data-state="invalid"],
 .vira-shipcombat.ship-console [data-power-blocks][data-state="invalid"] {
   color: var(--ship-red);
   border-color: var(--ship-red);
+}
+
+.vira-shipcombat.ship-console .ship-power-priorities {
+  margin-top: 0.4rem;
 }
 
 .ship-helm-layout,
@@ -896,6 +1358,10 @@
   border-color: var(--ship-red);
   color: var(--ship-red);
   background: rgb(255 82 103 / 7%);
+}
+
+.ship-preview-line:empty {
+  display: none;
 }
 
 .ship-shield-card { padding-block: 0.25rem; }
@@ -1663,7 +2129,7 @@
   .ship-contact-list { grid-template-columns: 1fr; }
   .ship-console-specification-groups { grid-template-columns: 1fr; }
   .ship-power-grid > :is(label, div) { grid-template-columns: minmax(4.5rem, 0.6fr) minmax(0, 1.4fr); }
-  .vira-shipcombat.ship-console [data-power-effect] { grid-column: 2; text-align: left; }
+  .vira-shipcombat.ship-console .ship-power-grid [data-power-effect] { grid-column: 2; text-align: left; }
   .vira-shipcombat.ship-console .ship-refit-card {
     grid-template-columns: minmax(5rem, 0.8fr) minmax(0, 1.2fr);
     grid-template-areas:

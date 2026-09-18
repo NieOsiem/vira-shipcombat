@@ -2078,6 +2078,34 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const focusSystem = focused?.closest?.("[data-power-blocks]")?.dataset
         .powerBlocks;
       const focusIndex = focused?.dataset.powerIndex;
+
+      // Update Reactor Reserve Stack
+      const reactorStack = form.querySelector("[data-reactor-stack]");
+      if (reactorStack) {
+        const reactorMax = this.#view.power.reactor?.maximum ?? 14;
+        const reactorRedline = this.#view.power.reactor?.redline ?? 2;
+        const totalCommitted = this.#view.power.systems.reduce((sum, s) => {
+          return sum + numeric(form.elements.namedItem(s.id)?.value);
+        }, 0);
+        const freePower = Math.max(0, reactorMax - totalCommitted);
+        reactorStack.setAttribute("aria-valuenow", String(freePower));
+        reactorStack.replaceChildren();
+        for (let idx = 1; idx <= reactorMax; idx++) {
+          const isRedline = idx <= reactorRedline;
+          const isAvailable = idx <= freePower;
+          const slab = document.createElement("div");
+          slab.className = `ship-ftl-slab ship-ftl-slab--reactor ${isRedline ? "is-redline" : "is-nominal"} ${isAvailable ? "is-available" : "is-spent"}`;
+          slab.title = isRedline
+            ? `Overdrive reserve: ${idx <= Math.min(freePower, reactorRedline) ? "Available" : "Spent"}`
+            : `Nominal reserve: ${isAvailable ? "Available" : "Spent"}`;
+          reactorStack.append(slab);
+        }
+        const reactorIndicator = form.querySelector(".ship-ftl-reactor-indicator");
+        if (reactorIndicator) {
+          reactorIndicator.title = `Reactor: ${totalCommitted} / ${reactorMax} Power (${freePower} Available)`;
+        }
+      }
+
       for (const system of this.#view.power.systems) {
         const container = Array.from(
           form.querySelectorAll("[data-power-blocks]"),
@@ -2089,32 +2117,81 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           ...new Set(system.options.map((option) => option.value)),
         ].sort((left, right) => left - right);
         const maximum = Math.max(0, ...values);
+        const overclockTiers = new Set(system.overclockTiers ?? []);
+        const reservedWeapons = system.id === "weapons"
+          ? (this.#view.power.weaponReserved ?? 0)
+          : 0;
+
         container.replaceChildren();
         for (let index = 1; index <= maximum; index++) {
           const filled = index <= current;
-          const next = filled
-            ? values.filter((value) => value < current).at(-1)
-            : values.find((value) => value > current);
+          const isOverclock = overclockTiers.has(index);
+          const isReserved = system.id === "weapons" && index <= reservedWeapons;
           const button = document.createElement("button");
           button.type = "button";
-          button.textContent = filled ? "■" : "□";
+          button.className = `ship-ftl-slab ${filled ? "is-filled" : "is-empty"}${isOverclock ? " is-overclock" : ""}${isReserved ? " is-reserved" : ""}`;
           button.dataset.powerIndex = String(index);
           button.setAttribute("aria-pressed", String(filled));
           button.setAttribute(
             "aria-label",
-            `${system.label}: ${current} → ${next ?? current} Power`,
+            `${system.label} power point ${index}`,
           );
-          button.disabled = !this.#canAct || next === undefined;
-          button.title = !this.#canAct
-            ? denial
-            : next === undefined
-            ? "No further available tier"
-            : `Set ${system.label} to ${next} Power`;
-          button.addEventListener("click", () => {
-            input.value = String(next);
+          button.disabled = !this.#canAct;
+          button.title = `${system.label} ${index} Power${isOverclock ? " (Overclock)" : ""}${isReserved ? " (Weapon Reserved)" : ""}`;
+
+          // Direct slab click
+          button.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (!this.#canAct) return;
+            let target;
+            if (system.id === "weapons") {
+              target = Math.max(reservedWeapons, index);
+            } else if (values.includes(index)) {
+              target = index;
+            } else {
+              target = values.find((v) => v >= index) ?? values.at(-1);
+            }
+            input.value = String(target);
             form.dispatchEvent(new Event("input", { bubbles: true }));
           });
           container.append(button);
+        }
+
+        // Setup Icon button stepper
+        const iconBtn = form.querySelector(`[data-power-icon="${system.id}"]`);
+        if (iconBtn && !iconBtn.dataset.attached) {
+          iconBtn.dataset.attached = "true";
+          // Left click: +1 tier
+          iconBtn.addEventListener("click", () => {
+            if (!this.#canAct) return;
+            const cur = numeric(input.value);
+            const next = values.find((v) => v > cur);
+            if (next !== undefined) {
+              input.value = String(next);
+              form.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+          });
+          // Right click: -1 tier
+          iconBtn.addEventListener("contextmenu", (e) => {
+            e.preventDefault();
+            if (!this.#canAct) return;
+            const cur = numeric(input.value);
+            const prev = values.filter((v) => v < cur).at(-1);
+            if (prev !== undefined) {
+              if (system.id === "weapons" && prev < reservedWeapons) {
+                return;
+              }
+              input.value = String(prev);
+              form.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+          });
+        }
+        if (iconBtn) {
+          iconBtn.disabled = !this.#canAct;
+          const cur = numeric(input.value);
+          const next = values.find((v) => v > cur);
+          const prev = values.filter((v) => v < cur).at(-1);
+          iconBtn.title = `${system.label}: ${cur} Power\nLeft-click: +1 (${next ?? "max"})\nRight-click: −1 (${prev ?? "min"})`;
         }
       }
       if (focusSystem && focusIndex) {
@@ -3124,8 +3201,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         const cooling = config.components?.cooling?.tiers?.find((tier) =>
           tier.power === allocation.cooling
         )?.cooling ?? 0;
-        const reservation =
-          `${this.#view.power.weaponReserved} reserved by ${this.#view.power.reservingWeapons} weapons`;
+        const reservation = this.#view.power.weaponReserved
+          ? `${this.#view.power.weaponReserved} reserved (${this.#view.power.reservingWeapons} wpn)`
+          : "No draw";
         const summaries = {
           engines: `${drives.forward} thrust`,
           shields: `${regeneration} regen`,
@@ -3140,10 +3218,22 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           throw new Error(`${reservation} — depower them on the Weapons tab`);
         }
         const result = previewPowerRoute(config, state, operation.payload);
-        output.textContent =
-          `${result.committed} / ${result.ceilings.maximum} Power · ${result.unused} available · ${
-            result.redlining ? "REDLINE" : result.emission.band
-          } · ${result.heatAdded} Heat on commit`;
+        const gridDraw = form.querySelector("[data-power-grid='draw']");
+        const gridFree = form.querySelector("[data-power-grid='free']");
+        const gridEmit = form.querySelector("[data-power-grid='emission']");
+        const gridHeat = form.querySelector("[data-power-grid='heat']");
+        if (gridDraw) gridDraw.textContent = `${result.committed} / ${result.ceilings.maximum} Power`;
+        if (gridFree) gridFree.textContent = `${result.unused} available`;
+        if (gridEmit) {
+          gridEmit.textContent = result.redlining ? "REDLINE" : result.emission.band;
+          gridEmit.classList.toggle("ship-danger", Boolean(result.redlining));
+        }
+        if (gridHeat) {
+          gridHeat.textContent = `${result.heatAdded} Heat on commit`;
+          gridHeat.classList.toggle("ship-warning", result.heatAdded > 0);
+        }
+        output.textContent = "";
+        output.dataset.error = "false";
       } else if (type === "routeDefense") {
         const assigned = Object.values(operation.payload.charge).reduce(
           (sum, value) => sum + value,
