@@ -167,6 +167,19 @@ export class SensorRadar {
   #sweepAngle = SWEEP_STATIC;
   #reduceMotion = false;
 
+  /**
+   * Current sweep arm bearing, rad. Reading it before a rebuild and writing it back afterwards keeps
+   * the arm where it was: the console recreates the radar on every render, and a fresh instance would
+   * otherwise snap the arm back to its start (visible whenever the ship's state updates, e.g. a drag).
+   */
+  get sweepAngle() {
+    return this.#sweepAngle;
+  }
+
+  set sweepAngle(value) {
+    if (Number.isFinite(value)) this.#sweepAngle = value;
+  }
+
   #radius = 0;
   #laidOut = false;
   #dpr = 1;

@@ -1521,10 +1521,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     );
     this.#refreshSensors(html);
     const stage = html.querySelector("[data-radar-stage]");
+    const sweepAngle = this.#radar?.sweepAngle ?? null;
     this.#radar?.destroy();
     this.#radar = null;
     if (stage) {
       this.#radar = new SensorRadar(stage);
+      if (sweepAngle !== null) this.#radar.sweepAngle = sweepAngle;
       this.#radar.onScaleChange = (value) => {
         const uuid = this.actor?.uuid;
         if (!uuid) return;
