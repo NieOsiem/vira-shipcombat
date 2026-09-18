@@ -209,18 +209,22 @@
     </section>
 
     <section id="panel-helm" class="ship-console-panel" role="tabpanel" aria-label="Helm" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Helm</h2><span class="ship-readout">{{view.movement.speed}} vel · {{view.movement.headingLabel}} · Safe {{view.movement.safeVelocity}}</span></div>
-      <label class="ship-page-operator">Pilot<select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
-
-      <div class="ship-station-banner {{#if view.helmHeld}}is-occupied{{else}}is-vacant{{/if}}">
-        <div class="ship-station-banner-info">
-          <i class="fa-solid {{#if view.helmHeld}}fa-user-check{{else}}fa-user-slash{{/if}}" aria-hidden="true"></i>
+      <div class="ship-helm-heading">
+        <div class="ship-helm-heading-title">
+          <i class="fa-solid fa-compass" aria-hidden="true"></i>
           <div>
-            <strong>Station: {{#if view.helmHeld}}Held by {{view.helmHolderLabel}}{{else}}Vacant / Remote{{/if}}</strong>
-            <small>{{#if view.helmHeld}}Helm controls active{{else}}Take station to engage thrusters and maneuvers{{/if}}</small>
+            <h2>Helm</h2>
+            <small class="ship-muted">Allocate time and set your maneuver vector</small>
           </div>
         </div>
-        <div class="ship-station-banner-actions">
+        <div class="ship-helm-heading-pilot">
+          <i class="fa-solid fa-user" aria-hidden="true"></i>
+          <div>
+            {{#if isGM}}<label class="ship-helm-pilot-select">Pilot<select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>{{else}}<span class="ship-helm-pilot-label">Pilot: {{view.helmHolderLabel}}</span>{{/if}}
+            <span class="ship-helm-station-status {{#if view.helmHeld}}is-active{{/if}}"><i class="fa-solid fa-circle" aria-hidden="true"></i> Station: Helm ({{#if view.helmHeld}}Active{{else}}Vacant{{/if}})</span>
+          </div>
+        </div>
+        <div class="ship-helm-heading-actions">
           {{#if view.helmHeld}}
             <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled{{/unless}}>Release Helm</button>
           {{else}}
@@ -229,32 +233,103 @@
         </div>
       </div>
 
-      <form class="ship-card ship-maneuver-card" data-ui-operation="maneuver" data-live-preview="maneuver">
+      <form class="ship-helm-body" data-ui-operation="maneuver" data-live-preview="maneuver">
         <input type="hidden" name="operatorId" value="{{view.defaults.helm}}">
-        <fieldset class="ship-station-fieldset" {{#unless view.helmHeld}}disabled{{/unless}}>
-          <header><span class="ship-kicker">Timeline used {{view.movement.timeline}} + reserve {{view.movement.evasionReserved}}</span><strong>{{view.movement.timelineRemaining}} remaining</strong></header>
-          <label class="ship-muted">Spent / reserved <meter min="0" max="1" value="{{view.movement.timelineOccupied}}" aria-label="Timeline already spent including evasion reserve"></meter></label>
-          <label class="ship-muted">After maneuver <meter data-timeline-projected min="0" max="1" value="{{view.movement.timelineOccupied}}" aria-label="Projected timeline used including evasion reserve"></meter></label>
-          <label class="ship-slider-row"><span>Main thrust <output data-slider-value="forward">0</output></span><span class="ship-slider-track"><input name="forward" type="range" value="0" aria-label="Main thrust: retro to forward"></span><small>Retro <span>0</span> Forward</small></label>
-          <label class="ship-slider-row"><span>Lateral thrust <output data-slider-value="lateral">0</output></span><span class="ship-slider-track"><input name="lateral" type="range" value="0" aria-label="Lateral thrust: port to starboard"></span><small>Port <span>0</span> Starboard</small></label>
-          <label class="ship-muted">Rotation spent {{view.movement.rotationSpent}}° / {{view.movement.rotationCapacity}}° <meter min="0" max="{{view.movement.rotationCapacity}}" value="{{view.movement.rotationSpent}}" aria-label="Rotation already spent"></meter></label>
-          <label class="ship-muted">After maneuver <meter data-rotation-projected min="0" max="{{view.movement.rotationCapacity}}" value="{{view.movement.rotationSpent}}" aria-label="Projected rotation spent"></meter></label>
-          <label class="ship-slider-row"><span>Rotation <output data-slider-value="rotation">0°</output></span><span class="ship-slider-track"><input name="rotation" type="range" value="0" aria-label="Rotation: counterclockwise to clockwise"></span><small>Left <span>0</span> Right</small></label>
+        <fieldset class="ship-helm-controls" {{#unless view.helmHeld}}disabled{{/unless}}>
 
-          <div class="ship-coast-row">
-            <div class="ship-coast-info">
-              <span class="ship-kicker">Coast Phase</span>
-              <small class="ship-muted">Unallocated timeline automatically coasts at turn end.</small>
+          <section class="ship-helm-axis" aria-label="Main thrust">
+            <div class="ship-helm-axis-header">
+              <i class="fa-solid fa-up-long" aria-hidden="true"></i>
+              <h3>Main Thrust</h3>
+              <span class="ship-helm-budget" data-budget="translation">Translation budget: <span class="ship-budget-spent">{{view.movement.translationBudgetSpentPct}}% spent</span> · <span class="ship-budget-current" data-budget-current>0% current</span> · <span class="ship-budget-left">{{view.movement.translationBudgetLeftPct}}% left</span></span>
             </div>
-            <button type="button" class="ship-coast-btn" data-coast-remaining="true" {{#unless canAct}}disabled{{/unless}}>Coast Remaining ({{view.movement.timelineRemaining}})</button>
-            <input name="coastDuration" type="hidden" value="0">
-          </div>
+            <output class="ship-helm-value-chip" data-slider-value="forward">0</output>
+            <div class="ship-helm-slider-track" data-helm-track="forward" style="--zero-position: {{view.movement.forwardZeroPosition}}%; {{view.movement.forwardTrackStyle}}">
+              <input name="forward" type="range" value="0" aria-label="Main thrust: retro to forward" style="{{view.movement.forwardTrackStyle}}">
+            </div>
+            <div class="ship-helm-slider-labels"><span>Retro {{view.movement.retroMax}}</span><span>0</span><span>Forward {{view.movement.forwardMax}}</span></div>
+          </section>
 
-          <p class="ship-preview-line" data-preview aria-live="polite"></p>
-          <div class="ship-action-row"><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit maneuver</button></div>
-          <div class="ship-action-row"><span class="ship-muted">Evasion reserve {{view.movement.evasionReserved}} · Rotation spent {{view.movement.rotationSpent}}°</span>{{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled{{/unless}}>Disarm evasion</button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled{{/unless}}>Arm evasion</button>{{/if}}</div>
-          <p class="ship-muted" data-evasion-reason role="status"></p>
+          <section class="ship-helm-axis" aria-label="Lateral thrust">
+            <div class="ship-helm-axis-header">
+              <i class="fa-solid fa-left-right" aria-hidden="true"></i>
+              <h3>Lateral Thrust</h3>
+              <span class="ship-helm-budget" data-budget="translation">Translation budget: <span class="ship-budget-spent">{{view.movement.translationBudgetSpentPct}}% spent</span> · <span class="ship-budget-current" data-budget-current>0% current</span> · <span class="ship-budget-left">{{view.movement.translationBudgetLeftPct}}% left</span></span>
+            </div>
+            <output class="ship-helm-value-chip" data-slider-value="lateral">0</output>
+            <div class="ship-helm-slider-track" data-helm-track="lateral" style="--zero-position: {{view.movement.lateralZeroPosition}}%; {{view.movement.lateralTrackStyle}}">
+              <input name="lateral" type="range" value="0" aria-label="Lateral thrust: port to starboard" style="{{view.movement.lateralTrackStyle}}">
+            </div>
+            <div class="ship-helm-slider-labels"><span>Port {{view.movement.portMax}}</span><span>0</span><span>Starboard {{view.movement.starboardMax}}</span></div>
+          </section>
+
+          <section class="ship-helm-axis" aria-label="Rotation">
+            <div class="ship-helm-axis-header">
+              <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+              <h3>Rotation</h3>
+              <span class="ship-helm-budget" data-budget="rotation">Rotation budget: <span class="ship-budget-spent">{{view.movement.rotationBudgetSpentPct}}% spent</span> · <span class="ship-budget-current" data-budget-current>0% current</span> · <span class="ship-budget-left">{{view.movement.rotationBudgetLeftPct}}% left</span></span>
+            </div>
+            <output class="ship-helm-value-chip" data-slider-value="rotation">0°</output>
+            <div class="ship-helm-slider-track" data-helm-track="rotation" style="--zero-position: 50%; {{view.movement.rotationTrackStyle}}">
+              <input name="rotation" type="range" value="0" aria-label="Rotation: counterclockwise to clockwise" style="{{view.movement.rotationTrackStyle}}">
+            </div>
+            <div class="ship-helm-slider-labels"><span>Left {{view.movement.rotationMax}}°</span><span>0</span><span>Right {{view.movement.rotationMax}}°</span></div>
+          </section>
+
+          <section class="ship-helm-axis" aria-label="Coast">
+            <div class="ship-helm-axis-header">
+              <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
+              <h3>Coast</h3>
+              <span class="ship-helm-budget" data-budget="translation">Translation budget: <span class="ship-budget-spent">{{view.movement.translationBudgetSpentPct}}% spent</span> · <span class="ship-budget-current" data-budget-current>0% current</span> · <span class="ship-budget-left">{{view.movement.translationBudgetLeftPct}}% left</span></span>
+            </div>
+            <output class="ship-helm-value-chip" data-slider-value="coastDuration">0.00 time (0%)</output>
+            <div class="ship-helm-slider-track ship-helm-slider-track--coast" data-helm-track="coast" style="{{view.movement.coastTrackStyle}}">
+              <input name="coastDuration" type="range" min="0" max="{{view.movement.timelineRemaining}}" step="0.01" value="0" aria-label="Coast duration: zero to remaining timeline" style="{{view.movement.coastTrackStyle}}">
+            </div>
+            <div class="ship-helm-slider-labels"><span>0.00</span><span>{{view.movement.timelineRemainingHalf}}</span><span>{{view.movement.timelineRemaining}} max</span></div>
+          </section>
+
         </fieldset>
+
+        <div class="ship-helm-sidebar">
+          <aside class="ship-vector-panel" aria-label="Ship vector">
+            <h3>Ship Vector</h3>
+            <div class="ship-vector-compass">
+              <span class="ship-vector-label ship-vector-label--f">F</span>
+              <span class="ship-vector-label ship-vector-label--r">R</span>
+              <span class="ship-vector-label ship-vector-label--a">R</span>
+              <span class="ship-vector-label ship-vector-label--l">L</span>
+              <div class="ship-vector-image" data-vector-image style="transform: rotate({{view.movement.heading}}deg)">
+                <img src="{{actor.img}}" alt="{{actor.name}}">
+              </div>
+            </div>
+            <dl class="ship-vector-readouts">
+              <div><dt>Speed</dt><dd data-vector-speed>{{view.movement.speed}}</dd></div>
+              <div><dt>Safe Limit</dt><dd>{{view.movement.safeVelocity}}</dd></div>
+              <div><dt>Heading</dt><dd data-vector-heading>{{view.movement.headingLabel}}</dd></div>
+              <div><dt>Angular Vel</dt><dd data-vector-angvel>{{view.movement.angularVelocity}}</dd></div>
+            </dl>
+          </aside>
+
+          <div class="ship-helm-result">
+            <div class="ship-helm-result-header">
+              <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+              <div>
+                <strong>Projected Result</strong>
+                <small class="ship-muted">Result after committing this maneuver.</small>
+              </div>
+            </div>
+            <p class="ship-preview-line" data-preview aria-live="polite"></p>
+          </div>
+        </div>
+
+        <div class="ship-helm-actions">
+          <button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-play" aria-hidden="true"></i> <span>Commit maneuver<small>Spend allocated time</small></span></button>
+          <button type="button" data-coast-remaining="true" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span>Set coast<small>Use remaining time</small></span></button>
+          <button type="button" data-helm-reset {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span>Reset sliders<small>Clear current inputs</small></span></button>
+          {{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Disarm evasion<small>Release reserve</small></span></button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-shield" aria-hidden="true"></i> <span>Arm evasion<small>Reserve timeline</small></span></button>{{/if}}
+        </div>
+        <p class="ship-muted" data-evasion-reason role="status"></p>
       </form>
       {{#if view.status.overspeed}}<p class="ship-warning">Overspeed damage risk</p>{{/if}}
     </section>

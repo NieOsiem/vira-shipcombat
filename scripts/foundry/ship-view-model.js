@@ -94,6 +94,29 @@ function meter(value, maximum, tone = "normal") {
     tone,
   };
 }
+
+export function helmTrackGradientStyle(zeroPosPercent, spentRatio, currentRatio = 0) {
+  const Z = Math.min(1, Math.max(0, zeroPosPercent / 100));
+  const spent = Math.min(1, Math.max(0, spentRatio));
+  const current = Math.min(Math.max(0, 1 - spent), Math.max(0, currentRatio));
+  const left = Math.max(0, 1 - spent - current);
+
+  const rLeft = (spent * Z * 100).toFixed(1);
+  const yLeft = ((spent + current) * Z * 100).toFixed(1);
+  const gRight = ((Z + left * (1 - Z)) * 100).toFixed(1);
+  const yRight = ((Z + (left + current) * (1 - Z)) * 100).toFixed(1);
+
+  return `--track-red-end: ${rLeft}%; --track-yellow-end: ${yLeft}%; --track-green-end: ${gRight}%; --track-yellow2-end: ${yRight}%;`;
+}
+
+export function helmCoastTrackGradientStyle(spentRatio, currentRatio = 0) {
+  const spent = Math.min(1, Math.max(0, spentRatio));
+  const current = Math.min(Math.max(0, 1 - spent), Math.max(0, currentRatio));
+  const gEnd = (Math.max(0, 1 - spent - current) * 100).toFixed(1);
+  const yEnd = (Math.max(0, 1 - spent) * 100).toFixed(1);
+  return `--coast-green-end: ${gEnd}%; --coast-yellow-end: ${yEnd}%;`;
+}
+
 function availabilityLabel(counter) {
   const turns = whole(counter);
   if (turns === 0) return "Available now";
@@ -719,7 +742,8 @@ export function buildShipConsoleView(
     config?.maxHull,
     finite(state?.hull) <= finite(config?.maxHull) * 0.25 ? "danger" : "hull",
   );
-  const rotationCapacity = getDriveCapabilities(config, state).rotation;
+  const driveCapabilities = getDriveCapabilities(config, state);
+  const rotationCapacity = driveCapabilities.rotation;
   const facing = finite(state?.facing ?? token?.rotation);
   const normalizedFacing = ((Math.round(facing) % 360) + 360) % 360;
   const headingLabel = `${String(normalizedFacing).padStart(3, "0")}°`;
@@ -839,6 +863,10 @@ export function buildShipConsoleView(
       speed: Number(speed.toFixed(2)),
       heading: normalizedFacing,
       headingLabel,
+      angularVelocity: signed(
+        Number(finite(state?.rotationSpent).toFixed(1)),
+        1,
+      ) + "°",
       timeline: Number(finite(state?.timeline).toFixed(2)),
       timelineOccupied: Number(Math.min(
         1,
@@ -864,6 +892,80 @@ export function buildShipConsoleView(
       evasionArmed: state?.evasion?.armed === true,
       evasionReserved: Number(finite(state?.evasion?.reserved).toFixed(2)),
       safeVelocity: finite(config?.safeVelocity),
+      forwardMax: driveCapabilities.forward,
+      retroMax: driveCapabilities.retro,
+      portMax: driveCapabilities.port,
+      starboardMax: driveCapabilities.starboard,
+      rotationMax: rotationCapacity,
+      translationBudgetSpentPct: percent(
+        finite(state?.timeline) + finite(state?.evasion?.reserved),
+        1,
+      ),
+      translationBudgetLeftPct: percent(
+        Math.max(
+          0,
+          1 - finite(state?.timeline) - finite(state?.evasion?.reserved),
+        ),
+        1,
+      ),
+      rotationBudgetSpentPct: rotationCapacity > 0
+        ? percent(finite(state?.rotationSpent), rotationCapacity)
+        : 0,
+      rotationBudgetLeftPct: rotationCapacity > 0
+        ? percent(
+          Math.max(0, rotationCapacity - finite(state?.rotationSpent)),
+          rotationCapacity,
+        )
+        : 0,
+      forwardZeroPosition: driveCapabilities.forward + driveCapabilities.retro >
+          0
+        ? Math.round(
+          driveCapabilities.retro /
+            (driveCapabilities.retro + driveCapabilities.forward) * 100,
+        )
+        : 50,
+      lateralZeroPosition: driveCapabilities.port +
+            driveCapabilities.starboard > 0
+        ? Math.round(
+          driveCapabilities.port /
+            (driveCapabilities.port + driveCapabilities.starboard) * 100,
+        )
+        : 50,
+      forwardTrackStyle: helmTrackGradientStyle(
+        driveCapabilities.forward + driveCapabilities.retro > 0
+          ? Math.round(
+            driveCapabilities.retro /
+              (driveCapabilities.retro + driveCapabilities.forward) * 100,
+          )
+          : 50,
+        finite(state?.timeline) + finite(state?.evasion?.reserved),
+        0,
+      ),
+      lateralTrackStyle: helmTrackGradientStyle(
+        driveCapabilities.port + driveCapabilities.starboard > 0
+          ? Math.round(
+            driveCapabilities.port /
+              (driveCapabilities.port + driveCapabilities.starboard) * 100,
+          )
+          : 50,
+        finite(state?.timeline) + finite(state?.evasion?.reserved),
+        0,
+      ),
+      rotationTrackStyle: helmTrackGradientStyle(
+        50,
+        rotationCapacity > 0
+          ? finite(state?.rotationSpent) / rotationCapacity
+          : 0,
+        0,
+      ),
+      timelineRemainingHalf: Number((Math.max(
+        0,
+        1 - finite(state?.timeline) - finite(state?.evasion?.reserved),
+      ) / 2).toFixed(2)),
+      coastTrackStyle: helmCoastTrackGradientStyle(
+        finite(state?.timeline) + finite(state?.evasion?.reserved),
+        0,
+      ),
     },
     cooling: {
       heat,

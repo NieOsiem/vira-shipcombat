@@ -1,5 +1,10 @@
 import { COMPONENT_ITEM_TYPE, MODULE_ID, SHIP_TYPE } from "../constants.js";
-import { buildShipConsoleView, powerPriorities } from "./ship-view-model.js";
+import {
+  buildShipConsoleView,
+  helmCoastTrackGradientStyle,
+  helmTrackGradientStyle,
+  powerPriorities,
+} from "./ship-view-model.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
 import {
   getRefitDenial,
@@ -1067,7 +1072,7 @@ const { HandlebarsApplicationMixin } = foundry.applications.api;
 class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   static DEFAULT_OPTIONS = {
     classes: [MODULE_ID, "ship-console"],
-    position: { width: 580, height: 740 },
+    position: { width: 880, height: 820 },
     window: { resizable: true },
     actions: {},
   };
@@ -1830,13 +1835,21 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         : max - min <= 0
         ? "No operational thruster capability"
         : "Full capability range; insufficient remaining budget rejects the maneuver.";
-      input.style.setProperty(
-        "--zero-position",
-        `${max > min ? -min / (max - min) * 100 : 50}%`,
-      );
+      const zeroPos = `${max > min ? -min / (max - min) * 100 : 50}%`;
+      input.style.setProperty("--zero-position", zeroPos);
+      input.closest(".ship-helm-slider-track")?.style.setProperty("--zero-position", zeroPos);
       const digits = name === "rotation" ? 1 : 2;
       const refresh = () => {
         const value = Number(numeric(input.value).toFixed(digits));
+        if (value !== 0 && (name === "forward" || name === "lateral")) {
+          const coastInput = form.elements.namedItem("coastDuration");
+          if (coastInput && Number(coastInput.value) !== 0) {
+            coastInput.value = "0";
+            form.querySelectorAll("[data-slider-value='coastDuration']").forEach(
+              (o) => { o.textContent = "0.00 time (0%)"; },
+            );
+          }
+        }
         input.setAttribute(
           "aria-valuetext",
           `${signed(value, digits)}${name === "rotation" ? " degrees" : " thrust"}`,
@@ -1852,17 +1865,47 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       input.addEventListener("input", refresh);
       refresh();
     }
-    const coast = form.elements.namedItem("coastDuration");
-    coast.max = String(
-      Math.max(
+    const coast = form.querySelector("input[name='coastDuration']");
+    if (coast) {
+      const remainingTimeline = Math.max(
         0,
         1 - numeric(state.timeline) - numeric(state.evasion?.reserved),
-      ),
-    );
-    coast.disabled = !this.#canAct;
-    coast.title = !this.#canAct
-      ? denial
-      : "Uses unreserved timeline; zero main and lateral thrust required.";
+      );
+      coast.max = String(remainingTimeline);
+      coast.disabled = !this.#canAct || remainingTimeline <= 0;
+      coast.title = !this.#canAct
+        ? denial
+        : remainingTimeline <= 0
+        ? "No timeline remaining to coast"
+        : "Uses unreserved timeline; zero main and lateral thrust required.";
+      const refreshCoast = () => {
+        const val = Number(numeric(coast.value).toFixed(2));
+        if (val > 0) {
+          const fwd = form.elements.namedItem("forward");
+          const lat = form.elements.namedItem("lateral");
+          if (fwd && Number(fwd.value) !== 0) {
+            fwd.value = "0";
+            form.querySelectorAll("[data-slider-value='forward']").forEach(
+              (o) => { o.textContent = "+0"; },
+            );
+          }
+          if (lat && Number(lat.value) !== 0) {
+            lat.value = "0";
+            form.querySelectorAll("[data-slider-value='lateral']").forEach(
+              (o) => { o.textContent = "+0"; },
+            );
+          }
+        }
+        coast.setAttribute("aria-valuetext", `${val.toFixed(2)} turn fraction`);
+        form.querySelectorAll("[data-slider-value='coastDuration']").forEach(
+          (output) => {
+            output.textContent = `${val.toFixed(2)} time (${Math.round(val * 100)}%)`;
+          },
+        );
+      };
+      coast.addEventListener("input", refreshCoast);
+      refreshCoast();
+    }
 
     form.querySelector("[data-coast-remaining]")?.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1877,6 +1920,28 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       if (lateralInput) lateralInput.value = "0";
       coast.value = String(remaining);
       void this.#submitUi(event, form, "maneuver");
+    });
+
+    form.querySelector("[data-helm-reset]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      for (const name of ["forward", "lateral", "rotation"]) {
+        const input = form.elements.namedItem(name);
+        if (input) {
+          input.value = "0";
+          input.dispatchEvent(new Event("input", { bubbles: false }));
+          form.querySelectorAll(`[data-slider-value='${name}']`).forEach(
+            (o) => { o.textContent = name === "rotation" ? "0°" : "+0"; },
+          );
+        }
+      }
+      const coastInput = form.elements.namedItem("coastDuration");
+      if (coastInput) {
+        coastInput.value = "0";
+        form.querySelectorAll("[data-slider-value='coastDuration']").forEach(
+          (o) => { o.textContent = "0.00 time (0%)"; },
+        );
+      }
+      void this.#previewUi(form);
     });
 
     const operator = html.querySelector("[data-tab-panel='helm'] select[data-page-operator='helm'], [data-tab-panel='helm'] select[name='operatorId']") ??
@@ -2968,6 +3033,90 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             result.rotationRemaining.toFixed(1)
           }°`;
         }
+
+        const timelineSpent = numeric(state.timeline) + numeric(state.evasion?.reserved);
+        const currentTimelineUsed = Math.max(0, result.timelineUsed - numeric(state.timeline));
+        const translationSpentPct = Math.round(timelineSpent * 100);
+        const translationCurrentPct = Math.round(currentTimelineUsed * 100);
+        const translationLeftPct = Math.max(0, 100 - translationSpentPct - translationCurrentPct);
+
+        const rotCapacity = getDriveCapabilities(config, state).rotation;
+        const rotSpent = numeric(state.rotationSpent);
+        const currentRotUsed = Math.max(0, rotCapacity - rotSpent - result.rotationRemaining);
+        const rotSpentPct = rotCapacity > 0 ? Math.round((rotSpent / rotCapacity) * 100) : 0;
+        const rotCurrentPct = rotCapacity > 0 ? Math.round((currentRotUsed / rotCapacity) * 100) : 0;
+        const rotLeftPct = Math.max(0, 100 - rotSpentPct - rotCurrentPct);
+
+        form.querySelectorAll('[data-budget="translation"]').forEach((el) => {
+          const spent = el.querySelector(".ship-budget-spent");
+          const curr = el.querySelector(".ship-budget-current");
+          const left = el.querySelector(".ship-budget-left");
+          if (spent) spent.textContent = `${translationSpentPct}% spent`;
+          if (curr) curr.textContent = `${translationCurrentPct}% current`;
+          if (left) left.textContent = `${translationLeftPct}% left`;
+        });
+
+        form.querySelectorAll('[data-budget="rotation"]').forEach((el) => {
+          const spent = el.querySelector(".ship-budget-spent");
+          const curr = el.querySelector(".ship-budget-current");
+          const left = el.querySelector(".ship-budget-left");
+          if (spent) spent.textContent = `${rotSpentPct}% spent`;
+          if (curr) curr.textContent = `${rotCurrentPct}% current`;
+          if (left) left.textContent = `${rotLeftPct}% left`;
+        });
+
+        const fwdTrack = form.querySelector('[data-helm-track="forward"]');
+        if (fwdTrack) {
+          const fwdZ = parseFloat(fwdTrack.style.getPropertyValue("--zero-position")) || 50;
+          const style = `--zero-position: ${fwdZ}%; ${helmTrackGradientStyle(fwdZ, timelineSpent, currentTimelineUsed)}`;
+          fwdTrack.style.cssText = style;
+          const input = fwdTrack.querySelector("input");
+          if (input) input.style.cssText = style;
+        }
+        const latTrack = form.querySelector('[data-helm-track="lateral"]');
+        if (latTrack) {
+          const latZ = parseFloat(latTrack.style.getPropertyValue("--zero-position")) || 50;
+          const style = `--zero-position: ${latZ}%; ${helmTrackGradientStyle(latZ, timelineSpent, currentTimelineUsed)}`;
+          latTrack.style.cssText = style;
+          const input = latTrack.querySelector("input");
+          if (input) input.style.cssText = style;
+        }
+        const rotTrack = form.querySelector('[data-helm-track="rotation"]');
+        if (rotTrack) {
+          const style = `--zero-position: 50%; ${helmTrackGradientStyle(50, rotCapacity > 0 ? rotSpent / rotCapacity : 0, rotCapacity > 0 ? currentRotUsed / rotCapacity : 0)}`;
+          rotTrack.style.cssText = style;
+          const input = rotTrack.querySelector("input");
+          if (input) input.style.cssText = style;
+        }
+        const coastTrack = form.querySelector('[data-helm-track="coast"]');
+        if (coastTrack) {
+          const style = helmCoastTrackGradientStyle(timelineSpent, currentTimelineUsed);
+          coastTrack.style.cssText = style;
+          const input = coastTrack.querySelector("input");
+          if (input) input.style.cssText = style;
+        }
+
+        const vectorImg = form.querySelector("[data-vector-image]");
+        if (vectorImg && result.finalFacing !== undefined) {
+          const match = vectorImg.style.transform?.match(/rotate\((-?[\d.]+)deg\)/);
+          const currentDeg = match ? parseFloat(match[1]) : (assembled.input?.facing ?? state.facing ?? 0);
+          const targetFacing = ((Math.round(result.finalFacing) % 360) + 360) % 360;
+          const delta = ((targetFacing - currentDeg) % 360 + 540) % 360 - 180;
+          const nextDeg = currentDeg + delta;
+          vectorImg.style.transform = `rotate(${Math.round(nextDeg)}deg)`;
+        }
+        const vectorSpeed = form.querySelector("[data-vector-speed]");
+        if (vectorSpeed) vectorSpeed.textContent = speed.toFixed(2);
+        const vectorHeading = form.querySelector("[data-vector-heading]");
+        if (vectorHeading && result.finalFacing !== undefined) {
+          const normFacing = ((Math.round(result.finalFacing) % 360) + 360) % 360;
+          vectorHeading.textContent = `${String(normFacing).padStart(3, "0")}°`;
+        }
+        const vectorAngVel = form.querySelector("[data-vector-angvel]");
+        if (vectorAngVel) {
+          vectorAngVel.textContent = `${signed(Number(operation.payload.rotation ?? 0), 1)}°`;
+        }
+
         if (operation.payload.duration > 0) {
           const displacement = Math.hypot(
             result.poweredEnd.position.x - assembled.input.position.x,

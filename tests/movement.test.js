@@ -24,6 +24,11 @@ import {
   validateManeuverTime,
 } from "../scripts/rules/movement.js";
 import { executeShipOperation, OPERATION_TYPES } from "../scripts/rules/operations.js";
+import {
+  buildShipConsoleView,
+  helmCoastTrackGradientStyle,
+  helmTrackGradientStyle,
+} from "../scripts/foundry/ship-view-model.js";
 
 const TOLERANCE = 1e-8;
 
@@ -597,4 +602,51 @@ describe("arcs, sectors, and impact consequences", () => {
     });
     expectNear(preview.warnings[0].speed, 30);
   });
+
+  describe("helm redesign track styles and movement view model", () => {
+    test("helmTrackGradientStyle generates symmetric gradient for 50% zero position", () => {
+      const style = helmTrackGradientStyle(50, 0.2, 0.1);
+      expect(style).toContain("--track-red-end: 10.0%;");
+      expect(style).toContain("--track-yellow-end: 15.0%;");
+      expect(style).toContain("--track-green-end: 85.0%;");
+      expect(style).toContain("--track-yellow2-end: 90.0%;");
+    });
+
+    test("helmTrackGradientStyle generates asymmetric gradient for 33.3% zero position", () => {
+      const style = helmTrackGradientStyle(33.33, 0.33, 0.17);
+      expect(style).toContain("--track-red-end: 11.0%;");
+      expect(style).toContain("--track-yellow-end: 16.7%;");
+      expect(style).toContain("--track-green-end: 66.7%;");
+      expect(style).toContain("--track-yellow2-end: 78.0%;");
+    });
+
+    test("helmCoastTrackGradientStyle generates unidirectional gradient", () => {
+      const styleEmpty = helmCoastTrackGradientStyle(0, 0);
+      expect(styleEmpty).toBe("--coast-green-end: 100.0%; --coast-yellow-end: 100.0%;");
+
+      const styleAllocated = helmCoastTrackGradientStyle(0.2, 0.3);
+      expect(styleAllocated).toBe("--coast-green-end: 50.0%; --coast-yellow-end: 80.0%;");
+
+      const styleMaxed = helmCoastTrackGradientStyle(0.2, 0.8);
+      expect(styleMaxed).toBe("--coast-green-end: 0.0%; --coast-yellow-end: 80.0%;");
+    });
+
+    test("buildShipConsoleView includes extended movement properties including coastTrackStyle", () => {
+      const { config, state } = freshShip();
+      const view = buildShipConsoleView(config, state);
+      expect(view.movement.forwardMax).toBe(6);
+      expect(view.movement.retroMax).toBe(3);
+      expect(view.movement.portMax).toBe(2);
+      expect(view.movement.starboardMax).toBe(2);
+      expect(view.movement.rotationMax).toBe(60);
+      expect(view.movement.forwardZeroPosition).toBe(33);
+      expect(view.movement.lateralZeroPosition).toBe(50);
+      expect(view.movement.translationBudgetSpentPct).toBe(0);
+      expect(view.movement.translationBudgetLeftPct).toBe(100);
+      expect(view.movement.forwardTrackStyle).toContain("--track-red-end: 0.0%");
+      expect(view.movement.coastTrackStyle).toBe("--coast-green-end: 100.0%; --coast-yellow-end: 100.0%;");
+      expect(view.movement.timelineRemainingHalf).toBe(0.5);
+    });
+  });
 });
+
