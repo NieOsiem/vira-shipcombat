@@ -10,6 +10,20 @@ import {
 import { previewDefenseRoute } from "../rules/shields.js";
 import { getDriveCapabilities } from "../rules/movement.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
+import {
+  autoScale,
+  bearingRelDegrees,
+  clampScale,
+  designatorFor,
+  designatorLabel,
+  dialPoint,
+  formatRange,
+  isAutoScale,
+  RADAR_LIMITS,
+  radarPercentStyle,
+  relativeVector,
+  screenOffset,
+} from "./radar-geometry.js";
 
 const POWER_SYSTEMS = Object.freeze([
   ["engines", "Engines"],
@@ -760,76 +774,189 @@ function tokenPosition(token) {
   };
 }
 
-function radarPosition(lastKnown, origin, facing, range) {
-  if (!lastKnown?.position || !origin || range <= 0) {
-    return { x: 50, y: 50, style: "--contact-x:50%;--contact-y:50%" };
-  }
-  const dx = finite(lastKnown.position.x) - origin.x;
-  const dy = finite(lastKnown.position.y) - origin.y;
-  const radians = -finite(facing) * Math.PI / 180;
-  const relativeX = (dx * Math.cos(radians)) - (dy * Math.sin(radians));
-  const relativeY = (dx * Math.sin(radians)) + (dy * Math.cos(radians));
-  const scale = 43 / range;
-  const x = Math.max(5, Math.min(95, 50 + (relativeX * scale)));
-  const y = Math.max(5, Math.min(95, 50 + (relativeY * scale)));
+function velocityVector(velocity, facing, scale) {
+  const x = finite(velocity?.x, Number.NaN);
+  const y = finite(velocity?.y, Number.NaN);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const offset = screenOffset(x, y, facing);
+  const span = Math.max(1e-6, finite(scale, 1));
   return {
-    x,
-    y,
-    style: `--contact-x:${x.toFixed(2)}%;--contact-y:${y.toFixed(2)}%`,
+    speed: Number(Math.hypot(x, y).toFixed(2)),
+    u: offset.x / span,
+    v: offset.y / span,
+    bearing: Math.round(bearingRelDegrees(offset.x, offset.y)),
   };
 }
 
-function contactViews(state, token, sensorStats, labels = {}) {
+/**
+ * Radar contacts plus the dial state they are plotted against. `requestedScale`
+ * is the operator's zoom in DU; null/0 means auto-fit to the furthest contact.
+ */
+function contactViews(state, token, sensorStats, labels = {}, requestedScale = null) {
   const origin = state?.position ?? tokenPosition(token);
   const facing = finite(state?.facing ?? token?.rotation);
-  const range = Math.max(
-    1,
+  const maximum = Math.max(
+    RADAR_LIMITS.minimum,
     finite(sensorStats.activeRange),
     finite(sensorStats.passiveRange),
   );
-  return Object.entries(state?.tracks ?? {}).map(([key, track], index) => {
+  const entries = Object.entries(state?.tracks ?? {}).map(([key, track]) => {
     const safe = sanitizeTrack({
       observerState: state,
       track,
       targetUuid: track?.targetUuid ?? key,
     });
-    const position = radarPosition(safe.lastKnown, origin, facing, range);
-    const live = safe.state === TRACK_STATUS.CONTACT ||
-      safe.state === TRACK_STATUS.TARGETED;
     const targeted = safe.state === TRACK_STATUS.TARGETED;
-    const rememberedLabel = safe.remembered?.label ??
-      safe.remembered?.identity?.label;
     return {
-      ...safe,
       key,
-      label: rememberedLabel ?? labels[safe.targetUuid] ??
-        `Contact ${index + 1}`,
-      live,
+      track: safe,
       targeted,
+      live: safe.state === TRACK_STATUS.CONTACT || targeted,
+      relative: relativeVector({
+        position: safe.lastKnown?.position,
+        origin,
+        facingDeg: facing,
+      }),
       stale: safe.lastKnown?.stale === true ||
         safe.state === TRACK_STATUS.UNDETECTED,
-      style: position.style,
-      stateLabel: safe.state === TRACK_STATUS.TARGETED
+      name: safe.remembered?.label ?? safe.remembered?.identity?.label ??
+        labels[safe.targetUuid],
+    };
+  });
+
+  // A track map is an object, so its iteration order is a persistence detail.
+  // Assign over the uuid order instead, or contacts would be renamed whenever
+  // an unrelated track is written.
+  const usedDesignators = [];
+  const designators = new Map();
+  for (const entry of [...entries].sort((left, right) =>
+    String(left.track.targetUuid).localeCompare(String(right.track.targetUuid))
+  )) {
+    const designator = designatorFor(entry.track.targetUuid, usedDesignators);
+    if (designator) usedDesignators.push(designator);
+    designators.set(entry.key, designator);
+  }
+
+  const auto = isAutoScale(requestedScale);
+  const scale = auto
+    ? autoScale(
+      entries.map((entry) => entry.relative?.distance ?? 0),
+      {
+        minimum: RADAR_LIMITS.minimum,
+        maximum,
+        fitPadding: RADAR_LIMITS.fitPadding,
+      },
+    )
+    : clampScale(requestedScale, { minimum: RADAR_LIMITS.minimum, maximum });
+
+  const contacts = entries.map((entry) => {
+    const track = entry.track;
+    const designator = designators.get(entry.key) ?? "";
+    const point = entry.relative
+      ? dialPoint(entry.relative, scale)
+      : { u: 0, v: 0, hoisted: false };
+    const jams = Array.isArray(track.jams) ? track.jams : [];
+    const relativeBearing = entry.relative?.bearingRel ?? 0;
+    return {
+      ...track,
+      key: entry.key,
+      designator,
+      designatorLabel: designatorLabel(designator),
+      label: entry.name ?? designatorLabel(designator),
+      live: entry.live,
+      targeted: entry.targeted,
+      stale: entry.stale,
+      unknown: entry.relative === null,
+      jammed: jams.length > 0,
+      jamLabel: jams.length === 0
+        ? ""
+        : `${signed(finite(jams[0]?.modifier, -4), 0)} interference`,
+      stateLabel: entry.targeted
         ? "Targeted"
-        : safe.state === TRACK_STATUS.CONTACT
+        : entry.live
         ? "Contact"
         : "Last known",
-      bearing: safe.lastKnown?.facing == null
-        ? "—"
-        : `${Math.round(finite(safe.lastKnown.facing))}°`,
-      jammed: Array.isArray(safe.jams) && safe.jams.length > 0,
+      distance: entry.relative
+        ? Number(entry.relative.distance.toFixed(2))
+        : null,
+      distanceLabel: entry.relative
+        ? `${formatRange(entry.relative.distance)} DU`
+        : "—",
+      bearingRel: entry.relative ? Math.round(relativeBearing) : null,
+      bearingLabel: entry.relative
+        ? `${String(((Math.round(relativeBearing) % 360) + 360) % 360)
+          .padStart(3, "0")}°`
+        : "—",
+      heading: track.lastKnown?.facing == null
+        ? null
+        : Math.round(finite(track.lastKnown.facing)),
+      hoisted: point.hoisted,
+      velocity: entry.targeted
+        ? velocityVector(track.knownVelocity, facing, scale)
+        : null,
+      effectiveAc: Number.isFinite(Number(track.effectiveAc))
+        ? Number(track.effectiveAc)
+        : null,
+      defensesRevealed: track.defensesRevealed === true,
+      systemsRevealed: track.systemsRevealed === true,
+      firingSolution: track.firingSolution === true,
+      expiryLabels: [
+        track.activeUntilTurnKey
+          ? `Active contact ${turnLabel(track.activeUntilTurnKey)}`
+          : "",
+        track.physicalUntilTurnKey
+          ? `Physical contact ${turnLabel(track.physicalUntilTurnKey)}`
+          : "",
+        track.outsideRangeUntilTurnKey
+          ? `Holds outside range ${turnLabel(track.outsideRangeUntilTurnKey)}`
+          : "",
+        track.lastKnown?.turnKey
+          ? `Last known ${turnLabel(track.lastKnown.turnKey)}`
+          : "",
+      ].filter(Boolean),
+      u: point.u,
+      v: point.v,
+      style: radarPercentStyle(point.u, point.v),
     };
   }).sort((left, right) =>
     Number(right.targeted) - Number(left.targeted) ||
     Number(right.live) - Number(left.live) ||
     left.label.localeCompare(right.label)
   );
+
+  const presets = RADAR_LIMITS.presets.filter((value) => value <= maximum);
+  if (presets.at(-1) !== maximum) presets.push(maximum);
+  return {
+    contacts,
+    radar: {
+      scale,
+      scaleLabel: `${formatRange(scale)} DU`,
+      auto,
+      minimum: RADAR_LIMITS.minimum,
+      maximum,
+      presets: presets.map((value) => ({
+        value,
+        label: formatRange(value),
+        active: !auto && value === scale,
+      })),
+      online: sensorStats.online === true,
+      activeRange: Number(finite(sensorStats.activeRange).toFixed(1)),
+      passiveRange: Number(finite(sensorStats.passiveRange).toFixed(1)),
+      originKnown: Boolean(origin),
+      contactCount: contacts.length,
+      liveCount: contacts.filter((contact) => contact.live).length,
+      targetedCount: contacts.filter((contact) => contact.targeted).length,
+      jammedCount: contacts.filter((contact) => contact.jammed).length,
+      staleCount: contacts.filter((contact) => contact.stale).length,
+      hoistedCount: contacts.filter((contact) => contact.hoisted).length,
+    },
+  };
 }
 
 export function buildShipConsoleView(
   config,
   state,
-  { token = null, targetLabels = {}, operatorUserId = null } = {},
+  { token = null, targetLabels = {}, operatorUserId = null, radarScale = null } = {},
 ) {
   const power = powerView(config, state);
   const shields = shieldView(config, state);
@@ -857,7 +984,8 @@ export function buildShipConsoleView(
   const helmHolderProfile = allOperators.find((op) => op.id === helmHolder);
   const helmHeld = Boolean(helmHolder);
 
-  const contacts = contactViews(state, token, sensor, targetLabels);
+  const radar = contactViews(state, token, sensor, targetLabels, radarScale);
+  const contacts = radar.contacts;
   const conditions = conditionViews(config, state);
   const combat = globalThis.game?.combat;
   const combatants = Array.isArray(combat?.combatants)
@@ -893,6 +1021,18 @@ export function buildShipConsoleView(
   const normalizedFacing = ((Math.round(facing) % 360) + 360) % 360;
   const headingLabel = `${String(normalizedFacing).padStart(3, "0")}°`;
   const weaponsList = weaponViews(config, state, power);
+  // Weapon envelopes are plotted on the dial, so dedupe them once here rather
+  // than per frame in the renderer.
+  const weaponRangeValues = new Set();
+  for (const weapon of weaponsList) {
+    if (weapon.off) continue;
+    for (const value of [weapon.optimalRange, weapon.maximumRange]) {
+      if (value > 0) weaponRangeValues.add(value);
+    }
+  }
+  radar.radar.weaponRanges = [...weaponRangeValues].sort((left, right) =>
+    left - right
+  ).map((value) => ({ value, label: formatRange(value) }));
 
   const availableCrewOrders = crewOperators.reduce(
     (sum, op) => sum + (op.remaining ?? 0),
@@ -995,6 +1135,7 @@ export function buildShipConsoleView(
     power,
     shields,
     sensor,
+    radar: radar.radar,
     contacts,
     liveContacts: contacts.filter((contact) => contact.live),
     targetedContacts: contacts.filter((contact) => contact.targeted),

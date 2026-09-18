@@ -13,6 +13,9 @@
   --ship-amber: #ffbd52;
   --ship-orange: #ff7a45;
   --ship-red: #ff5267;
+  --radar-corner-width: 11rem;
+  --radar-corner-height: 6.75rem;
+  --radar-clearance: 12px;
   min-width: 735px;
   min-height: 840px;
   max-width: 100%;
@@ -157,8 +160,7 @@
 .ship-console-panel h2,
 .ship-console-panel h3,
 .ship-console-panel h4,
-.ship-refit-card h3,
-.ship-contact-card h3 {
+.ship-refit-card h3 {
   font-family: var(--font-serif, Georgia, serif);
   font-weight: 650;
 }
@@ -522,7 +524,6 @@
 .ship-card--danger { border-color: rgb(255 82 103 / 50%); }
 
 .ship-card > header,
-.ship-contact-card > header,
 .ship-condition-card > header {
   display: flex;
   align-items: flex-start;
@@ -538,13 +539,11 @@
 }
 
 .ship-card > header > div,
-.ship-contact-card > header > div,
 .ship-condition-card > header > div {
   min-width: 0;
 }
 
-.ship-card h3,
-.ship-contact-card h3 {
+.ship-card h3 {
   overflow: hidden;
   color: #fff;
   font-size: 0.82rem;
@@ -1377,7 +1376,6 @@
 
 .ship-helm-layout,
 .ship-systems-layout,
-.ship-sensor-layout,
 .ship-damage-layout {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1389,8 +1387,7 @@
 .ship-systems-layout { grid-template-columns: 1fr; }
 
 .ship-maneuver-card,
-.ship-flight-instruments,
-.ship-sensor-controls {
+.ship-flight-instruments {
   display: grid;
   gap: 0.35rem;
 }
@@ -1969,100 +1966,290 @@
 
 .ship-shield-actions .ship-primary { margin-inline-start: auto; }
 
-.ship-radar {
-  position: relative;
-  width: min(100%, 15rem);
-  aspect-ratio: 1;
-  margin: 0 auto;
-  overflow: hidden;
-  border: 1px solid rgb(62 232 208 / 55%);
-  border-radius: 50%;
-  background:
-    conic-gradient(from -15deg, transparent 0 7deg, rgb(62 232 208 / 12%) 7deg 15deg, transparent 15deg 360deg),
-    repeating-radial-gradient(circle, transparent 0 11.5%, rgb(62 232 208 / 18%) 11.8% 12.1%),
-    radial-gradient(circle, rgb(62 232 208 / 8%), transparent 68%),
-    #071014;
-  box-shadow: inset 0 0 25px rgb(62 232 208 / 10%), 0 0 14px rgb(62 232 208 / 5%);
+.ship-radar-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
 }
 
-.ship-radar-axis { position: absolute; background: rgb(62 232 208 / 18%); }
-.ship-radar-axis--vertical { top: 0; bottom: 0; left: 50%; width: 1px; }
-.ship-radar-axis--horizontal { top: 50%; right: 0; left: 0; height: 1px; }
-.ship-radar-heading { position: absolute; top: 0.35rem; left: 50%; color: var(--ship-cyan); font: 700 0.52rem var(--font-monospace, monospace); transform: translateX(-50%); }
-.ship-radar-range { position: absolute; right: 8%; bottom: 8%; color: var(--ship-muted); font: 0.72rem var(--font-monospace, monospace); }
-.ship-radar-center { position: absolute; top: 50%; left: 50%; color: var(--ship-cyan); transform: translate(-50%, -50%) rotate(-45deg); filter: drop-shadow(0 0 5px var(--ship-cyan)); }
+.ship-radar-stage,
+.ship-radar-stage * {
+  box-sizing: border-box;
+}
 
-.ship-radar-contact {
+/* the stage is a form: strip the chrome the base form rules would add */
+.ship-radar-stage {
+  position: relative;
+  display: block;
+  height: 100%;
+  min-height: 30rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* the renderer writes an explicit left/top/width/height box on both layers */
+.ship-radar-canvas,
+.ship-radar-hits {
+  position: absolute;
+}
+
+.ship-radar-canvas { display: block; }
+
+.ship-radar-hits { pointer-events: none; }
+
+.ship-console-layout .ship-radar-hit {
   position: absolute;
   top: var(--contact-y);
   left: var(--contact-x);
-  display: grid;
-  place-items: center;
-  min-width: 1.2rem;
-  min-height: 1.2rem;
+  width: 1.65rem;
+  height: 1.65rem;
+  min-width: 0;
+  min-height: 0;
   padding: 0;
-  color: var(--ship-amber);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
   transform: translate(-50%, -50%);
-  filter: drop-shadow(0 0 5px currentcolor);
+  opacity: 1;
+  pointer-events: auto;
 }
 
-.ship-radar-contact[aria-pressed="true"] {
+.ship-console-layout .ship-radar-hit:hover:not(:disabled) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ship-console-layout .ship-radar-hit:focus-visible {
+  outline: 1px solid var(--ship-cyan);
+  outline-offset: 0;
+}
+
+.ship-radar-hit-label {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  padding: 0 0.2rem;
+  border: 1px solid var(--ship-border-bright);
+  border-radius: 2px;
+  color: var(--ship-text);
+  background: var(--ship-panel);
+  font: 700 0.58rem var(--font-monospace, monospace);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.ship-console-layout .ship-radar-hit:hover .ship-radar-hit-label,
+.ship-console-layout .ship-radar-hit:focus-visible .ship-radar-hit-label,
+.ship-console-layout .ship-radar-hit[aria-pressed="true"] .ship-radar-hit-label,
+.ship-console-layout .ship-radar-hit[data-selected="true"] .ship-radar-hit-label {
+  display: block;
+}
+
+.ship-console-layout .ship-radar-hit[aria-pressed="true"] .ship-radar-hit-label,
+.ship-console-layout .ship-radar-hit[data-selected="true"] .ship-radar-hit-label,
+.ship-console-layout .ship-radar-hit.is-targeted .ship-radar-hit-label,
+.ship-console-layout .ship-radar-hit[data-foundry-targeted="true"] .ship-radar-hit-label {
+  color: var(--ship-cyan);
+}
+
+/* lock state lives on the canvas; the hit target itself never paints */
+.ship-console-layout .ship-radar-hit.is-targeted,
+.ship-console-layout .ship-radar-hit[data-foundry-targeted="true"] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ship-radar-corner {
+  position: absolute;
+  display: grid;
+  align-content: start;
+  gap: 0.2rem;
+  width: var(--radar-corner-width);
+  height: var(--radar-corner-height);
+  padding: 0.3rem 0.35rem;
+  overflow: hidden;
+  border: 1px solid rgb(62 232 208 / 22%);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ship-panel) 88%, transparent);
+}
+
+.ship-radar-corner--locks { top: 0; left: 0; }
+.ship-radar-corner--recon { top: 0; right: 0; }
+.ship-radar-corner--readout { bottom: 0; left: 0; overflow-y: auto; }
+.ship-radar-corner--ew { bottom: 0; right: 0; }
+
+.ship-radar-actions {
+  display: grid;
+  gap: 1px;
+}
+
+.ship-console-layout .ship-radar-action {
+  display: grid;
+  grid-template-columns: 0.85rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: var(--ship-text);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.15rem;
+  text-align: left;
+}
+
+.ship-radar-action > i { color: var(--ship-cyan); font-size: 0.6rem; text-align: center; }
+
+.ship-radar-action-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ship-radar-cost {
+  color: var(--ship-cyan);
+  font: 700 0.55rem var(--font-monospace, monospace);
+}
+
+.ship-console-layout .ship-radar-action:disabled { opacity: 0.45; }
+
+/* rows stay unpositioned so the tooltip resolves against the corner panel */
+.ship-radar-action:disabled:hover::after {
+  content: attr(data-reason);
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.15rem;
+  left: 0.35rem;
+  padding: 0.1rem 0.2rem;
+  overflow: hidden;
+  border: 1px solid var(--ship-border-bright);
+  border-radius: 2px;
+  color: var(--ship-text);
+  background: var(--ship-panel);
+  font: 0.55rem var(--font-monospace, monospace);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ship-radar-zoom {
+  position: absolute;
+  right: var(--radar-corner-width);
+  bottom: 0;
+  left: var(--radar-corner-width);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  height: 1.6rem;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.ship-console-layout .ship-radar-zoom-chip {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-width: 2.1rem;
+  min-height: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--ship-border);
+  border-radius: 2px;
+  color: var(--ship-muted);
+  background: #0b1218;
+  box-shadow: none;
+  font: 700 0.6rem var(--font-monospace, monospace);
+  letter-spacing: 0.04em;
+  pointer-events: auto;
+}
+
+.ship-console-layout .ship-radar-zoom-chip[aria-pressed="true"] {
   border-color: var(--ship-cyan);
   color: var(--ship-cyan);
-  background: rgb(62 232 208 / 18%);
+  background: var(--ship-cyan-soft);
 }
 
-.ship-radar-contact[data-foundry-targeted="true"],
-.ship-radar-contact.is-targeted {
-  color: var(--ship-red);
-}
-
-.ship-radar-contact.is-stale { color: var(--ship-muted); opacity: 0.65; }
-.vira-shipcombat.ship-console .ship-sensor-focus,
-.vira-shipcombat.ship-console [data-sensor-focus-panel] {
-  display: grid;
-  gap: 0.2rem;
-  min-width: 0;
-  padding: 0.35rem;
-  border: 1px solid var(--ship-border-bright);
-  background: rgb(62 232 208 / 5%);
-}
-
-.vira-shipcombat.ship-console [data-sensor-focus-panel] p {
+.ship-radar-zoom-readout {
   color: var(--ship-muted);
-  font-size: 0.62rem;
+  font: 0.6rem var(--font-monospace, monospace);
+  white-space: nowrap;
 }
 
-.vira-shipcombat.ship-console [data-sensor-focus-panel] pre {
+.ship-radar-readout-name {
+  color: var(--ship-cyan);
+  font: 700 0.7rem var(--font-monospace, monospace);
+}
+
+.ship-radar-readout-sub {
+  color: var(--ship-muted);
+  font-size: 0.6rem;
+}
+
+.ship-radar-state-chip {
+  justify-self: start;
+  padding: 0 0.25rem;
+  border: 1px solid var(--ship-border-bright);
+  border-radius: 2px;
+  color: var(--ship-cyan);
+  font: 700 0.55rem var(--font-monospace, monospace);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ship-radar-state-chip[data-tone="targeted"] { border-color: rgb(255 82 103 / 45%); color: var(--ship-red); }
+.ship-radar-state-chip[data-tone="stale"] { border-color: var(--ship-border); color: var(--ship-muted); }
+
+.ship-radar-readout-grid {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  font: 0.58rem var(--font-monospace, monospace);
+}
+
+.ship-radar-readout-grid > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.35rem;
+  align-items: baseline;
+}
+
+.ship-radar-readout-grid dt { color: var(--ship-muted); letter-spacing: 0.04em; }
+.ship-radar-readout-grid dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+
+.ship-radar-readout-flags,
+.ship-radar-readout-note {
+  margin: 0;
+  color: var(--ship-muted);
+  font: 0.55rem var(--font-monospace, monospace);
+}
+
+.ship-radar-readout-flags { color: var(--ship-cyan); letter-spacing: 0.05em; }
+
+.ship-radar-corner--readout details > summary { font-size: 0.58rem; }
+
+.ship-radar-corner--readout pre {
   max-width: 100%;
-  max-height: 7rem;
+  max-height: 6rem;
   margin: 0;
   overflow: auto;
   color: var(--ship-text);
-  font: 0.6rem var(--font-monospace, monospace);
+  font: 0.55rem var(--font-monospace, monospace);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-
-.vira-shipcombat.ship-console [data-sensor-focus-panel][hidden] { display: none; }
-
-.ship-contact-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.35rem;
-  margin-top: 0.45rem;
-}
-
-.ship-contact-card {
-  min-width: 0;
-  padding: 0.4rem;
-  border: 1px solid var(--ship-border);
-  border-left: 2px solid var(--ship-amber);
-  background: var(--ship-panel);
-}
-
-.ship-contact-card.is-targeted { border-left-color: var(--ship-red); }
-.ship-contact-card header span { color: var(--ship-amber); font-size: 0.59rem; text-transform: uppercase; }
 
 .ship-weapon-list,
 .ship-condition-list {
@@ -2641,7 +2828,6 @@
   }
 
   .ship-shield-compass { width: min(100%, 11rem); }
-  .ship-contact-list { grid-template-columns: 1fr; }
   .ship-console-specification-groups { grid-template-columns: 1fr; }
   .ship-power-grid > :is(label, div) { grid-template-columns: minmax(4.5rem, 0.6fr) minmax(0, 1.4fr); }
   .vira-shipcombat.ship-console .ship-power-grid [data-power-effect] { grid-column: 2; text-align: left; }
@@ -3406,27 +3592,6 @@
 .ship-crew-job-btn:hover:not(:disabled) {
   background: rgb(62 232 208 / 25%);
   color: #fff;
-}
-
-/* Sensor Action Groups */
-.ship-sensor-action-groups {
-  display: grid;
-  gap: 0.45rem;
-  margin-top: 0.45rem;
-}
-
-.ship-sensor-group {
-  display: grid;
-  gap: 0.2rem;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid rgb(142 165 173 / 12%);
-  border-radius: 2px;
-  background: rgb(0 0 0 / 15%);
-}
-
-.ship-sensor-group .ship-kicker {
-  font-size: 0.58rem;
-  margin-bottom: 0.15rem;
 }
 
 /* Damage Control & Thermal cards */

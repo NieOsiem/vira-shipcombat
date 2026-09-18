@@ -6,6 +6,7 @@ import {
   powerPriorities,
 } from "./ship-view-model.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
+import { SensorRadar } from "./sensor-radar.js";
 import {
   getRefitDenial,
   installShipComponent,
@@ -119,6 +120,7 @@ const TARGETED = new Set([
 const GM_ONLY = new Set(["resolveFate"]);
 const drafts = new Map();
 const selectedTabs = new Map();
+const radarScales = new Map();
 const TARGET_OPERATIONS = new Set([
   "acquire",
   "analyze",
@@ -1075,6 +1077,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   #previewSerial = new WeakMap();
   #hooks = [];
   #sensorFocus = "";
+  #radar = null;
   #operators = new Map();
   #uiDrafts = new Map();
   #details = new Map();
@@ -1158,6 +1161,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       token,
       targetLabels,
       operatorUserId: isGM ? null : game.user.id,
+      radarScale: radarScales.get(actor.uuid) ?? null,
     });
     this.#aimedComponents = new Map(view.targetedContacts.map((contact) => [
       contact.targetUuid,
@@ -1262,6 +1266,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   }
 
   async close(options = {}) {
+    this.#radar?.destroy();
+    this.#radar = null;
     this.#hullDraft = null;
     this.#epoch++;
     this.#root = null;
@@ -1371,6 +1377,20 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       })
     );
     this.#refreshSensors(html);
+    const stage = html.querySelector("[data-radar-stage]");
+    this.#radar?.destroy();
+    this.#radar = null;
+    if (stage) {
+      this.#radar = new SensorRadar(stage);
+      this.#radar.onScaleChange = (value) => {
+        const uuid = this.actor?.uuid;
+        if (!uuid) return;
+        if (value == null) radarScales.delete(uuid);
+        else radarScales.set(uuid, value);
+      };
+      this.#radar.attach();
+      this.#radar.setView(this.#view);
+    }
     html.querySelectorAll("form[data-ui-operation='attack']").forEach(
       (form) => {
         const envelope = () => this.#previewWeaponEnvelope(form);
@@ -2492,67 +2512,144 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   }
 
   #refreshSensors(html) {
-    const contact = this.#view.contacts.find((entry) =>
-      entry.targetUuid === this.#sensorFocus
+    const online = this.#view.sensor.online === true;
+    const contacts = new Map(
+      this.#view.contacts.map((entry) => [entry.targetUuid, entry]),
     );
+    const contact = contacts.get(this.#sensorFocus);
     if (!contact) this.#sensorFocus = "";
-    html.querySelectorAll("[data-sensor-focus]").forEach((button) =>
-      button.setAttribute(
-        "aria-pressed",
-        String(button.dataset.sensorFocus === this.#sensorFocus),
-      )
-    );
+    html.querySelectorAll("[data-sensor-focus]").forEach((button) => {
+      const selected = button.dataset.sensorFocus === this.#sensorFocus;
+      button.setAttribute("aria-pressed", String(selected));
+      button.dataset.selected = String(selected);
+      button.title = contacts.get(button.dataset.sensorFocus)?.label ?? "";
+    });
     const panel = html.querySelector("[data-sensor-focus-panel]");
-    if (panel) {
-      panel.replaceChildren();
-      const title = document.createElement("strong");
-      title.textContent = contact?.label ?? "Select a radar contact";
-      panel.append(title);
-      if (contact) {
-        const telemetry = document.createElement("p");
-        telemetry.textContent =
-          `${contact.stateLabel} · Bearing ${contact.bearing}${
-            contact.jammed ? " · Jammed" : ""
-          }${contact.stale ? " · Stale" : ""}`;
-        panel.append(telemetry);
-        for (
-          const [label, value] of [["Defenses", contact.defenses], [
-            "Systems",
-            contact.systems,
-          ]]
-        ) {
-          if (!value) continue;
-          const details = document.createElement("details");
-          const summary = document.createElement("summary");
-          summary.textContent = label;
-          const content = document.createElement("pre");
-          content.textContent = pretty(value);
-          details.append(summary, content);
-          panel.append(details);
-        }
-      }
-    }
-    const form = html.querySelector("[data-tab-panel='sensors'] form");
+    if (panel) this.#renderSensorReadout(panel, contact);
+    const form = html.querySelector("[data-sensor-form]");
     if (!form) return;
     const target = form.elements.namedItem("targetUuid");
     if (target) target.value = this.#sensorFocus;
-    form.querySelectorAll("button[data-ui-operation]").forEach((button) => {
-      const type = button.dataset.uiOperation;
-      if (type === "burnThrough") {
-        button.hidden = !this.#view.sensor.online ||
-          !contact?.jams?.some((jam) => jam.sourceUuid === contact.targetUuid);
-        return;
+    const reasonFor = (type) => {
+      if (!this.#canAct) return "Inactive phase or not your station";
+      if (type === "fade") return "";
+      if (!online) return "Sensors offline";
+      if (type === "ping") return "";
+      if (!contact) return "Select a contact";
+      if (type === "acquire" || type === "breakLock" || type === "jam") {
+        return contact.live ? "" : "Contact is not live";
       }
-      const allowed = type === "fade" ||
-        (this.#view.sensor.online &&
-          (type === "ping" ||
-            (type === "burnThrough"
-              ? contact?.jammed
-              : ["analyze", "deepScan", "firingSolution"].includes(type)
-              ? contact?.targeted
-              : contact?.live)));
-      button.hidden = !allowed;
+      if (["analyze", "deepScan", "firingSolution"].includes(type)) {
+        return contact.targeted ? "" : "Requires a targeted contact";
+      }
+      if (type === "burnThrough") {
+        return contact.jams?.some((jam) =>
+          jam.sourceUuid === contact.targetUuid
+        )
+          ? ""
+          : "This contact is not jamming you";
+      }
+      return "";
+    };
+    form.querySelectorAll("button[data-ui-operation]").forEach((button) => {
+      const reason = reasonFor(button.dataset.uiOperation);
+      button.disabled = Boolean(reason);
+      button.dataset.reason = reason;
+      button.title = reason;
     });
+  }
+
+  #renderSensorReadout(panel, contact) {
+    if (!contact) {
+      const empty = document.createElement("p");
+      empty.className = "ship-empty";
+      empty.textContent = "Select a radar contact to inspect it.";
+      panel.replaceChildren(empty);
+      return;
+    }
+    const name = document.createElement("strong");
+    name.className = "ship-radar-readout-name";
+    name.textContent = contact.designatorLabel;
+    const parts = [name];
+    if (contact.label !== contact.designatorLabel) {
+      const sub = document.createElement("span");
+      sub.className = "ship-radar-readout-sub";
+      sub.textContent = contact.label;
+      parts.push(sub);
+    }
+    const chip = document.createElement("span");
+    chip.className = "ship-radar-state-chip";
+    chip.dataset.tone = contact.targeted
+      ? "targeted"
+      : contact.stale
+      ? "stale"
+      : "contact";
+    chip.textContent = contact.stateLabel;
+    parts.push(chip);
+    const grid = document.createElement("dl");
+    grid.className = "ship-radar-readout-grid";
+    const rows = [
+      [
+        "RANGE",
+        `${contact.distanceLabel}${contact.hoisted ? " · HOISTED" : ""}`,
+      ],
+      ["BEARING", `${contact.bearingLabel} REL`],
+      ["COURSE", contact.heading == null ? "—" : `${contact.heading}°`],
+      [
+        "VELOCITY",
+        contact.velocity
+          ? `${contact.velocity.speed} · ${contact.velocity.bearing}°`
+          : "—",
+      ],
+      ["AC", contact.effectiveAc ?? "—"],
+      [
+        "STATE",
+        contact.stale ? "Last known" : contact.live ? "Live" : "Undetected",
+      ],
+    ];
+    for (const [term, value] of rows) {
+      const row = document.createElement("div");
+      const dt = document.createElement("dt");
+      dt.textContent = term;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      row.append(dt, dd);
+      grid.append(row);
+    }
+    parts.push(grid);
+    if (contact.targeted) {
+      const flags = document.createElement("p");
+      flags.className = "ship-radar-readout-flags";
+      flags.textContent = [
+        `DEFENSES ${contact.defensesRevealed ? "✓" : "✕"}`,
+        `SYSTEMS ${contact.systemsRevealed ? "✓" : "✕"}`,
+        `SOLUTION ${contact.firingSolution ? "✓" : "✕"}`,
+      ].join(" · ");
+      parts.push(flags);
+    }
+    for (const note of [contact.jamLabel, ...contact.expiryLabels]) {
+      if (!note) continue;
+      const line = document.createElement("p");
+      line.className = "ship-radar-readout-note";
+      line.textContent = note;
+      parts.push(line);
+    }
+    for (
+      const [label, value] of [["Defenses", contact.defenses], [
+        "Systems",
+        contact.systems,
+      ]]
+    ) {
+      if (!value) continue;
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = label;
+      const content = document.createElement("pre");
+      content.textContent = pretty(value);
+      details.append(summary, content);
+      parts.push(details);
+    }
+    panel.replaceChildren(...parts);
   }
 
   #previewWeaponEnvelope(form) {

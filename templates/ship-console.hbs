@@ -485,49 +485,49 @@
       {{/if}}
     </section>
 
-    <section id="panel-sensors" class="ship-console-panel" role="tabpanel" aria-label="Sensors" data-tab-panel="sensors" {{#unless tabState.sensors.active}}hidden{{/unless}}>
+    <section id="panel-sensors" class="ship-console-panel ship-radar-panel" role="tabpanel" aria-label="Sensors" data-tab-panel="sensors" {{#unless tabState.sensors.active}}hidden{{/unless}}>
       <div class="ship-panel-heading">
         <h2>Sensors</h2>
         <label class="ship-page-operator">Sensor operator<select name="operatorId" data-page-operator="sensors" data-default="{{view.defaults.sensors}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Sensors {{ratings.sensors}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
-        <span class="ship-readout">{{#if view.sensor.online}}ONLINE · {{view.sensor.activeRange}} ACTIVE{{else}}OFFLINE{{/if}}</span>
+        <span class="ship-readout" data-radar-status>{{#if view.radar.online}}ONLINE · {{view.radar.activeRange}} / {{view.radar.passiveRange}} DU · {{view.radar.liveCount}} CONTACTS{{else}}SENSORS OFFLINE{{/if}}</span>
       </div>
-      <div class="ship-sensor-layout">
-        <div class="ship-radar" role="group" aria-label="Select sensor focus; independent of weapon targeting">
-          <span class="ship-radar-axis ship-radar-axis--vertical"></span><span class="ship-radar-axis ship-radar-axis--horizontal"></span><span class="ship-radar-heading">FORE</span><span class="ship-radar-center"><i class="fa-solid fa-location-arrow" aria-hidden="true"></i></span>
-          {{#each view.contacts}}<button type="button" class="ship-radar-contact {{#if targeted}}is-targeted{{/if}} {{#if stale}}is-stale{{/if}}" data-sensor-focus="{{targetUuid}}" aria-pressed="false" aria-label="Focus {{label}} · {{stateLabel}}{{#if jammed}} · interference{{/if}}" style="{{style}}" title="{{label}} · {{stateLabel}}"><i class="fa-solid {{#if jammed}}fa-triangle-exclamation{{else}}{{#if targeted}}fa-crosshairs{{else}}fa-diamond{{/if}}{{/if}}" aria-hidden="true"></i><small>{{label}}</small></button>{{/each}}
-          <span class="ship-radar-range">{{view.sensor.activeRange}}</span>
+      <form class="ship-radar-stage" data-radar-stage data-sensor-form role="group" aria-label="Sensor radar. Selecting a contact focuses it independently of weapon targeting.">
+        <input type="hidden" name="targetUuid" value="">
+        <canvas class="ship-radar-canvas" data-radar-canvas aria-hidden="true"></canvas>
+        <div class="ship-radar-hits" data-radar-hits>
+          {{#each view.contacts}}<button type="button" class="ship-radar-hit{{#if targeted}} is-targeted{{/if}}{{#if stale}} is-stale{{/if}}{{#if hoisted}} is-hoisted{{/if}}" data-sensor-focus="{{targetUuid}}" data-radar-state="{{state}}" aria-pressed="false" aria-label="{{designatorLabel}} · {{distanceLabel}} · bearing {{bearingLabel}} · {{stateLabel}}{{#if jammed}} · interference{{/if}}" style="{{style}}"><span class="ship-radar-hit-label">{{label}}</span></button>{{/each}}
         </div>
-        <form class="ship-card ship-sensor-controls">
-          <input type="hidden" name="targetUuid" value="">
-          <section data-sensor-focus-panel aria-label="Focused contact telemetry" aria-live="polite"><p class="ship-empty">Select a radar contact to inspect it.</p></section>
-          <div class="ship-sensor-action-groups">
-            <div class="ship-sensor-group">
-              <span class="ship-kicker">Targeting &amp; Locks</span>
-              <div class="ship-button-grid">
-                <button type="button" data-ui-operation="acquire" hidden {{#unless canAct}}disabled{{/unless}}>Acquire target</button>
-                <button type="button" data-ui-operation="firingSolution" hidden {{#unless canAct}}disabled{{/unless}}>Firing solution</button>
-                <button type="button" data-ui-operation="breakLock" hidden {{#unless canAct}}disabled{{/unless}}>Break lock</button>
-              </div>
-            </div>
-            <div class="ship-sensor-group">
-              <span class="ship-kicker">Recon &amp; Intelligence</span>
-              <div class="ship-button-grid">
-                <button type="button" data-ui-operation="ping" {{#unless canAct}}disabled{{/unless}}>Active ping</button>
-                <button type="button" data-ui-operation="analyze" hidden {{#unless canAct}}disabled{{/unless}}>Analyze defenses</button>
-                <button type="button" data-ui-operation="deepScan" hidden {{#unless canAct}}disabled{{/unless}}>Deep scan</button>
-              </div>
-            </div>
-            <div class="ship-sensor-group">
-              <span class="ship-kicker">Electronic Warfare</span>
-              <div class="ship-button-grid">
-                <button type="button" data-ui-operation="jam" hidden {{#unless canAct}}disabled{{/unless}}>Jam</button>
-                <button type="button" data-ui-operation="burnThrough" hidden {{#unless canAct}}disabled{{/unless}}>Burn through</button>
-                <button type="button" data-ui-operation="fade" {{#unless canAct}}disabled{{/unless}}>Fade track</button>
-              </div>
-            </div>
+        <aside class="ship-radar-corner ship-radar-corner--locks" aria-label="Targeting and locks">
+          <span class="ship-kicker">Targeting &amp; Locks</span>
+          <div class="ship-radar-actions">
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="acquire" title=""><i class="fa-solid fa-crosshairs" aria-hidden="true"></i><span class="ship-radar-action-label">Acquire target</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="firingSolution" title=""><i class="fa-solid fa-bullseye" aria-hidden="true"></i><span class="ship-radar-action-label">Firing solution</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="breakLock" title=""><i class="fa-solid fa-link-slash" aria-hidden="true"></i><span class="ship-radar-action-label">Break lock</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
           </div>
-        </form>
-      </div>
+        </aside>
+        <aside class="ship-radar-corner ship-radar-corner--recon" aria-label="Reconnaissance and intelligence">
+          <span class="ship-kicker">Recon &amp; Intelligence</span>
+          <div class="ship-radar-actions">
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="ping" title=""><i class="fa-solid fa-satellite-dish" aria-hidden="true"></i><span class="ship-radar-action-label">Active ping</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="analyze" title=""><i class="fa-solid fa-magnifying-glass-chart" aria-hidden="true"></i><span class="ship-radar-action-label">Analyze defenses</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="deepScan" title=""><i class="fa-solid fa-diagram-project" aria-hidden="true"></i><span class="ship-radar-action-label">Deep scan</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
+          </div>
+        </aside>
+        <aside class="ship-radar-corner ship-radar-corner--readout" data-sensor-focus-panel aria-label="Focused contact telemetry" aria-live="polite"><p class="ship-empty">Select a radar contact to inspect it.</p></aside>
+        <aside class="ship-radar-corner ship-radar-corner--ew" aria-label="Electronic warfare">
+          <span class="ship-kicker">Electronic Warfare</span>
+          <div class="ship-radar-actions">
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="jam" title=""><i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i><span class="ship-radar-action-label">Jam</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="burnThrough" title=""><i class="fa-solid fa-bolt" aria-hidden="true"></i><span class="ship-radar-action-label">Burn through</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
+            <button type="button" class="ship-radar-action" data-radar-action data-ui-operation="fade" title=""><i class="fa-solid fa-ghost" aria-hidden="true"></i><span class="ship-radar-action-label">Fade track</span><span class="ship-radar-cost" aria-hidden="true">1</span></button>
+          </div>
+        </aside>
+        <div class="ship-radar-zoom" data-radar-zoom role="group" aria-label="Radar display range">
+          <button type="button" class="ship-radar-zoom-chip" data-radar-zoom-auto aria-pressed="{{view.radar.auto}}">AUTO</button>
+          {{#each view.radar.presets}}<button type="button" class="ship-radar-zoom-chip" data-radar-zoom-preset="{{value}}" aria-pressed="{{active}}">{{label}}</button>{{/each}}
+          <span class="ship-radar-zoom-readout" data-radar-zoom-readout>{{view.radar.scaleLabel}}</span>
+        </div>
+      </form>
     </section>
 
     <section id="panel-weapons" class="ship-console-panel" role="tabpanel" aria-label="Weapons" data-tab-panel="weapons" {{#unless tabState.weapons.active}}hidden{{/unless}}>
