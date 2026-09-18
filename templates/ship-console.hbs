@@ -210,6 +210,7 @@
 
     <section id="panel-helm" class="ship-console-panel" role="tabpanel" aria-label="Helm" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>
       <div class="ship-panel-heading"><h2>Helm</h2><span class="ship-readout">{{view.movement.speed}} vel · {{view.movement.headingLabel}} · Safe {{view.movement.safeVelocity}}</span></div>
+      <label class="ship-page-operator">Pilot<select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
 
       <div class="ship-station-banner {{#if view.helmHeld}}is-occupied{{else}}is-vacant{{/if}}">
         <div class="ship-station-banner-info">
@@ -221,7 +222,7 @@
         </div>
         <div class="ship-station-banner-actions">
           {{#if view.helmHeld}}
-            <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}>Release Helm</button>
+            <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled{{/unless}}>Release Helm</button>
           {{else}}
             <button type="button" class="ship-station-btn ship-station-btn--take ship-primary" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}>Take Helm</button>
           {{/if}}
@@ -229,8 +230,8 @@
       </div>
 
       <form class="ship-card ship-maneuver-card" data-ui-operation="maneuver" data-live-preview="maneuver">
+        <input type="hidden" name="operatorId" value="{{view.defaults.helm}}">
         <fieldset class="ship-station-fieldset" {{#unless view.helmHeld}}disabled{{/unless}}>
-          <label class="ship-page-operator">Pilot<select name="operatorId" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
           <header><span class="ship-kicker">Timeline used {{view.movement.timeline}} + reserve {{view.movement.evasionReserved}}</span><strong>{{view.movement.timelineRemaining}} remaining</strong></header>
           <label class="ship-muted">Spent / reserved <meter min="0" max="1" value="{{view.movement.timelineOccupied}}" aria-label="Timeline already spent including evasion reserve"></meter></label>
           <label class="ship-muted">After maneuver <meter data-timeline-projected min="0" max="1" value="{{view.movement.timelineOccupied}}" aria-label="Projected timeline used including evasion reserve"></meter></label>

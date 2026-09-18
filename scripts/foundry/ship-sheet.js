@@ -136,11 +136,13 @@ function truthyFormValue(value) {
 }
 
 function elementFormData(element) {
-  const form = element.matches?.("form") ? element : element.closest?.("form");
+  const form = element.matches?.("form")
+    ? element
+    : (element.closest?.("form[data-ui-operation]") ?? element.closest?.("form"));
   const values = form ? Object.fromEntries(new FormData(form).entries()) : {};
-  const panel = form?.closest?.("[data-tab-panel]");
-  const operator = panel?.querySelector("[data-page-operator]");
-  if (operator) values.operatorId = operator.value;
+  const panel = element?.closest?.("[data-tab-panel]") ?? form?.closest?.("[data-tab-panel]");
+  const operator = panel?.querySelector("[data-page-operator], select[name='operatorId']");
+  if (!values.operatorId && operator?.value) values.operatorId = operator.value;
   const aimedComponent = form?.elements?.namedItem("aimedComponentId");
   if (
     !form?.querySelector("[data-aim-enabled]")?.checked ||
@@ -1877,7 +1879,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       void this.#submitUi(event, form, "maneuver");
     });
 
-    const operator = form.elements.namedItem("operatorId");
+    const operator = html.querySelector("[data-tab-panel='helm'] select[data-page-operator='helm'], [data-tab-panel='helm'] select[name='operatorId']") ??
+      form.elements.namedItem("operatorId");
+    const hiddenOperator = form.elements.namedItem("operatorId");
     const holder = typeof state.controls?.helm === "string"
       ? state.controls.helm
       : state.controls?.helm?.operatorId;
@@ -1885,15 +1889,19 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       this.#config.operators?.find((entry) => entry.id === holder)?.label ??
         holder ?? "Unheld";
     const refreshControl = () => {
+      if (hiddenOperator && hiddenOperator !== operator && operator?.value) {
+        hiddenOperator.value = operator.value;
+      }
       const held = Boolean(holder && holder === operator?.value);
       const take = html.querySelector("[data-tab-panel='helm'] [data-ui-operation='takeControl'][data-control='helm']");
       if (take) {
         take.disabled = held || !this.#canAct;
         take.title = !this.#canAct ? denial : `Current holder: ${holderLabel}`;
+        if (operator?.value) take.dataset.operatorId = operator.value;
       }
       const release = html.querySelector("[data-tab-panel='helm'] [data-ui-operation='releaseControl'][data-control='helm']");
       if (release) {
-        release.disabled = !held || !this.#canAct;
+        release.disabled = !holder || !this.#canAct;
       }
       let reason = "";
       try {
@@ -1938,7 +1946,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           : reason;
       }
     };
-    operator?.addEventListener("change", refreshControl);
+    operator?.addEventListener("change", () => {
+      refreshControl();
+      void this.#previewUi(form);
+    });
     refreshControl();
   }
 
