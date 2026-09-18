@@ -209,33 +209,15 @@
     </section>
 
     <section id="panel-helm" class="ship-console-panel" role="tabpanel" aria-label="Helm" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>
-      <div class="ship-helm-heading">
-        <div class="ship-helm-heading-title">
-          <i class="fa-solid fa-compass" aria-hidden="true"></i>
-          <div>
-            <h2>Helm</h2>
-            <small class="ship-muted">Allocate time and set your maneuver vector</small>
-          </div>
-        </div>
-        <div class="ship-helm-heading-controls">
-          <div class="ship-helm-pilot-badge">
-            <i class="fa-solid fa-user" aria-hidden="true"></i>
-            {{#if isGM}}
-              <label class="ship-helm-pilot-select">
-                <span class="ship-helm-pilot-tag">Pilot</span>
-                <select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">
-                  {{#each view.operators}}
-                    <option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>
-                  {{/each}}
-                </select>
-              </label>
-            {{else}}
-              <span class="ship-helm-pilot-label"><span class="ship-helm-pilot-tag">Pilot</span> {{view.helmHolderLabel}}</span>
-            {{/if}}
-            <span class="ship-helm-status-pill {{#if view.helmHeld}}is-active{{/if}}" title="Helm Station Status">
-              <i class="fa-solid fa-circle" aria-hidden="true"></i> {{#if view.helmHeld}}Active{{else}}Vacant{{/if}}
-            </span>
-          </div>
+      <div class="ship-panel-heading">
+        <h2>Helm</h2>
+        {{#if isGM}}
+          <label class="ship-page-operator">Pilot<select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        {{else}}
+          <span class="ship-page-operator">Pilot <span class="ship-helm-holder-name">{{view.helmHolderLabel}}</span></span>
+        {{/if}}
+        <div class="ship-helm-actions-inline">
+          <span class="ship-readout" title="Helm Station Status">{{#if view.helmHeld}}ACTIVE{{else}}VACANT{{/if}}</span>
           {{#if view.helmHeld}}
             <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Release Helm</button>
           {{else}}
@@ -503,7 +485,11 @@
     </section>
 
     <section id="panel-sensors" class="ship-console-panel" role="tabpanel" aria-label="Sensors" data-tab-panel="sensors" {{#unless tabState.sensors.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Sensors</h2><span class="ship-readout">{{#if view.sensor.online}}ONLINE · {{view.sensor.activeRange}} ACTIVE{{else}}OFFLINE{{/if}}</span></div>
+      <div class="ship-panel-heading">
+        <h2>Sensors</h2>
+        <label class="ship-page-operator">Sensor operator<select name="operatorId" data-page-operator="sensors" data-default="{{view.defaults.sensors}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Sensors {{ratings.sensors}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <span class="ship-readout">{{#if view.sensor.online}}ONLINE · {{view.sensor.activeRange}} ACTIVE{{else}}OFFLINE{{/if}}</span>
+      </div>
       <div class="ship-sensor-layout">
         <div class="ship-radar" role="group" aria-label="Select sensor focus; independent of weapon targeting">
           <span class="ship-radar-axis ship-radar-axis--vertical"></span><span class="ship-radar-axis ship-radar-axis--horizontal"></span><span class="ship-radar-heading">FORE</span><span class="ship-radar-center"><i class="fa-solid fa-location-arrow" aria-hidden="true"></i></span>
@@ -511,7 +497,6 @@
           <span class="ship-radar-range">{{view.sensor.activeRange}}</span>
         </div>
         <form class="ship-card ship-sensor-controls">
-          <label class="ship-page-operator">Sensor operator<select name="operatorId" data-default="{{view.defaults.sensors}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Sensors {{ratings.sensors}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
           <input type="hidden" name="targetUuid" value="">
           <section data-sensor-focus-panel aria-label="Focused contact telemetry" aria-live="polite"><p class="ship-empty">Select a radar contact to inspect it.</p></section>
           <div class="ship-sensor-action-groups">
@@ -545,8 +530,11 @@
     </section>
 
     <section id="panel-weapons" class="ship-console-panel" role="tabpanel" aria-label="Weapons" data-tab-panel="weapons" {{#unless tabState.weapons.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Weapons</h2><span class="ship-readout">{{view.power.weaponReserved}} / {{view.power.allocation.weapons}} POWER</span></div>
-      <label class="ship-page-operator">Gunner<select data-page-operator="weapons" data-default="{{view.defaults.gunnery}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Gunnery {{ratings.gunnery}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+      <div class="ship-panel-heading">
+        <h2>Weapons</h2>
+        <label class="ship-page-operator">Gunner<select data-page-operator="weapons" data-default="{{view.defaults.gunnery}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Gunnery {{ratings.gunnery}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <span class="ship-readout">{{view.power.weaponReserved}} / {{view.power.allocation.weapons}} POWER</span>
+      </div>
       <p data-target-lamp role="status" aria-live="polite">No Foundry target selected</p>
       <div class="ship-weapon-list">
         {{#each view.weapons}}
@@ -573,8 +561,11 @@
     </section>
 
     <section id="panel-damage" class="ship-console-panel" role="tabpanel" aria-label="Damage control" data-tab-panel="damage" {{#unless tabState.damage.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Damage Control</h2><span class="ship-readout">{{view.status.hull.value}} / {{view.status.hull.maximum}} HULL</span></div>
-      <label class="ship-page-operator">Engineer<select data-page-operator="damage" data-default="{{view.defaults.engineering}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Engineering {{ratings.engineering}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+      <div class="ship-panel-heading">
+        <h2>Damage Control</h2>
+        <label class="ship-page-operator">Engineer<select data-page-operator="damage" data-default="{{view.defaults.engineering}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Engineering {{ratings.engineering}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <span class="ship-readout">{{view.status.hull.value}} / {{view.status.hull.maximum}} HULL</span>
+      </div>
       <div class="ship-damage-layout">
         <form class="ship-card ship-thermal-card">
           <header><h3>Thermal Management</h3><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></header>

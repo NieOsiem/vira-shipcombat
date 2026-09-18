@@ -656,23 +656,22 @@
 }
 
 .ship-panel-heading .ship-page-operator {
-  flex: 0 1 360px;
+  flex: 0 1 380px;
+  height: 1.2rem;
   margin-bottom: 0;
-  padding: 0.15rem 0.35rem;
-  border-radius: 3px;
-  background: rgb(0 0 0 / 25%);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  white-space: nowrap;
 }
 
 .ship-panel-heading .ship-page-operator select {
-  min-height: 1.45rem;
-  height: 1.45rem;
-  padding: 0.1rem 0.35rem;
+  min-height: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.35rem;
   font-size: 0.68rem;
-}
-
-.ship-panel-heading:has(.ship-page-operator),
-.ship-panel-heading--power {
-  align-items: center;
+  line-height: 1.2;
 }
 
 .ship-form-grid,
@@ -3374,181 +3373,55 @@
   margin-bottom: 0.45rem;
 }
 
-/* ── Redesigned Helm Panel ───────────────────────────────────── */
+/* ── Helm Panel Heading Actions ──────────────────────────────── */
 
-.ship-helm-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.4rem 0.75rem;
-  min-width: 0;
-  margin-bottom: 0.55rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--ship-border);
-}
-
-.ship-helm-heading-title {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.ship-helm-heading-title > i {
-  color: var(--ship-cyan);
-  font-size: 1.25rem;
-}
-
-.ship-helm-heading-title h2 {
-  margin: 0;
-  overflow: hidden;
-  color: #fff;
-  font-size: 1.05rem;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ship-helm-heading-title small {
-  display: block;
-  font-size: 0.62rem;
-  line-height: 1.1;
-}
-
-.ship-helm-heading-controls {
-  display: flex;
+.ship-helm-actions-inline {
+  display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  height: 1.2rem;
 }
 
-.ship-helm-pilot-badge {
+.ship-helm-actions-inline .ship-station-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
-  padding: 0.12rem 0.45rem;
-  border: 1px solid var(--ship-border);
-  border-radius: 4px;
-  background: rgba(10, 18, 26, 0.75);
-}
-
-.ship-helm-pilot-badge > i.fa-user {
-  color: var(--ship-cyan);
-  font-size: 0.7rem;
-  opacity: 0.85;
-}
-
-.ship-helm-pilot-select {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  margin: 0;
-  min-width: 0;
-}
-
-.ship-helm-pilot-tag {
-  color: var(--ship-muted);
-  font-size: 0.58rem;
+  gap: 0.25rem;
+  min-height: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.45rem;
+  font-size: 0.62rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.ship-helm-pilot-select select {
-  height: 1.45rem;
-  max-width: 220px;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
-  color: #fff;
-  background: #091118;
-  font-size: 0.68rem;
-  font-weight: 600;
+  letter-spacing: 0.03em;
+  border-radius: 2px;
+  white-space: nowrap;
   line-height: 1.2;
 }
 
-.ship-helm-pilot-select select option {
-  background: #091118;
-  color: #fff;
-}
-
-.ship-helm-pilot-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--ship-text);
-  font-size: 0.68rem;
-  font-weight: 600;
-}
-
-.ship-helm-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.22rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 3px;
-  font-size: 0.58rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--ship-muted);
-  background: rgba(255, 255, 255, 0.05);
-  border-left: 1px solid var(--ship-border);
-  margin-left: 0.15rem;
-  padding-left: 0.35rem;
-}
-
-.ship-helm-status-pill > i {
-  font-size: 0.35rem;
-  color: var(--ship-red);
-}
-
-.ship-helm-status-pill.is-active {
-  color: var(--ship-green);
-  background: rgba(52, 211, 153, 0.12);
-}
-
-.ship-helm-status-pill.is-active > i {
-  color: var(--ship-green);
-}
-
-.ship-helm-heading-controls .ship-station-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 1.45rem;
-  height: 1.45rem;
-  padding: 0 0.55rem;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  border-radius: 3px;
-  white-space: nowrap;
-}
-
-.ship-helm-heading-controls .ship-station-btn--release {
+.ship-helm-actions-inline .ship-station-btn--release {
   color: var(--ship-text);
   border: 1px solid var(--ship-border);
   background: rgba(255, 255, 255, 0.04);
 }
 
-.ship-helm-heading-controls .ship-station-btn--release:hover:not(:disabled) {
+.ship-helm-actions-inline .ship-station-btn--release:hover:not(:disabled) {
   border-color: var(--ship-red);
   color: var(--ship-red);
   background: rgba(255, 82, 103, 0.12);
 }
 
-.ship-helm-heading-controls .ship-station-btn--take {
-  color: #fff;
-  border: 1px solid var(--ship-cyan);
-  background: rgba(62, 232, 208, 0.15);
+.ship-helm-actions-inline .ship-station-btn--take {
+  color: #051211;
+  border: 1px solid rgb(62 232 208 / 65%);
 }
 
-.ship-helm-heading-controls .ship-station-btn--take:hover:not(:disabled) {
-  background: rgba(62, 232, 208, 0.28);
+.ship-helm-actions-inline .ship-station-btn i {
+  font-size: 0.58rem;
+}
+
+.ship-helm-holder-name {
+  color: var(--ship-text);
+  font-size: 0.68rem;
+  font-weight: 600;
 }
 
 /* Helm body: two-column when wide enough */
