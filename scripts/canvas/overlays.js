@@ -1,4 +1,5 @@
 import { SHIP_TYPE } from "../constants.js";
+import { materializeActorConfig } from "../foundry/refit.js";
 import { registerShipVisibility } from "./visibility.js";
 
 const MODULE_ID = "vira-shipcombat";
@@ -238,6 +239,23 @@ function drawShieldArc(graphics, center, radius, start, end, appearance) {
   });
 }
 
+function tokenShieldData(token) {
+  const actor = token?.actor ?? token?.document?.actor;
+  if (actor?.type !== SHIP_TYPE) return null;
+  const state = actor.system?.shipCombat?.state?.shields;
+  if (!state) return null;
+  let shield = actor.system?.shipCombat?.config?.components?.shield;
+  if (!shield) {
+    try {
+      shield = materializeActorConfig(actor)?.components?.shield;
+    } catch (_error) {
+      shield = null;
+    }
+  }
+  if (!shield) return null;
+  return { actor, shield, state };
+}
+
 function hasVisibleShields(token) {
   const actor = token?.actor ?? token?.document?.actor;
   const document = token?.document ?? token;
@@ -245,10 +263,7 @@ function hasVisibleShields(token) {
     actor?.type !== SHIP_TYPE || document?.hidden || token?.visible === false
   ) return false;
   if (!globalThis.game?.user?.isGM && !actor?.isOwner) return false;
-  return Boolean(
-    actor?.system?.shipCombat?.config?.components?.shield &&
-      actor?.system?.shipCombat?.state?.shields,
-  );
+  return Boolean(tokenShieldData(token));
 }
 
 function shieldLabel(text, color, heading, radius) {
@@ -281,9 +296,15 @@ function shieldLabel(text, color, heading, radius) {
 }
 
 function drawTokenShields(entry, token) {
-  const actor = token.actor ?? token.document?.actor;
-  const shield = actor.system.shipCombat.config.components.shield;
-  const state = actor.system.shipCombat.state.shields;
+  const shieldData = tokenShieldData(token);
+  if (!shieldData) {
+    entry.graphics.clear();
+    entry.labels.removeChildren().forEach((child) =>
+      child.destroy?.({ children: true })
+    );
+    return;
+  }
+  const { shield, state } = shieldData;
   const center = tokenShieldCenter(token);
   const radius = tokenShieldRadius(token);
   const bubble = shield.topology === "bubble";
@@ -956,6 +977,27 @@ export function registerCanvasIntegration() {
   });
   registerHook("updateActor", (actor) => {
     if (actor?.type !== SHIP_TYPE || !actor?.system?.shipCombat) return;
+    refreshTokenShields();
+    redraw();
+  });
+  const onItemChanged = (item) => {
+    const actor = item?.parent;
+    if (actor?.type === SHIP_TYPE && actor?.system?.shipCombat) {
+      refreshTokenShields();
+      redraw();
+    }
+  };
+  registerHook("createItem", onItemChanged);
+  registerHook("updateItem", onItemChanged);
+  registerHook("deleteItem", onItemChanged);
+  registerHook("updateActorDelta", (delta) => {
+    const actor = delta?.parent?.actor ?? delta?.actor;
+    if (actor?.type === SHIP_TYPE && actor?.system?.shipCombat) {
+      refreshTokenShields();
+      redraw();
+    }
+  });
+  registerHook("viraShipCombatOperationCommitted", () => {
     refreshTokenShields();
     redraw();
   });

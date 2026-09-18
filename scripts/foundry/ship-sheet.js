@@ -341,7 +341,7 @@ function formPriority(data, prefix) {
 }
 
 function regenerationWeights(config, state, sectors, data) {
-  if (config.components.shield.topology === "bubble") {
+  if (config?.components?.shield?.topology === "bubble") {
     return { [sectors[0]]: 100 };
   }
   const weights = Object.fromEntries(
