@@ -74,6 +74,7 @@ export const OPERATION_TYPES = Object.freeze({
   REFRESH_RESOURCES: "refreshResources",
   SPEND_RESOURCE: "spendResource",
   TAKE_CONTROL: "takeControl",
+  RELEASE_CONTROL: "releaseControl",
   CONTRIBUTE_WORK: "contributeWork",
   MANEUVER: "maneuver",
   ROTATE: "rotate",
@@ -1048,6 +1049,26 @@ export function executeShipOperation(operation, context) {
         operation: operationMetadata(request),
       });
       break;
+    case OPERATION_TYPES.RELEASE_CONTROL: {
+      const control = request.payload.control;
+      const holder = source.state?.controls?.[control];
+      const holderId = typeof holder === "string" ? holder : holder?.operatorId;
+      if (
+        holderId &&
+        holderId !== request.payload.operatorId &&
+        !request.payload.gmOverride
+      ) {
+        violation(
+          "CONTROL_HELD_BY_OTHER",
+          "You cannot release a control held by another operator.",
+          { control, holderId },
+        );
+      }
+      source.state.controls ??= {};
+      source.state.controls[control] = null;
+      result = { control, released: true };
+      break;
+    }
     case OPERATION_TYPES.CONTRIBUTE_WORK:
       result = contributeWork(source.config, source.state, {
         ...request.payload,

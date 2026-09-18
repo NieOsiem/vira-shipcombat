@@ -42,7 +42,7 @@ const TABS = [
   { id: "power-defense", label: "Power" },
   { id: "sensors", label: "Sensors" },
   { id: "weapons", label: "Weapons" },
-  { id: "damage", label: "Damage" },
+  { id: "damage", label: "Damage Control" },
 ];
 const MAINTENANCE_TABS = [{ id: "refit", label: "Refit" }, {
   id: "log-config",
@@ -50,8 +50,8 @@ const MAINTENANCE_TABS = [{ id: "refit", label: "Refit" }, {
 }];
 const GROUPS = {
   Overview: ["resolveFate"],
-  Crew: ["setRoster", "spendResource", "takeControl", "contributeWork"],
-  Helm: ["maneuver", "rotate", "armEvasion", "disarmEvasion"],
+  Crew: ["setRoster", "spendResource", "takeControl", "releaseControl", "contributeWork"],
+  Helm: ["maneuver", "rotate", "armEvasion", "disarmEvasion", "takeControl", "releaseControl"],
   "Power/Defense": ["routePower", "toggleWeapon", "routeDefense"],
   Sensors: [
     "ping",
@@ -72,6 +72,7 @@ const HELP = {
   setRoster: '{"roster":{"command":[],"crew":[]}}',
   spendResource: '{"operatorId":"…","operation":{}}',
   takeControl: '{"operatorId":"…","control":"helm|power|defense"}',
+  releaseControl: '{"operatorId":"…","control":"helm|power|defense"}',
   contributeWork: '{"operatorId":"…","jobId":"…","required":1}',
   maneuver:
     '{"operatorId":"…","deltaV":{"forward":0,"lateral":0},"rotation":0}',
@@ -180,14 +181,16 @@ function uiOperation(type, data, config, state) {
         targetUuids: [],
       };
     case "takeControl":
+    case "releaseControl":
       return {
         payload: { ...payload, control: data.control },
         targetUuids: [],
       };
     case "maneuver": {
-      const forward = numeric(data.forward);
-      const lateral = numeric(data.lateral);
-      const coast = Math.max(0, numeric(data.coastDuration));
+      const forward = Number(numeric(data.forward).toFixed(2));
+      const lateral = Number(numeric(data.lateral).toFixed(2));
+      const rotation = Number(numeric(data.rotation).toFixed(1));
+      const coast = Number(Math.max(0, numeric(data.coastDuration)).toFixed(2));
       if (coast > 0 && (forward !== 0 || lateral !== 0)) {
         throw new Error(
           "Coast requires zero main and lateral thrust; rotation is allowed.",
@@ -197,7 +200,7 @@ function uiOperation(type, data, config, state) {
         payload: {
           ...payload,
           deltaV: { forward, lateral },
-          rotation: numeric(data.rotation),
+          rotation,
           ...(coast > 0 ? { duration: coast } : {}),
         },
         targetUuids: [],
@@ -205,7 +208,7 @@ function uiOperation(type, data, config, state) {
     }
     case "rotate":
       return {
-        payload: { ...payload, rotation: numeric(data.rotation) },
+        payload: { ...payload, rotation: Number(numeric(data.rotation).toFixed(1)) },
         targetUuids: [],
       };
     case "armEvasion":
@@ -397,55 +400,40 @@ function assignedUserIds(config, state) {
   return ids;
 }
 
-function signed(value) {
+function signed(value, digits = 2) {
   const number = Number(value ?? 0);
-  return `${number >= 0 ? "+" : ""}${number}`;
+  const rounded = Number(number.toFixed(digits));
+  const clean = Math.abs(rounded) < 1e-9 ? 0 : rounded;
+  return `${clean >= 0 ? "+" : ""}${clean}`;
 }
 
 function attackPreviewText(result) {
   const preview = result.public ?? {};
   const categories = preview.categories ?? {};
   const motion = preview.relativeMotion ?? {};
-  const validity = [
-    `Arc ${preview.arcValid ? "OK" : "blocked"}`,
-    `Range ${preview.rangeValid ? "OK" : "blocked"}`,
-    `LOS ${preview.lineOfSightValid ? "OK" : "blocked"}`,
-  ].join(" · ");
-  const modifiers = [
-    `Gunnery ${signed(categories.gunnery)}`,
-    `Weapon ${signed(categories.weapon)}`,
-    `Range ${signed(categories.range)}`,
-    `Motion ${signed(categories.relativeMotion)}`,
-    `Sensors ${signed(categories.sensors)}`,
-    `Special ${signed(categories.special)}`,
-  ].join(" · ");
-  const motionDetail = `Motion T ${
-    Number(motion.transverseSpeed ?? 0).toFixed(2)
-  } · R ${Number(motion.radialSpeed ?? 0).toFixed(2)} · raw ${
-    Number(motion.rawMotion ?? 0).toFixed(2)
-  } · projectile ×${
-    Number(motion.projectileMultiplier ?? 1).toFixed(2)
-  } · effective ${Number(motion.effectiveMotion ?? 0).toFixed(2)} (${
-    motion.band ?? "—"
-  })`;
-  const violations = result.violations?.length
-    ? ` · ${result.violations.map((entry) => entry.message).join(" · ")}`
-    : "";
   const costs = preview.costs;
-  const expenditure = costs
-    ? ` · Declared ammo ${costs.readiness.amount} · Total Heat ${costs.firingHeat.amount} (${costs.firingHeat.before} → ${costs.firingHeat.after}) · Solution ${
-      costs.firingSolution.consumed ? "consumed" : "not available"
-    }`
+
+  const hitSummary = `Hit: ${signed(preview.knownModifierTotal)} vs AC ${preview.finalAc ?? "—"}`;
+  const impactSummary = `Strikes ${preview.struckSector ?? "target"} · Range: ${preview.range?.band ?? "—"}`;
+  const motionSummary = motion.band ? `Motion: ${motion.band} (${signed(categories.relativeMotion)})` : "";
+  const costSummary = costs
+    ? `Cost: ${costs.readiness.amount} Ammo, +${costs.firingHeat.amount} Heat`
     : "";
-  return `${result.legal ? "LEGAL SHOT" : "ILLEGAL SHOT"} · AC ${
-    preview.finalAc ?? "—"
-  } · Total ${
-    signed(preview.knownModifierTotal)
-  } · ${modifiers} · ${validity} · Range band ${
-    preview.range?.band ?? "—"
-  } · Strikes ${
-    preview.struckSector ?? "—"
-  } · ${motionDetail}${expenditure}${violations}`;
+  const solutionSummary = costs?.firingSolution?.consumed ? "Consumes Solution" : "";
+
+  const breakdown = [
+    hitSummary,
+    impactSummary,
+    motionSummary,
+    costSummary,
+    solutionSummary,
+  ].filter(Boolean).join(" | ");
+
+  const violations = result.violations?.length
+    ? ` · ${result.violations.map((e) => e.message).join(" · ")}`
+    : "";
+
+  return `${result.legal ? "READY TO FIRE" : "BLOCKED"} — ${breakdown}${violations}`;
 }
 
 function actorToken(actor) {
@@ -1077,7 +1065,7 @@ const { HandlebarsApplicationMixin } = foundry.applications.api;
 class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   static DEFAULT_OPTIONS = {
     classes: [MODULE_ID, "ship-console"],
-    position: { width: 480, height: 680 },
+    position: { width: 580, height: 740 },
     window: { resizable: true },
     actions: {},
   };
@@ -1370,8 +1358,16 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#attachDefense(html);
     html.querySelectorAll("[data-sensor-focus]").forEach((button) =>
       button.addEventListener("click", () => {
-        this.#sensorFocus = button.dataset.sensorFocus;
+        const uuid = button.dataset.sensorFocus;
+        this.#sensorFocus = uuid;
         this.#refreshSensors(html);
+        if (uuid && globalThis.canvas?.scene) {
+          const targetToken = sceneTokenDocuments(canvas.scene).find((t) => t.uuid === uuid);
+          const placeable = targetToken?.object ?? canvas?.tokens?.get?.(targetToken?.id);
+          if (placeable) {
+            placeable.setTarget(true, { releaseOthers: true });
+          }
+        }
       })
     );
     this.#refreshSensors(html);
@@ -1821,7 +1817,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       if (!input) continue;
       input.min = String(min);
       input.max = String(max);
-      input.step = "any";
+      input.step = name === "rotation" ? "1" : "0.05";
       const draft = this.#uiDrafts.get("maneuver:");
       if (draft) {
         input.value = String(numeric(draft.values[name]));
@@ -1836,15 +1832,16 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         "--zero-position",
         `${max > min ? -min / (max - min) * 100 : 50}%`,
       );
+      const digits = name === "rotation" ? 1 : 2;
       const refresh = () => {
-        const value = numeric(input.value);
+        const value = Number(numeric(input.value).toFixed(digits));
         input.setAttribute(
           "aria-valuetext",
-          `${signed(value)}${name === "rotation" ? " degrees" : " thrust"}`,
+          `${signed(value, digits)}${name === "rotation" ? " degrees" : " thrust"}`,
         );
         form.querySelectorAll(`[data-slider-value='${name}']`).forEach(
           (output) => {
-            output.textContent = `${signed(value)}${
+            output.textContent = `${signed(value, digits)}${
               name === "rotation" ? "°" : ""
             }`;
           },
@@ -1864,6 +1861,22 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     coast.title = !this.#canAct
       ? denial
       : "Uses unreserved timeline; zero main and lateral thrust required.";
+
+    form.querySelector("[data-coast-remaining]")?.addEventListener("click", (event) => {
+      event.preventDefault();
+      const remaining = Number(coast?.max ?? 0);
+      if (remaining <= 0) {
+        ui.notifications.warn("No timeline remaining to coast.");
+        return;
+      }
+      const forwardInput = form.elements.namedItem("forward");
+      const lateralInput = form.elements.namedItem("lateral");
+      if (forwardInput) forwardInput.value = "0";
+      if (lateralInput) lateralInput.value = "0";
+      coast.value = String(remaining);
+      void this.#submitUi(event, form, "maneuver");
+    });
+
     const operator = form.elements.namedItem("operatorId");
     const holder = typeof state.controls?.helm === "string"
       ? state.controls.helm
@@ -1873,16 +1886,15 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         holder ?? "Unheld";
     const refreshControl = () => {
       const held = Boolean(holder && holder === operator?.value);
-      const take = form.querySelector("[data-control='helm']");
-      take.textContent = held
-        ? "Held — commit below"
-        : `Take helm · ${holderLabel} (costs 1 Action/Order)`;
-      take.disabled = held || !this.#canAct;
-      take.title = !this.#canAct
-        ? denial
-        : held
-        ? `Helm held by ${holderLabel}`
-        : `Current holder: ${holderLabel}`;
+      const take = html.querySelector("[data-tab-panel='helm'] [data-ui-operation='takeControl'][data-control='helm']");
+      if (take) {
+        take.disabled = held || !this.#canAct;
+        take.title = !this.#canAct ? denial : `Current holder: ${holderLabel}`;
+      }
+      const release = html.querySelector("[data-tab-panel='helm'] [data-ui-operation='releaseControl'][data-control='helm']");
+      if (release) {
+        release.disabled = !held || !this.#canAct;
+      }
       let reason = "";
       try {
         const reserve = numeric(this.#config.evasionReserve);
@@ -2409,6 +2421,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         targets.some((target) => target.uuid === button.dataset.sensorFocus),
       );
     });
+    if (uuid && uuid !== this.#sensorFocus) {
+      this.#sensorFocus = uuid;
+      this.#refreshSensors(html);
+    }
     html.querySelectorAll("form[data-ui-operation='attack']").forEach(
       (form) => {
         const input = form.elements.namedItem("targetUuid");
@@ -2921,13 +2937,13 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           result.timelineRemaining - numeric(state.evasion?.reserved),
         );
         const budgetText = ` · Remaining timeline ${
-          timelineRemaining.toFixed(3)
+          timelineRemaining.toFixed(2)
         } · Rotation ${result.rotationRemaining.toFixed(1)}°`;
         const timelineMeter = form.querySelector("[data-timeline-projected]");
         if (timelineMeter) {
           timelineMeter.value = 1 - timelineRemaining;
           timelineMeter.title = `Projected remaining timeline ${
-            timelineRemaining.toFixed(3)
+            timelineRemaining.toFixed(2)
           }`;
         }
         const rotationMeter = form.querySelector("[data-rotation-projected]");
@@ -2946,19 +2962,20 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             result.poweredEnd.position.x - assembled.input.position.x,
             result.poweredEnd.position.y - assembled.input.position.y,
           );
+          const coastTime = Number(result.poweredEnd?.time ?? 0).toFixed(2);
           output.textContent =
-            `Coast ${result.poweredEnd.time} turn fraction · Projected displacement ${
-              displacement.toFixed(1)
-            } scene units · ${signed(operation.payload.rotation)}° · Speed ${
-              speed.toFixed(1)
+            `Coast ${coastTime} turn fraction · Projected displacement ${
+              displacement.toFixed(2)
+            } scene units · ${signed(operation.payload.rotation, 1)}° · Speed ${
+              speed.toFixed(2)
             } / safe ${config.safeVelocity}${warning}${budgetText}`;
         } else {
           output.textContent = `Projected ${
-            signed(operation.payload.deltaV?.forward ?? 0)
+            signed(operation.payload.deltaV?.forward ?? 0, 2)
           } forward · ${
-            signed(operation.payload.deltaV?.lateral ?? 0)
-          } starboard · ${signed(operation.payload.rotation)}° · Speed ${
-            speed.toFixed(1)
+            signed(operation.payload.deltaV?.lateral ?? 0, 2)
+          } starboard · ${signed(operation.payload.rotation, 1)}° · Speed ${
+            speed.toFixed(2)
           } / safe ${config.safeVelocity}${warning}${budgetText}`;
         }
       } else if (type === "routePower") {

@@ -9,7 +9,7 @@
       <article class="ship-status-meter"><div><span>Hull</span><strong>{{view.status.hull.value}} / {{view.status.hull.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.hull.tone}}" style="{{view.status.hull.style}}"><span></span></div></article>
       <article class="ship-status-meter"><div><span>Heat</span><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.heat.tone}}" style="{{view.status.heat.style}}"><span></span></div></article>
       <article class="ship-status-meter"><div><span>Shields</span><strong>{{view.shields.total}} / {{view.shields.budget}}</strong></div><div class="ship-meter ship-meter--shield" style="{{view.shields.meter.style}}"><span></span></div></article>
-      <article class="ship-status-meter"><div><span>Reactor</span><strong>{{view.power.committed}} / {{view.power.ceilings.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.power.meter.tone}}" style="{{view.power.meter.style}}"><span></span></div></article>
+      <article class="ship-status-meter"><div><span>Reactor</span><strong>{{view.power.committed}} / {{view.power.nominalOutput}}</strong></div><div class="ship-meter ship-meter--{{view.power.meter.tone}}" style="{{view.power.meter.style}}"><span></span></div></article>
     </section>
   </header>
 
@@ -43,9 +43,46 @@
     </section>
 
     <section id="panel-crew" class="ship-console-panel" role="tabpanel" aria-label="Crew" data-tab-panel="crew" {{#unless tabState.crew.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Crew &amp; Stations</h2><span class="ship-readout">Command {{view.stationSlots.command.length}} · Crew {{view.stationSlots.crew.length}}</span></div>
+      <div class="ship-panel-heading"><h2>Crew &amp; Stations</h2><span class="ship-readout">Orders {{view.crewOrders.availableOrders}} · Command {{view.stationSlots.command.length}} · Crew {{view.stationSlots.crew.length}}</span></div>
 
-      <div class="ship-crew-section-heading">
+      <!-- Support Crew Orders Console -->
+      <section class="ship-card ship-crew-orders-board" aria-label="Support Crew Orders">
+        <header>
+          <div>
+            <span class="ship-kicker">Support Operations</span>
+            <h3>Support Crew Orders</h3>
+          </div>
+          <span class="ship-status-chip {{#if view.crewOrders.availableOrders}}ship-status-chip--nominal{{else}}ship-status-chip--off{{/if}}">
+            {{view.crewOrders.availableOrders}} Orders Pool
+          </span>
+        </header>
+        <p class="ship-muted">Delegate routine maintenance, manual reloads, field patching, and coolant flushes to assigned support crew.</p>
+
+        {{#if view.crewOrders.jobs.length}}
+          <div class="ship-crew-jobs-list">
+            {{#each view.crewOrders.jobs}}
+              <div class="ship-crew-job-row">
+                <div class="ship-crew-job-info">
+                  <strong>{{label}}</strong>
+                  <small class="ship-muted">{{detail}}</small>
+                </div>
+                <form data-ui-operation="{{type}}" class="ship-crew-job-form">
+                  <input type="hidden" name="operatorId" value="{{../view.crewOrders.defaultOperatorId}}">
+                  {{#if conditionId}}<input type="hidden" name="conditionId" value="{{conditionId}}"><input type="hidden" name="rating" value="engineering">{{/if}}
+                  {{#if weaponId}}<input type="hidden" name="weaponId" value="{{weaponId}}">{{/if}}
+                  <button type="submit" class="ship-crew-job-btn" {{#unless ../canAct}}disabled{{/unless}}>
+                    <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> {{actionLabel}} ({{costLabel}})
+                  </button>
+                </form>
+              </div>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="ship-empty" style="margin-top: 0.35rem;"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> All systems nominal. No pending support crew tasks.</p>
+        {{/if}}
+      </section>
+
+      <div class="ship-crew-section-heading" style="margin-top: 0.75rem;">
         <h3>Command Stations (3 Actions)</h3>
         <small class="ship-muted">Active consoles for maneuvers, routing, targeting, and weapons</small>
       </div>
@@ -172,22 +209,51 @@
     </section>
 
     <section id="panel-helm" class="ship-console-panel" role="tabpanel" aria-label="Helm" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Helm</h2><span class="ship-readout">{{view.movement.speed}} velocity · Safe {{view.movement.safeVelocity}}</span></div>
+      <div class="ship-panel-heading"><h2>Helm</h2><span class="ship-readout">{{view.movement.speed}} vel · {{view.movement.headingLabel}} · Safe {{view.movement.safeVelocity}}</span></div>
+
+      <div class="ship-station-banner {{#if view.helmHeld}}is-occupied{{else}}is-vacant{{/if}}">
+        <div class="ship-station-banner-info">
+          <i class="fa-solid {{#if view.helmHeld}}fa-user-check{{else}}fa-user-slash{{/if}}" aria-hidden="true"></i>
+          <div>
+            <strong>Station: {{#if view.helmHeld}}Held by {{view.helmHolderLabel}}{{else}}Vacant / Remote{{/if}}</strong>
+            <small>{{#if view.helmHeld}}Helm controls active{{else}}Take station to engage thrusters and maneuvers{{/if}}</small>
+          </div>
+        </div>
+        <div class="ship-station-banner-actions">
+          {{#if view.helmHeld}}
+            <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}>Release Helm</button>
+          {{else}}
+            <button type="button" class="ship-station-btn ship-station-btn--take ship-primary" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}>Take Helm</button>
+          {{/if}}
+        </div>
+      </div>
+
       <form class="ship-card ship-maneuver-card" data-ui-operation="maneuver" data-live-preview="maneuver">
-        <label class="ship-page-operator">Pilot<select name="operatorId" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
-        <header><span class="ship-kicker">Timeline used {{view.movement.timeline}} + reserve {{view.movement.evasionReserved}}</span><strong>{{view.movement.timelineRemaining}} remaining</strong></header>
-        <label class="ship-muted">Spent / reserved <meter min="0" max="1" value="{{view.movement.timelineOccupied}}" aria-label="Timeline already spent including evasion reserve"></meter></label>
-        <label class="ship-muted">After maneuver <meter data-timeline-projected min="0" max="1" value="{{view.movement.timelineOccupied}}" aria-label="Projected timeline used including evasion reserve"></meter></label>
-        <label class="ship-slider-row"><span>Main thrust <output data-slider-value="forward">0</output></span><span class="ship-slider-track"><input name="forward" type="range" value="0" aria-label="Main thrust: retro to forward"></span><small>Retro <span>0</span> Forward</small></label>
-        <label class="ship-slider-row"><span>Lateral thrust <output data-slider-value="lateral">0</output></span><span class="ship-slider-track"><input name="lateral" type="range" value="0" aria-label="Lateral thrust: port to starboard"></span><small>Port <span>0</span> Starboard</small></label>
-        <label class="ship-muted">Rotation spent {{view.movement.rotationSpent}}° / {{view.movement.rotationCapacity}}° <meter min="0" max="{{view.movement.rotationCapacity}}" value="{{view.movement.rotationSpent}}" aria-label="Rotation already spent"></meter></label>
-        <label class="ship-muted">After maneuver <meter data-rotation-projected min="0" max="{{view.movement.rotationCapacity}}" value="{{view.movement.rotationSpent}}" aria-label="Projected rotation spent"></meter></label>
-        <label class="ship-slider-row"><span>Rotation <output data-slider-value="rotation">0°</output></span><span class="ship-slider-track"><input name="rotation" type="range" value="0" aria-label="Rotation: counterclockwise to clockwise"></span><small>Left <span>0</span> Right</small></label>
-        <label>Coast duration (turn fraction)<input name="coastDuration" type="number" min="0" max="{{view.movement.timelineRemaining}}" step="any" value="0" aria-label="Coast duration as a turn fraction" {{#unless canAct}}disabled{{/unless}}><small>Uses the remaining timeline. Requires zero main and lateral thrust; rotation is allowed.</small></label>
-        <p class="ship-preview-line" data-preview aria-live="polite"></p>
-        <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}>Take helm</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit maneuver</button></div>
-        <div class="ship-action-row"><span class="ship-muted">Evasion reserve {{view.movement.evasionReserved}} · Rotation spent {{view.movement.rotationSpent}}°</span>{{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled{{/unless}}>Disarm evasion</button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled{{/unless}}>Arm evasion</button>{{/if}}</div>
-        <p class="ship-muted" data-evasion-reason role="status"></p>
+        <fieldset class="ship-station-fieldset" {{#unless view.helmHeld}}disabled{{/unless}}>
+          <label class="ship-page-operator">Pilot<select name="operatorId" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+          <header><span class="ship-kicker">Timeline used {{view.movement.timeline}} + reserve {{view.movement.evasionReserved}}</span><strong>{{view.movement.timelineRemaining}} remaining</strong></header>
+          <label class="ship-muted">Spent / reserved <meter min="0" max="1" value="{{view.movement.timelineOccupied}}" aria-label="Timeline already spent including evasion reserve"></meter></label>
+          <label class="ship-muted">After maneuver <meter data-timeline-projected min="0" max="1" value="{{view.movement.timelineOccupied}}" aria-label="Projected timeline used including evasion reserve"></meter></label>
+          <label class="ship-slider-row"><span>Main thrust <output data-slider-value="forward">0</output></span><span class="ship-slider-track"><input name="forward" type="range" value="0" aria-label="Main thrust: retro to forward"></span><small>Retro <span>0</span> Forward</small></label>
+          <label class="ship-slider-row"><span>Lateral thrust <output data-slider-value="lateral">0</output></span><span class="ship-slider-track"><input name="lateral" type="range" value="0" aria-label="Lateral thrust: port to starboard"></span><small>Port <span>0</span> Starboard</small></label>
+          <label class="ship-muted">Rotation spent {{view.movement.rotationSpent}}° / {{view.movement.rotationCapacity}}° <meter min="0" max="{{view.movement.rotationCapacity}}" value="{{view.movement.rotationSpent}}" aria-label="Rotation already spent"></meter></label>
+          <label class="ship-muted">After maneuver <meter data-rotation-projected min="0" max="{{view.movement.rotationCapacity}}" value="{{view.movement.rotationSpent}}" aria-label="Projected rotation spent"></meter></label>
+          <label class="ship-slider-row"><span>Rotation <output data-slider-value="rotation">0°</output></span><span class="ship-slider-track"><input name="rotation" type="range" value="0" aria-label="Rotation: counterclockwise to clockwise"></span><small>Left <span>0</span> Right</small></label>
+
+          <div class="ship-coast-row">
+            <div class="ship-coast-info">
+              <span class="ship-kicker">Coast Phase</span>
+              <small class="ship-muted">Unallocated timeline automatically coasts at turn end.</small>
+            </div>
+            <button type="button" class="ship-coast-btn" data-coast-remaining="true" {{#unless canAct}}disabled{{/unless}}>Coast Remaining ({{view.movement.timelineRemaining}})</button>
+            <input name="coastDuration" type="hidden" value="0">
+          </div>
+
+          <p class="ship-preview-line" data-preview aria-live="polite"></p>
+          <div class="ship-action-row"><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit maneuver</button></div>
+          <div class="ship-action-row"><span class="ship-muted">Evasion reserve {{view.movement.evasionReserved}} · Rotation spent {{view.movement.rotationSpent}}°</span>{{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled{{/unless}}>Disarm evasion</button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled{{/unless}}>Arm evasion</button>{{/if}}</div>
+          <p class="ship-muted" data-evasion-reason role="status"></p>
+        </fieldset>
       </form>
       {{#if view.status.overspeed}}<p class="ship-warning">Overspeed damage risk</p>{{/if}}
     </section>
@@ -248,17 +314,31 @@
           <label class="ship-page-operator">Sensor operator<select name="operatorId" data-default="{{view.defaults.sensors}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Sensors {{ratings.sensors}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
           <input type="hidden" name="targetUuid" value="">
           <section data-sensor-focus-panel aria-label="Focused contact telemetry" aria-live="polite"><p class="ship-empty">Select a radar contact to inspect it.</p></section>
-          <details><summary>Acquisition check</summary><label>Optional DC<input name="dc" type="number" min="1" step="1" placeholder="Automatic when blank"></label></details>
-          <div class="ship-button-grid">
-            <button type="button" data-ui-operation="ping" {{#unless canAct}}disabled{{/unless}}>Active ping</button>
-            <button type="button" data-ui-operation="fade" {{#unless canAct}}disabled{{/unless}}>Fade track</button>
-            <button type="button" data-ui-operation="acquire" hidden {{#unless canAct}}disabled{{/unless}}>Acquire target</button>
-            <button type="button" data-ui-operation="analyze" hidden {{#unless canAct}}disabled{{/unless}}>Analyze defenses</button>
-            <button type="button" data-ui-operation="deepScan" hidden {{#unless canAct}}disabled{{/unless}}>Deep scan</button>
-            <button type="button" data-ui-operation="firingSolution" hidden {{#unless canAct}}disabled{{/unless}}>Firing solution</button>
-            <button type="button" data-ui-operation="jam" hidden {{#unless canAct}}disabled{{/unless}}>Jam</button>
-            <button type="button" data-ui-operation="breakLock" hidden {{#unless canAct}}disabled{{/unless}}>Break lock</button>
-            <button type="button" data-ui-operation="burnThrough" hidden {{#unless canAct}}disabled{{/unless}}>Burn through</button>
+          <div class="ship-sensor-action-groups">
+            <div class="ship-sensor-group">
+              <span class="ship-kicker">Targeting &amp; Locks</span>
+              <div class="ship-button-grid">
+                <button type="button" data-ui-operation="acquire" hidden {{#unless canAct}}disabled{{/unless}}>Acquire target</button>
+                <button type="button" data-ui-operation="firingSolution" hidden {{#unless canAct}}disabled{{/unless}}>Firing solution</button>
+                <button type="button" data-ui-operation="breakLock" hidden {{#unless canAct}}disabled{{/unless}}>Break lock</button>
+              </div>
+            </div>
+            <div class="ship-sensor-group">
+              <span class="ship-kicker">Recon &amp; Intelligence</span>
+              <div class="ship-button-grid">
+                <button type="button" data-ui-operation="ping" {{#unless canAct}}disabled{{/unless}}>Active ping</button>
+                <button type="button" data-ui-operation="analyze" hidden {{#unless canAct}}disabled{{/unless}}>Analyze defenses</button>
+                <button type="button" data-ui-operation="deepScan" hidden {{#unless canAct}}disabled{{/unless}}>Deep scan</button>
+              </div>
+            </div>
+            <div class="ship-sensor-group">
+              <span class="ship-kicker">Electronic Warfare</span>
+              <div class="ship-button-grid">
+                <button type="button" data-ui-operation="jam" hidden {{#unless canAct}}disabled{{/unless}}>Jam</button>
+                <button type="button" data-ui-operation="burnThrough" hidden {{#unless canAct}}disabled{{/unless}}>Burn through</button>
+                <button type="button" data-ui-operation="fade" {{#unless canAct}}disabled{{/unless}}>Fade track</button>
+              </div>
+            </div>
           </div>
         </form>
       </div>
@@ -296,21 +376,38 @@
       <div class="ship-panel-heading"><h2>Damage Control</h2><span class="ship-readout">{{view.status.hull.value}} / {{view.status.hull.maximum}} HULL</span></div>
       <label class="ship-page-operator">Engineer<select data-page-operator="damage" data-default="{{view.defaults.engineering}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Engineering {{ratings.engineering}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
       <div class="ship-damage-layout">
-        <form class="ship-card">
-          <header><h3>Thermal management</h3><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></header>
+        <form class="ship-card ship-thermal-card">
+          <header><h3>Thermal Management</h3><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></header>
           <div class="ship-meter ship-meter--heat" style="{{view.status.heat.style}}"><span></span></div>
-          <div class="ship-button-grid"><button type="button" data-ui-operation="cooling" {{#unless canAct}}disabled{{/unless}}>Active cooling</button><button type="button" data-ui-operation="vent" {{#unless canAct}}disabled{{/unless}}>Emergency vent</button><button type="button" data-ui-operation="hullRepair" {{#unless canAct}}disabled{{/unless}}>Repair hull</button></div>
+          <div class="ship-button-grid">
+            <button type="button" data-ui-operation="cooling" {{#unless canAct}}disabled{{/unless}}>Active cooling</button>
+            <button type="button" data-ui-operation="vent" {{#unless canAct}}disabled{{/unless}}>Emergency vent</button>
+          </div>
           <p class="ship-muted">Emergency vent: {{view.cooling.ventCooldownLabel}}</p>
         </form>
-        <section class="ship-condition-list" aria-label="Faults and hazards">
-          {{#each view.conditions}}
-            <form class="ship-card ship-condition-card ship-condition-card--{{severity}}">
-              <header><div><span class="ship-kicker">{{kind}}{{#if sector}} · {{sector}}{{/if}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{severity}}</span></header>
-              {{#if componentLabel}}<p class="ship-muted">{{componentLabel}}</p>{{/if}}{{#if clock}}<p>Hazard clock: <strong>{{clock}}</strong></p>{{/if}}{{#if work}}<p>Recovery Work: <strong>{{workLabel}}</strong></p>{{/if}}
-              <input type="hidden" name="conditionId" value="{{id}}"><input type="hidden" name="rating" value="engineering">
-              {{#if destroyed}}<button type="button" data-ui-operation="recoveryWork" {{#unless ../canAct}}disabled{{/unless}}>Contribute Recovery Work</button>{{else}}<button type="button" data-ui-operation="repair" {{#unless ../canAct}}disabled{{/unless}}>Attempt repair</button>{{/if}}
-            </form>
-          {{else}}<div class="ship-card ship-empty"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><strong>No active faults or hazards</strong></div>{{/each}}
+
+        <section class="ship-card ship-damage-control-card" aria-label="Damage Control and Repairs">
+          <header>
+            <div>
+              <span class="ship-kicker">Structural Integrity</span>
+              <h3>Damage Control &amp; Repairs</h3>
+            </div>
+            <button type="button" class="ship-slot-action-btn" data-ui-operation="hullRepair" {{#unless canAct}}disabled{{/unless}}>
+              <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Field-Patch Hull
+            </button>
+          </header>
+          <div class="ship-meter ship-meter--{{view.status.hull.tone}}" style="{{view.status.hull.style}}; margin-bottom: 0.5rem;"><span></span></div>
+
+          <section class="ship-condition-list" aria-label="Faults and hazards">
+            {{#each view.conditions}}
+              <form class="ship-card ship-condition-card ship-condition-card--{{severity}}">
+                <header><div><span class="ship-kicker">{{kind}}{{#if sector}} · {{sector}}{{/if}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{severity}}</span></header>
+                {{#if componentLabel}}<p class="ship-muted">{{componentLabel}}</p>{{/if}}{{#if clock}}<p>Hazard clock: <strong>{{clock}}</strong></p>{{/if}}{{#if work}}<p>Recovery Work: <strong>{{workLabel}}</strong></p>{{/if}}
+                <input type="hidden" name="conditionId" value="{{id}}"><input type="hidden" name="rating" value="engineering">
+                {{#if destroyed}}<button type="button" data-ui-operation="recoveryWork" {{#unless ../canAct}}disabled{{/unless}}>Contribute Recovery Work</button>{{else}}<button type="button" data-ui-operation="repair" {{#unless ../canAct}}disabled{{/unless}}>Attempt repair</button>{{/if}}
+              </form>
+            {{else}}<div class="ship-card ship-empty"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><strong>No active faults or hazards</strong></div>{{/each}}
+          </section>
         </section>
       </div>
     </section>

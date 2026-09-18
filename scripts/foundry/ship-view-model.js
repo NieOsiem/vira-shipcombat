@@ -72,6 +72,13 @@ function whole(value, fallback = 0) {
   return Math.max(0, Math.trunc(finite(value, fallback)));
 }
 
+function signed(value, digits = 2) {
+  const number = Number(value ?? 0);
+  const rounded = Number(number.toFixed(digits));
+  const clean = Math.abs(rounded) < 1e-9 ? 0 : rounded;
+  return `${clean >= 0 ? "+" : ""}${clean}`;
+}
+
 function percent(value, maximum) {
   const max = finite(maximum);
   if (max <= 0) return 0;
@@ -171,8 +178,10 @@ function bestOperator(operators, rating, preferred) {
       operator.id === preferred && !operator.inactive
     )
   ) return preferred;
-  return [...operators]
-    .filter((operator) => !operator.inactive)
+  const activePool = operators.filter((operator) => !operator.inactive);
+  const withActions = activePool.filter((operator) => operator.remaining > 0);
+  const candidates = withActions.length > 0 ? withActions : activePool;
+  return [...candidates]
     .sort((left, right) =>
       right.ratings[rating] - left.ratings[rating] ||
       right.remaining - left.remaining ||
@@ -305,18 +314,40 @@ function powerView(config, state) {
       })),
     }));
   const { sheddingPriority, weaponPriority } = powerPriorities(config, state);
+  const nominal = whole(powerState.ceilings.nominal);
+  const maximum = whole(powerState.ceilings.maximum);
+  const committed = whole(powerState.committed);
+  const nominalFree = Math.max(0, nominal - committed);
+  const overdriveTotal = Math.max(0, maximum - nominal);
+  const overdriveUsed = Math.max(0, committed - nominal);
+  const overdriveAvailable = Math.max(0, maximum - Math.max(nominal, committed));
+  const redlining = powerState.redlining;
+  const status = redlining
+    ? `REDLINE (+${overdriveUsed} OVERDRIVE)`
+    : nominalFree > 0
+    ? `${nominalFree} SAFE FREE`
+    : overdriveAvailable > 0
+    ? `0 FREE (${overdriveAvailable} OVERDRIVE)`
+    : "0 FREE (AT MAX)";
+
   return {
     ...powerState,
+    nominalFree,
+    overdriveTotal,
+    overdriveUsed,
+    overdriveAvailable,
+    nominalOutput: nominal,
+    redlineOutput: maximum,
     reservingWeapons:
       Object.values(powerState.weaponReservations).filter((reservation) =>
         reservation > 0
       ).length,
     meter: meter(
-      powerState.committed,
-      powerState.ceilings.maximum,
-      powerState.redlining ? "danger" : "power",
+      committed,
+      nominal > 0 ? nominal : maximum,
+      redlining ? "danger" : "power",
     ),
-    status: powerState.redlining ? "REDLINE" : `${powerState.unused} AVAILABLE`,
+    status,
     systems: POWER_SYSTEMS.map(([id, label]) => ({
       id,
       label,
@@ -641,16 +672,23 @@ export function buildShipConsoleView(
     .filter((operator) =>
       operatorUserId == null || operator.userId === operatorUserId
     );
+  const commandOperators = operators.filter((op) => op.kind === "command");
+  const crewOperators = operators.filter((op) => op.kind === "crew");
+  const commandPool = commandOperators.length > 0 ? commandOperators : operators;
   const stationSlotsView = stationSlots(config, state, allOperators);
   const controls = state?.controls ?? {};
   const defaults = {
-    helm: bestOperator(operators, "piloting", holderId(controls.helm)),
-    power: bestOperator(operators, "engineering", holderId(controls.power)),
-    defense: bestOperator(operators, "engineering", holderId(controls.defense)),
-    sensors: bestOperator(operators, "sensors"),
-    gunnery: bestOperator(operators, "gunnery"),
+    helm: bestOperator(commandPool, "piloting", holderId(controls.helm)),
+    power: bestOperator(commandPool, "engineering", holderId(controls.power)),
+    defense: bestOperator(commandPool, "engineering", holderId(controls.defense)),
+    sensors: bestOperator(commandPool, "sensors"),
+    gunnery: bestOperator(commandPool, "gunnery"),
     engineering: bestOperator(operators, "engineering"),
   };
+  const helmHolder = holderId(controls.helm);
+  const helmHolderProfile = allOperators.find((op) => op.id === helmHolder);
+  const helmHeld = Boolean(helmHolder);
+
   const contacts = contactViews(state, token, sensor, targetLabels);
   const conditions = conditionViews(config, state);
   const combat = globalThis.game?.combat;
@@ -682,6 +720,58 @@ export function buildShipConsoleView(
     finite(state?.hull) <= finite(config?.maxHull) * 0.25 ? "danger" : "hull",
   );
   const rotationCapacity = getDriveCapabilities(config, state).rotation;
+  const facing = finite(state?.facing ?? token?.rotation);
+  const normalizedFacing = ((Math.round(facing) % 360) + 360) % 360;
+  const headingLabel = `${String(normalizedFacing).padStart(3, "0")}°`;
+  const weaponsList = weaponViews(config, state, power);
+
+  const availableCrewOrders = crewOperators.reduce(
+    (sum, op) => sum + (op.remaining ?? 0),
+    0,
+  );
+  const bestCrewOperator = bestOperator(crewOperators, "engineering") || bestOperator(operators, "engineering");
+  const crewOrders = {
+    availableOrders: availableCrewOrders,
+    totalCrew: crewOperators.length,
+    defaultOperatorId: bestCrewOperator,
+    jobs: [
+      ...(hull.value < hull.maximum ? [{
+        id: "hullRepair",
+        type: "hullRepair",
+        label: "Field-Patch Hull",
+        detail: `${hull.value} / ${hull.maximum} Hull · Engineering repair roll`,
+        actionLabel: "Patch Hull",
+        costLabel: "1 Order",
+      }] : []),
+      ...conditions.map((condition) => ({
+        id: `condition-${condition.id}`,
+        type: condition.destroyed ? "recoveryWork" : "repair",
+        conditionId: condition.id,
+        label: condition.destroyed ? `Rebuild ${condition.label}` : `Repair ${condition.label}`,
+        detail: `${condition.severity} ${condition.kind}${condition.sector ? ` · ${condition.sector}` : ""}`,
+        actionLabel: condition.destroyed ? "Contribute Work" : "Attempt Repair",
+        costLabel: "1 Order",
+      })),
+      ...weaponsList.filter((w) => w.manualReload).map((w) => ({
+        id: `reload-${w.id}`,
+        type: w.reloadWork ? "reload" : "beginReload",
+        weaponId: w.id,
+        label: `Reload ${w.label}`,
+        detail: `${w.readiness}/${w.capacity} ready${w.reloadLabel ? ` · ${w.reloadLabel}` : ""}`,
+        actionLabel: w.reloadWork ? "Contribute Reload Work" : "Begin Reload",
+        costLabel: "1 Order",
+      })),
+      ...(finite(state?.heat) > 0 ? [{
+        id: "cooling",
+        type: "cooling",
+        label: "Assist Coolant Flush",
+        detail: `${state.heat} / ${config?.heatCapacity ?? 20} Heat`,
+        actionLabel: "Flush Coolant",
+        costLabel: "1 Order",
+      }] : []),
+    ],
+  };
+
   return {
     combat: {
       inCombat,
@@ -695,30 +785,16 @@ export function buildShipConsoleView(
     },
     importantDamage: [
       ...(config?.components?.weapons ?? []).filter((weapon) =>
-        state?.weapons?.[weapon.id]?.status !== "online"
+        ["destroyed", "damaged", "fault"].includes(state?.weapons?.[weapon.id]?.status)
       ).map((weapon) => ({
         label: weapon.label ?? weapon.id,
         componentLabel: "Weapon",
-        statusLabel: state?.weapons?.[weapon.id]?.status ?? "off",
+        statusLabel: state?.weapons?.[weapon.id]?.status ?? "damaged",
       })),
-      ...[["shields", config?.components?.shield], [
-        "sensors",
-        config?.components?.sensor,
-      ], ["cooling", config?.components?.cooling]].filter((
-        [system, component],
-      ) => !component || finite(state?.power?.[system]) === 0).map((
-        [system, component],
-      ) => ({
-        label: component?.label ?? system,
-        componentLabel: "System",
-        statusLabel: component ? "Offline" : "Not installed",
-      })),
-      ...Object.entries(config?.components?.drives ?? {}).filter(() =>
-        finite(state?.power?.engines) === 0
-      ).map(([role, component]) => ({
-        label: component.label ?? role,
-        componentLabel: "Drive",
-        statusLabel: "Offline",
+      ...conditions.filter((c) => ["critical", "major", "minor"].includes(c.severity)).map((c) => ({
+        label: c.label,
+        componentLabel: c.kind,
+        statusLabel: c.severity,
       })),
     ],
     status: {
@@ -738,8 +814,14 @@ export function buildShipConsoleView(
       revision: whole(state?.revision),
     },
     operators,
+    commandOperators,
+    crewOperators,
+    crewOrders,
     stationSlots: stationSlotsView,
     defaults,
+    helmHeld,
+    helmHolder,
+    helmHolderLabel: helmHolderProfile?.label ?? helmHolder ?? "None",
     roster: rosterSlots(config, state),
     power,
     shields,
@@ -747,7 +829,7 @@ export function buildShipConsoleView(
     contacts,
     liveContacts: contacts.filter((contact) => contact.live),
     targetedContacts: contacts.filter((contact) => contact.targeted),
-    weapons: weaponViews(config, state, power),
+    weapons: weaponsList,
     conditions,
     hasConditions: conditions.length > 0,
     work: Object.values(state?.work ?? {}),
@@ -755,15 +837,17 @@ export function buildShipConsoleView(
       velocityX: Number(finite(state?.velocity?.x).toFixed(2)),
       velocityY: Number(finite(state?.velocity?.y).toFixed(2)),
       speed: Number(speed.toFixed(2)),
-      timeline: finite(state?.timeline),
-      timelineOccupied: Math.min(
+      heading: normalizedFacing,
+      headingLabel,
+      timeline: Number(finite(state?.timeline).toFixed(2)),
+      timelineOccupied: Number(Math.min(
         1,
         finite(state?.timeline) + finite(state?.evasion?.reserved),
-      ),
-      timelineRemaining: Math.max(
+      ).toFixed(2)),
+      timelineRemaining: Number(Math.max(
         0,
         1 - finite(state?.timeline) - finite(state?.evasion?.reserved),
-      ),
+      ).toFixed(2)),
       timelinePercent: percent(
         finite(state?.timeline) + finite(state?.evasion?.reserved),
         1,
@@ -771,21 +855,135 @@ export function buildShipConsoleView(
       timelineStyle: `--meter-value:${
         percent(finite(state?.timeline) + finite(state?.evasion?.reserved), 1)
       }%`,
-      rotationSpent: finite(state?.rotationSpent),
+      rotationSpent: Number(finite(state?.rotationSpent).toFixed(2)),
       rotationCapacity,
-      rotationRemaining: Math.max(
+      rotationRemaining: Number(Math.max(
         0,
         rotationCapacity - finite(state?.rotationSpent),
-      ),
+      ).toFixed(2)),
       evasionArmed: state?.evasion?.armed === true,
-      evasionReserved: finite(state?.evasion?.reserved),
+      evasionReserved: Number(finite(state?.evasion?.reserved).toFixed(2)),
       safeVelocity: finite(config?.safeVelocity),
     },
     cooling: {
       heat,
       ventCooldown: whole(state?.ventCooldown),
       ventCooldownLabel: availabilityLabel(state?.ventCooldown),
-      ventReady: whole(state?.ventCooldown) === 0,
     },
+    specGroups: [
+      {
+        label: "Identity and limits",
+        entries: [
+          { label: "Class", value: config?.hullClass ?? "Custom" },
+          { label: "Size", value: config?.size ?? "medium" },
+          { label: "Initiative", value: signed(config?.initiative) },
+          { label: "AC", value: whole(config?.ac) },
+          { label: "Signature", value: whole(signature.value) },
+          { label: "Hull", value: `${hull.value} / ${hull.maximum}` },
+          { label: "Heat", value: `${heat.value} / ${heat.maximum}` },
+          {
+            label: "Command / Crew",
+            value: `${whole(config?.commandCapacity)} / ${
+              whole(config?.crewCapacity)
+            }`,
+          },
+          { label: "Fate policy", value: config?.fatePolicy ?? "important" },
+        ],
+      },
+      {
+        label: "Movement and defense",
+        entries: [
+          {
+            label: "Main / Reverse thrust",
+            value: `${whole(getDriveCapabilities(config, state).forward)} / ${
+              whole(getDriveCapabilities(config, state).retro)
+            }`,
+          },
+          {
+            label: "Port / Starboard thrust",
+            value: `${whole(getDriveCapabilities(config, state).port)} / ${
+              whole(getDriveCapabilities(config, state).starboard)
+            }`,
+          },
+          {
+            label: "Rotation",
+            value: `${whole(rotationCapacity)}°`,
+          },
+          {
+            label: "Safe Velocity",
+            value: whole(config?.safeVelocity),
+          },
+          {
+            label: "Evasion",
+            value:
+              `${percent(config?.evasion?.timelineReserve, 1)}% reserve · +${
+                whole(config?.evasion?.acBonus)
+              } AC`,
+          },
+          {
+            label: "Armor",
+            value: Object.entries(config?.armor ?? {}).map(([sector, value]) =>
+              `${SECTOR_LABELS[sector] ?? sector} ${whole(value)}`
+            ).join(" · ") || "None",
+          },
+        ],
+      },
+      {
+        label: "Power, shields, and sensors",
+        entries: [
+          {
+            label: "Reactor",
+            value:
+              `${whole(config?.components?.reactor?.nominalOutput)} nominal · ${
+                whole(config?.components?.reactor?.redlineOutput)
+              } redline · ${
+                whole(config?.components?.reactor?.overclockHeat)
+              } Heat`,
+          },
+          {
+            label: "Available power",
+            value: `${power.nominalFree} free · ${power.nominalOutput} nominal (${power.overdriveAvailable} overdrive)`,
+          },
+          {
+            label: "Shields",
+            value:
+              `${config?.components?.shield?.topology ?? "none"} · ${shields.budget} budget · ${
+                whole(config?.components?.shield?.sectorCap)
+              } cap · ${whole(config?.components?.shield?.rechargeDelay)} delay`,
+          },
+          {
+            label: "Shield regeneration (Power:value)",
+            value: (config?.components?.shield?.tiers ?? []).map((tier) =>
+              `${tier.power}:${tier.regeneration ?? 0}`
+            ).join(" · ") || "None",
+          },
+          {
+            label: "Passive sensors",
+            value:
+              `${whole(sensor.passiveRange)} range · ${whole(sensor.passiveStrength)} strength`,
+          },
+          {
+            label: "Active sensors",
+            value:
+              `${whole(sensor.activeRange)} range · ${signed(sensor.activeModifier)} modifier · ${
+                signed(sensor.activeEw)
+              } EW`,
+          },
+          {
+            label: "Cooling (Power:value)",
+            value: (config?.components?.cooling?.tiers ?? []).map((tier) =>
+              `${tier.power}:${tier.cooling ?? 0}`
+            ).join(" · ") || "None",
+          },
+          {
+            label: "Emergency vent",
+            value:
+              `${whole(config?.components?.cooling?.emergencyVentHeat)} Heat · ${
+                whole(config?.components?.cooling?.emergencyVentCooldown)
+              } Start cooldown`,
+          },
+        ],
+      },
+    ],
   };
 }
