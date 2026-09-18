@@ -428,6 +428,7 @@
                 <header class="ship-shield-sector-head">
                   <i class="fa-solid fa-caret-up" aria-hidden="true"></i>
                   <h3>{{label}}</h3>
+                  <span class="ship-shield-head-rule" aria-hidden="true"></span>
                 </header>
                 <p class="ship-shield-sector-stats">
                   <span>HP <output data-shield-hp="{{id}}">{{hp}}</output></span>
@@ -436,19 +437,27 @@
                 </p>
                 <div class="ship-shield-bar" data-shield-bar="{{id}}" data-hp="{{hp}}" data-alloc="{{allocation}}" data-max="{{capacity}}" role="img" aria-label="{{label}} shield charge: {{hp}} of {{capacity}}"></div>
                 <input type="hidden" name="allocation-{{id}}" value="{{allocation}}" min="0" max="{{capacity}}">
-                <div class="ship-shield-row">
-                  <button type="button" data-shield-alloc="{{id}}" data-delta="-1" aria-label="Remove one {{label}} shield allocation" {{#unless ../canAct}}disabled{{/unless}}>−</button>
-                  <span class="ship-shield-row-label">Charge</span>
-                  <strong class="ship-shield-row-value" data-shield-row-value="{{id}}">{{allocation}} / {{capacity}}</strong>
-                  <button type="button" data-shield-alloc="{{id}}" data-delta="+1" aria-label="Add one {{label}} shield allocation" {{#unless ../canAct}}disabled{{/unless}}>+</button>
+                <div class="ship-shield-controls">
+                  <div class="ship-shield-control ship-shield-control--charge">
+                    <div class="ship-shield-row">
+                      <span class="ship-shield-row-label">Charge</span>
+                      <button type="button" data-shield-alloc="{{id}}" data-delta="-1" aria-label="Remove one {{label}} shield allocation" {{#unless ../canAct}}disabled{{/unless}}>−</button>
+                      <strong class="ship-shield-row-value" data-shield-row-value="{{id}}">{{allocation}} / {{capacity}}</strong>
+                      <button type="button" data-shield-alloc="{{id}}" data-delta="+1" aria-label="Add one {{label}} shield allocation" {{#unless ../canAct}}disabled{{/unless}}>+</button>
+                    </div>
+                  </div>
+                  <div class="ship-shield-control-divider" aria-hidden="true"></div>
+                  <div class="ship-shield-control ship-shield-control--regen">
+                    <div class="ship-shield-row ship-shield-row--regen">
+                      <span class="ship-shield-row-label">Regen</span>
+                      <button type="button" data-shield-regen="{{id}}" data-delta="-1" aria-label="Decrease {{label}} regen weight" {{#unless ../canAct}}disabled{{/unless}}>−</button>
+                      <div class="ship-shield-pips" data-shield-regen-pips="{{id}}" role="group" aria-label="{{label}} regeneration weight, one pip per 5 percent"></div>
+                      <button type="button" data-shield-regen="{{id}}" data-delta="+1" aria-label="Increase {{label}} regen weight" {{#unless ../canAct}}disabled{{/unless}}>+</button>
+                    </div>
+                    <span class="ship-shield-regen-readout"><output data-regen-value="{{id}}">{{weight}}%</output><span aria-hidden="true">·</span><output data-regen-rate="{{id}}">{{rate}} / round</output></span>
+                  </div>
                 </div>
                 <input type="hidden" name="regen-{{id}}" value="{{weight}}">
-                <div class="ship-shield-row ship-shield-row--regen">
-                  <button type="button" data-shield-regen="{{id}}" data-delta="-1" aria-label="Decrease {{label}} regen weight" {{#unless ../canAct}}disabled{{/unless}}>−</button>
-                  <div class="ship-shield-pips" data-shield-regen-pips="{{id}}" role="group" aria-label="{{label}} regeneration weight, one pip per 5 percent"></div>
-                  <button type="button" data-shield-regen="{{id}}" data-delta="+1" aria-label="Increase {{label}} regen weight" {{#unless ../canAct}}disabled{{/unless}}>+</button>
-                  <span class="ship-shield-regen-readout"><output data-regen-value="{{id}}">{{weight}}%</output><span aria-hidden="true">·</span><output data-regen-rate="{{id}}">{{rate}} / round</output></span>
-                </div>
                 <p class="ship-shield-status" data-shield-status="{{id}}" {{#unless statusLabel}}hidden{{/unless}}>{{#if statusLabel}}{{statusLabel}}{{/if}}</p>
               </article>
             {{/each}}

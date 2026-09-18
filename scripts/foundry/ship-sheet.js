@@ -3397,16 +3397,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           if (submit) submit.disabled = true;
           return;
         }
-        const result = previewDefenseRoute(config, state, operation.payload);
-        output.textContent = `${
-          result.totalAllocation
-        } shield allocation committed · HP ${result.totalHp} / ${
-          this.#view.shields.budget
-        } · regeneration ${
-          Object.entries(result.regenerationAllocation).map((
-            [sector, value],
-          ) => `${sector} ${value}%`).join(" · ")
-        }`;
+        // The HUD already shows allocation, HP and regeneration; keep the line
+        // free for errors and the staging gate above.
+        previewDefenseRoute(config, state, operation.payload);
+        output.textContent = "";
       } else if (type === "attack") {
         const targetUuid = operation.targetUuids[0];
         if (!this.#foundryTargets().length) {

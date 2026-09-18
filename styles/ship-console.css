@@ -1374,32 +1374,137 @@
 
 .ship-shield-hud-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr);
-  grid-template-rows: auto minmax(11rem, auto) auto;
-  grid-template-areas:
-    ". fore ."
-    "port center starboard"
-    "pool-charge aft pool-regen";
-  gap: 0.45rem;
-  align-items: stretch;
+  /* Mid-range default: FORE / AFT full-width bands, compass centred between
+     the PORT and STARBOARD cards, pools side by side underneath. No overlaps. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto;
+  gap: 0.4rem 0.5rem;
   min-width: 0;
 }
 
-.ship-shield-hud-grid > [data-position="fore"] { grid-area: fore; }
-.ship-shield-hud-grid > [data-position="port"] { grid-area: port; }
-.ship-shield-hud-grid > [data-position="starboard"] { grid-area: starboard; }
-.ship-shield-hud-grid > [data-position="aft"] { grid-area: aft; }
-.ship-shield-hud-grid > [data-position="bubble"] { grid-area: sector; }
-.ship-shield-center { grid-area: center; }
-.ship-shield-pool[data-pool="charge"] { grid-area: pool-charge; }
-.ship-shield-pool[data-pool="regen"] { grid-area: pool-regen; }
+.ship-shield-hud-grid > [data-position="fore"],
+.ship-shield-hud-grid > [data-position="aft"] {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+}
+.ship-shield-hud-grid > [data-position="fore"] { grid-row: 1; }
+.ship-shield-hud-grid > [data-position="aft"] { grid-row: 3; }
+
+.ship-shield-hud-grid > [data-position="port"],
+.ship-shield-hud-grid > [data-position="starboard"] {
+  grid-row: 2;
+  align-self: center;
+  width: auto;
+  min-width: 0;
+}
+.ship-shield-hud-grid > [data-position="port"] { grid-column: 1 / 3; }
+.ship-shield-hud-grid > [data-position="starboard"] { grid-column: 4 / -1; }
+.ship-shield-hud-grid > [data-position="bubble"] { grid-column: 1; grid-row: 2; }
+
+.ship-shield-center {
+  grid-column: 3;
+  grid-row: 2;
+  z-index: 1;
+}
+
+.ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"],
+.ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] {
+  grid-row: 4;
+}
+.ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"] { grid-column: 1 / 3; }
+.ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] { grid-column: 4 / -1; }
+
+/* side cards keep a comfortable gutter so bars and control rows never run to the edge */
+.ship-shield-sector-card[data-position="port"],
+.ship-shield-sector-card[data-position="starboard"] {
+  padding: 0.55rem 0.75rem;
+}
+
+/* Composed layout: three columns, cards overlapping the compass ring, pools in
+   the outer tracks. Only wide containers have room for the negative-margin
+   overlaps; keep this geometry untouched. */
+@container ship-console (min-width: 1250px) {
+  .ship-shield-hud-grid {
+    grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr) minmax(15rem, 19rem);
+    grid-template-rows: auto minmax(13.5rem, auto) auto;
+    gap: 0.4rem 0.5rem;
+  }
+
+  /* FORE / AFT: slim centre cards in the middle column, overlapping the compass ring */
+  .ship-shield-hud-grid > [data-position="fore"],
+  .ship-shield-hud-grid > [data-position="aft"] {
+    grid-column: 2;
+    justify-self: stretch;
+    z-index: 2;
+  }
+  .ship-shield-hud-grid > [data-position="fore"] {
+    grid-row: 1;
+    /* row 1 is empty beside the ring, so FORE may run a little wider than the band */
+    margin-inline: -1.4rem;
+    margin-bottom: -1.1rem;
+  }
+  .ship-shield-hud-grid > [data-position="aft"] {
+    grid-row: 3;
+    align-self: end;
+    /* -0.4rem stays inside the 0.5rem column gap: the pools own the outer tracks,
+       so AFT never extends beneath them */
+    margin-inline: -0.4rem;
+  }
+
+  /* PORT / STARBOARD: narrow side cards pinned to the outer edges, inner edge
+     reaching toward the compass ring while the ring paints behind them */
+  .ship-shield-hud-grid > [data-position="port"],
+  .ship-shield-hud-grid > [data-position="starboard"] {
+    grid-row: 2;
+    align-self: center;
+    width: min(29rem, calc(100% + 12rem));
+    z-index: 2;
+  }
+  .ship-shield-hud-grid > [data-position="port"] {
+    grid-column: 1;
+    justify-self: start;
+    margin-inline-end: -3rem;
+  }
+  .ship-shield-hud-grid > [data-position="starboard"] {
+    grid-column: 3;
+    justify-self: end;
+    margin-inline-start: -3rem;
+  }
+  .ship-shield-hud-grid > [data-position="bubble"] { grid-column: 1; grid-row: 2; }
+
+  .ship-shield-center {
+    grid-column: 2;
+    grid-row: 2;
+    z-index: 1;
+  }
+
+  /* Pools: corner cards in the outer columns, tops rising above the AFT card's top edge */
+  .ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"],
+  .ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] {
+    grid-row: 3;
+    margin-top: -2.3rem;
+    z-index: 2;
+  }
+  .ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"] { grid-column: 1; }
+  .ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] { grid-column: 3; }
+}
 
 .ship-shield-hud--bubble .ship-shield-hud-grid {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: none;
-  grid-template-areas:
-    "center"
-    "sector";
+}
+
+.ship-shield-hud--bubble .ship-shield-center {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.ship-shield-hud--bubble .ship-shield-hud-grid > [data-position="bubble"] {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: center;
+  width: min(100%, 26rem);
+  margin: 0;
 }
 
 .ship-shield-sector-card,
@@ -1414,8 +1519,34 @@
 
 .ship-shield-sector-card {
   display: grid;
-  gap: 0.3rem;
+  gap: 0.35rem;
   align-content: space-between;
+}
+
+/* FORE / AFT: stats share the header line, right-aligned */
+.ship-shield-sector-card[data-position="fore"],
+.ship-shield-sector-card[data-position="aft"] {
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-sector-head,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-sector-head {
+  grid-column: 1;
+  grid-row: 1;
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-sector-stats,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-sector-stats {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-bar,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-bar,
+.ship-shield-sector-card[data-position="fore"] .ship-shield-controls,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-controls,
+.ship-shield-sector-card[data-position="fore"] .ship-shield-status,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-status {
+  grid-column: 1 / -1;
 }
 
 .ship-shield-sector-head {
@@ -1437,19 +1568,36 @@
   filter: drop-shadow(0 0 3px rgb(62 232 208 / 50%));
 }
 
+/* hairline rule trailing the name on the tall side cards */
+.ship-shield-head-rule {
+  flex: 1 1 1rem;
+  height: 1px;
+  background: rgb(62 232 208 / 22%);
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-head-rule,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-head-rule { display: none; }
+
 .ship-shield-sector-card[data-position="port"] .ship-shield-sector-head i { transform: rotate(-90deg); }
 .ship-shield-sector-card[data-position="starboard"] .ship-shield-sector-head i { transform: rotate(90deg); }
 .ship-shield-sector-card[data-position="aft"] .ship-shield-sector-head i { transform: rotate(180deg); }
 
 .ship-shield-sector-stats {
   display: flex;
-  gap: 0.7rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.15rem 0.7rem;
   margin: 0;
   color: var(--ship-muted);
   font-family: var(--font-monospace, monospace);
   font-size: 0.58rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* tall side cards carry the stat line below the header, centred */
+.ship-shield-sector-card[data-position="port"] .ship-shield-sector-stats,
+.ship-shield-sector-card[data-position="starboard"] .ship-shield-sector-stats {
+  justify-self: center;
 }
 
 .ship-shield-sector-stats output {
@@ -1478,10 +1626,54 @@
 .ship-shield-cell.is-alloc { background: rgb(62 232 208 / 22%); }
 .ship-shield-cell.is-empty { background: rgb(38 59 72 / 45%); }
 
+.ship-shield-controls {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.ship-shield-control {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.ship-shield-control-divider { display: none; }
+
+/* FORE / AFT: charge and regen share one row, split by a vertical hairline */
+.ship-shield-sector-card[data-position="fore"] .ship-shield-controls,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-control,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-control {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-control-divider,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-control-divider {
+  display: block;
+  flex: 0 0 auto;
+  width: 1px;
+  margin: 0.2rem 0.55rem;
+  background: rgb(62 232 208 / 20%);
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-row,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-row {
+  gap: 0.3rem;
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-row > button,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-row > button {
+  min-width: 1.35rem;
+}
+
 .ship-shield-row {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .ship-shield-row:not(.ship-shield-row--regen) {
@@ -1536,28 +1728,43 @@
 
 .ship-shield-pips {
   display: grid;
-  flex: 0 0 auto;
-  grid-template-columns: repeat(10, 0.62rem);
-  grid-auto-rows: 0.62rem;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(auto-fit, minmax(0.5rem, 0.78rem));
+  grid-auto-rows: 1rem;
   align-content: start;
   gap: 3px;
   min-width: 0;
 }
 
+/* single row of twenty chips in the FORE / AFT halves */
+.ship-shield-sector-card[data-position="fore"] .ship-shield-pips,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-pips {
+  flex: 1 1 auto;
+  grid-template-columns: repeat(20, minmax(0, 1fr));
+}
+
 .ship-shield-row .ship-shield-pip {
-  width: 0.62rem;
-  height: 0.62rem;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
   padding: 0;
-  border: 1px solid var(--ship-border);
-  border-radius: 1px;
-  background: rgb(38 59 72 / 35%);
+  border: 1px solid rgb(62 232 208 / 26%);
+  border-radius: 3px;
+  background: #0c151b;
   cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
 .ship-shield-row .ship-shield-pip.is-filled {
-  border-color: rgb(62 232 208 / 55%);
-  background: linear-gradient(180deg, rgb(62 232 208 / 45%), rgb(62 232 208 / 20%));
-  box-shadow: 0 0 4px rgb(62 232 208 / 30%);
+  border-color: rgb(62 232 208 / 70%);
+  background: var(--ship-cyan);
+  box-shadow: 0 0 6px rgb(62 232 208 / 40%), inset 0 1px 0 rgb(255 255 255 / 35%);
+}
+
+.ship-shield-row .ship-shield-pip:not(:disabled):hover,
+.ship-shield-row .ship-shield-pip:not(:disabled):focus-visible {
+  border-color: var(--ship-cyan);
+  box-shadow: 0 0 6px rgb(62 232 208 / 35%);
 }
 
 .ship-shield-pip:disabled {
@@ -1566,10 +1773,10 @@
 }
 
 .ship-shield-regen-readout {
-  flex-basis: 100%;
   display: flex;
   justify-content: flex-end;
   gap: 0.3rem;
+  min-width: 0;
   color: var(--ship-cyan);
   font-family: var(--font-monospace, monospace);
   font-size: 0.58rem;
@@ -1597,7 +1804,7 @@
 
 .ship-shield-compass {
   position: relative;
-  width: min(100%, 13rem);
+  width: min(100%, 15rem);
   aspect-ratio: 1;
   border: 1px dashed rgb(62 232 208 / 40%);
   border-radius: 50%;
@@ -1618,8 +1825,8 @@
   letter-spacing: 0.16em;
 }
 
-.ship-shield-compass-label--fore { top: 0.4rem; left: 50%; transform: translateX(-50%); }
-.ship-shield-compass-label--aft { bottom: 0.4rem; left: 50%; transform: translateX(-50%); }
+.ship-shield-compass-label--fore { top: 1.2rem; left: 50%; transform: translateX(-50%); }
+.ship-shield-compass-label--aft { bottom: 1.2rem; left: 50%; transform: translateX(-50%); }
 .ship-shield-compass-label--port { left: 0.45rem; top: 50%; transform: translateY(-50%); }
 .ship-shield-compass-label--starboard { right: 0.45rem; top: 50%; transform: translateY(-50%); }
 
@@ -1627,8 +1834,8 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 58%;
-  height: 58%;
+  width: 68%;
+  height: 68%;
   translate: -50% -50%;
   pointer-events: none;
 }
@@ -1662,6 +1869,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.7rem 0.75rem;
 }
 
 .ship-shield-pool[hidden] { display: none; }
@@ -2330,18 +2538,47 @@
   .ship-damage-layout { grid-template-columns: 1fr; }
 
   .ship-shield-hud-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
-    grid-template-areas:
-      "center center"
-      "fore fore"
-      "port port"
-      "starboard starboard"
-      "aft aft"
-      "pool-charge pool-regen";
+    gap: 0.45rem;
   }
 
-  .ship-shield-compass { width: min(100%, 9.5rem); }
+  .ship-shield-hud-grid > [data-position="fore"],
+  .ship-shield-hud-grid > [data-position="port"],
+  .ship-shield-hud-grid > [data-position="starboard"],
+  .ship-shield-hud-grid > [data-position="aft"],
+  .ship-shield-hud-grid > [data-position="bubble"],
+  .ship-shield-hud-grid > .ship-shield-center,
+  .ship-shield-hud-grid > .ship-shield-pool {
+    grid-column: 1;
+    grid-row: auto;
+    margin: 0;
+    align-self: auto;
+    justify-self: stretch;
+    width: auto;
+    z-index: auto;
+  }
+
+  .ship-shield-hud-grid > .ship-shield-center { grid-row: 1; }
+  .ship-shield-hud-grid > [data-position="fore"] { grid-row: 2; }
+  .ship-shield-hud-grid > [data-position="port"] { grid-row: 3; }
+  .ship-shield-hud-grid > [data-position="starboard"] { grid-row: 4; }
+  .ship-shield-hud-grid > [data-position="aft"] { grid-row: 5; }
+  .ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"] { grid-row: 6; }
+  .ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] { grid-row: 7; }
+
+  /* stack the fore / aft control halves again when there is no room */
+  .ship-shield-sector-card[data-position="fore"] .ship-shield-controls,
+  .ship-shield-sector-card[data-position="aft"] .ship-shield-controls {
+    display: grid;
+    gap: 0.3rem;
+  }
+  .ship-shield-sector-card[data-position="fore"] .ship-shield-pips,
+  .ship-shield-sector-card[data-position="aft"] .ship-shield-pips {
+    grid-template-columns: repeat(10, 0.78rem);
+  }
+
+  .ship-shield-compass { width: min(100%, 11rem); }
   .ship-contact-list { grid-template-columns: 1fr; }
   .ship-console-specification-groups { grid-template-columns: 1fr; }
   .ship-power-grid > :is(label, div) { grid-template-columns: minmax(4.5rem, 0.6fr) minmax(0, 1.4fr); }
