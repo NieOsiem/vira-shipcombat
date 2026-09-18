@@ -86,7 +86,7 @@ const HELP = {
   disarmEvasion: '{"operatorId":"…"}',
   routePower: '{"operatorId":"…","allocation":{}}',
   toggleWeapon: '{"operatorId":"…","weaponId":"…"}',
-  routeDefense: '{"operatorId":"…","charge":{},"regenerationAllocation":{}}',
+  routeDefense: '{"operatorId":"…","allocation":{},"regenerationAllocation":{}}',
   ping: '{"operatorId":"…","operatorSensors":0}',
   acquire: '{"operatorId":"…","distance":0}',
   analyze: '{"operatorId":"…","distance":0}',
@@ -241,24 +241,31 @@ function uiOperation(type, data, config, state) {
         targetUuids: [],
       };
     case "routeDefense": {
-      const sectors = config?.components?.shield?.topology === "bubble"
+      const bubble = config?.components?.shield?.topology === "bubble";
+      const sectors = bubble
         ? [config.components.shield.sectors?.[0] ?? "bubble"]
         : config?.components?.shield?.sectors ??
           ["fore", "port", "starboard", "aft"];
       return {
         payload: {
           ...payload,
-          charge: Object.fromEntries(
+          allocation: Object.fromEntries(
             sectors.map((
               sector,
-            ) => [sector, numeric(data[`charge-${sector}`])]),
+            ) => [sector, numeric(data[`allocation-${sector}`])]),
           ),
-          regenerationAllocation: regenerationWeights(
-            config,
-            state,
-            sectors,
-            data,
-          ),
+          regenerationAllocation: bubble ? { [sectors[0]]: 100 } : Object
+            .fromEntries(
+              sectors.map((
+                sector,
+              ) => [
+                sector,
+                numeric(
+                  data[`regen-${sector}`],
+                  state.shields?.regenerationAllocation?.[sector] ?? 0,
+                ),
+              ]),
+            ),
         },
         targetUuids: [],
       };
@@ -344,27 +351,6 @@ function formPriority(data, prefix) {
       numeric(a.split("-").at(-1)) - numeric(b.split("-").at(-1))
     );
   return keys.length ? keys.map((key) => data[key]) : undefined;
-}
-
-function regenerationWeights(config, state, sectors, data) {
-  if (config?.components?.shield?.topology === "bubble") {
-    return { [sectors[0]]: 100 };
-  }
-  const weights = Object.fromEntries(
-    sectors.map((
-      sector,
-    ) => [
-      sector,
-      numeric(
-        data[`regen-${sector}`],
-        state.shields.regenerationAllocation[sector],
-      ),
-    ]),
-  );
-  if (Object.values(weights).reduce((sum, value) => sum + value, 0) !== 100) {
-    throw new Error("Assign exactly 100% regeneration policy.");
-  }
-  return weights;
 }
 
 function clone(value) {
@@ -2212,140 +2198,293 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const denial = state.phase !== "active"
       ? "Active Phase required."
       : "Operational access required.";
+    const pool = shields.regenPipsTotal ?? 20;
+    const draft = this.#uiDrafts.get("routeDefense:");
+    const inputs = new Map();
+    for (const sector of shields.sectors) {
+      const allocation = form.elements.namedItem(`allocation-${sector.id}`);
+      const regen = form.elements.namedItem(`regen-${sector.id}`);
+      if (!allocation || !regen) return;
+      const seededAllocation = draft
+        ? numeric(draft.values[allocation.name], sector.allocation)
+        : sector.allocation;
+      const seededWeight = draft
+        ? numeric(draft.values[regen.name], sector.weight)
+        : sector.weight;
+      allocation.value = String(
+        Math.max(0, Math.min(seededAllocation, sector.capacity)),
+      );
+      regen.value = String(Math.max(0, Math.min(seededWeight, 100)));
+      inputs.set(sector.id, { allocation, regen });
+    }
+    const submit = form.querySelector("button[type='submit']");
+    const hint = form.querySelector("[data-shield-transfer-hint]");
+    const stagedAllocation = (sector) =>
+      Math.max(
+        0,
+        Math.min(
+          numeric(inputs.get(sector.id).allocation.value),
+          sector.capacity,
+        ),
+      );
+    const stagedWeight = (sector) =>
+      Math.max(0, Math.min(numeric(inputs.get(sector.id).regen.value), 100));
+    let unassignedRegen = 0;
     form.querySelectorAll("[data-distribute]").forEach((button) => {
       button.disabled = !this.#canAct || !shields.directional;
       button.title = !this.#canAct
         ? denial
         : !shields.directional
-        ? "Bubble shields have no directional allocation."
+        ? button.dataset.distribute === "regen"
+          ? "Bubble shields regenerate as one pool."
+          : "Bubble shields have no directional allocation."
+        : button.dataset.distribute === "regen"
+        ? "Stage an even regeneration split; commit below."
         : "Stage an even allocation; commit below.";
     });
-    const inputs = shields.sectors.map((sector) =>
-      form.elements.namedItem(`regen-${sector.id}`)
-    );
     const refresh = () => {
-      let total = 0;
+      const write = (selector, text) => {
+        form.querySelectorAll(selector).forEach((output) => {
+          output.textContent = text;
+        });
+      };
+      const active = document.activeElement;
+      const pipStrip = active?.closest?.("[data-shield-regen-pips]");
+      const pipSector = pipStrip?.dataset.shieldRegenPips;
+      const pipIndex = pipStrip ? active.dataset.shieldPipIndex : null;
+
+      let allocationTotal = 0;
+      let weightTotal = 0;
       for (const sector of shields.sectors) {
-        const input = form.elements.namedItem(`charge-${sector.id}`);
-        total += numeric(input.value);
-        const sectorNode = input.closest("[data-sector]");
-        sectorNode?.querySelector(".ship-meter")?.style.setProperty(
-          "--meter-value",
-          `${
-            sector.capacity ? numeric(input.value) / sector.capacity * 100 : 0
-          }%`,
-        );
-        form.querySelectorAll(`[data-shield-charge-value='${sector.id}']`)
-          .forEach((output) => {
-            output.textContent = input.value;
-          });
+        allocationTotal += stagedAllocation(sector);
+        weightTotal += stagedWeight(sector);
       }
-      const unassigned = shields.total - total;
-      form.querySelectorAll("[data-shield-unassigned]").forEach((output) => {
-        output.textContent = String(unassigned);
-      });
-      const hint = form.querySelector("[data-shield-transfer-hint]");
+      const unassigned = Math.max(0, shields.budget - allocationTotal);
+      unassignedRegen = Math.max(0, pool - weightTotal / 5);
+      write("[data-shield-total-budget]", String(shields.budget));
+      write("[data-shield-unassigned]", String(unassigned));
+      write("[data-shield-unassigned-regen]", String(unassignedRegen));
       if (hint) {
         hint.textContent = unassigned > 0
           ? `Transfer in progress: assign ${unassigned} charge before committing.`
-          : "Redistribute: remove from another sector first";
+          : unassignedRegen > 0
+          ? `Assign ${unassignedRegen} regen pips before committing.`
+          : "";
       }
-      form.querySelectorAll("[data-shield-charge]").forEach((button) => {
+      if (submit) {
+        submit.disabled = !this.#canAct ||
+          unassigned > 0 ||
+          unassignedRegen > 0;
+      }
+
+      let totalHp = 0;
+      for (const sector of shields.sectors) {
+        const allocation = stagedAllocation(sector);
+        const weight = stagedWeight(sector);
+        const pips = Math.round(weight / 5);
+        const hp = Math.min(sector.hp, allocation);
+        totalHp += hp;
+        write(`[data-shield-hp='${sector.id}']`, String(hp));
+        write(`[data-shield-alloc-value='${sector.id}']`, String(allocation));
+        write(`[data-shield-max='${sector.id}']`, String(sector.capacity));
+        write(`[data-regen-value='${sector.id}']`, `${weight}%`);
+        write(
+          `[data-regen-rate='${sector.id}']`,
+          `${((shields.regeneration * weight) / 100).toFixed(1)} / round`,
+        );
+        const rowValue = form.querySelector(
+          `[data-shield-row-value='${sector.id}']`,
+        );
+        if (rowValue) {
+          rowValue.textContent = `${allocation} / ${sector.capacity}`;
+        }
+        const status = form.querySelector(
+          `[data-shield-status='${sector.id}']`,
+        );
+        if (status) {
+          status.textContent = sector.statusLabel ?? "";
+          status.hidden = !sector.statusLabel;
+        }
+        const bar = form.querySelector(`[data-shield-bar='${sector.id}']`);
+        if (bar) {
+          const hpPercent = sector.capacity ? hp / sector.capacity * 100 : 0;
+          const allocPercent = sector.capacity
+            ? allocation / sector.capacity * 100
+            : 0;
+          bar.dataset.hp = String(hp);
+          bar.dataset.alloc = String(allocation);
+          bar.dataset.max = String(sector.capacity);
+          bar.style.setProperty("--hp-percent", `${hpPercent}%`);
+          bar.style.setProperty("--alloc-percent", `${allocPercent}%`);
+          bar.setAttribute(
+            "aria-label",
+            `${sector.label} shield ${hp} HP · ${allocation} allocated of ${sector.capacity}`,
+          );
+          bar.replaceChildren();
+          for (let index = 1; index <= sector.capacity; index++) {
+            const cell = document.createElement("span");
+            cell.className = `ship-shield-cell ${
+              index <= hp
+                ? "is-hp"
+                : index <= allocation
+                ? "is-alloc"
+                : "is-empty"
+            }`;
+            cell.setAttribute("aria-hidden", "true");
+            bar.append(cell);
+          }
+        }
+        const strip = form.querySelector(
+          `[data-shield-regen-pips='${sector.id}']`,
+        );
+        if (strip) {
+          const reachable = pips + unassignedRegen;
+          strip.replaceChildren();
+          for (let index = 1; index <= pool; index++) {
+            const pip = document.createElement("button");
+            pip.type = "button";
+            pip.className = `ship-shield-pip ${
+              index <= pips ? "is-filled" : "is-empty"
+            }`;
+            pip.dataset.shieldPipIndex = String(index);
+            pip.setAttribute("aria-pressed", String(index <= pips));
+            pip.setAttribute(
+              "aria-label",
+              `${sector.label} regeneration pip ${index} of ${pool}`,
+            );
+            pip.disabled = !this.#canAct ||
+              !shields.directional ||
+              index > reachable;
+            pip.title = !this.#canAct
+              ? denial
+              : !shields.directional
+              ? "Bubble shields regenerate as one pool."
+              : !shields.regeneration
+              ? "0 regeneration at current tier; policy persists."
+              : index > reachable
+              ? `Redistribute: ${unassignedRegen} of ${pool} regen pips unassigned.`
+              : `${sector.label} regeneration ${index * 5}%`;
+            pip.addEventListener("click", () => {
+              if (pip.disabled || !this.#canAct) return;
+              if (index > pips && index - pips > unassignedRegen) return;
+              inputs.get(sector.id).regen.value = String(index * 5);
+              form.dispatchEvent(new Event("input", { bubbles: true }));
+            });
+            strip.append(pip);
+          }
+        }
+      }
+      write("[data-shield-total-hp]", String(totalHp));
+
+      form.querySelectorAll("[data-shield-alloc]").forEach((button) => {
         const sector = shields.sectors.find((entry) =>
-          entry.id === button.dataset.shieldCharge
+          entry.id === button.dataset.shieldAlloc
         );
-        const value = numeric(
-          form.elements.namedItem(`charge-${sector.id}`).value,
-        );
+        if (!sector) return;
+        const value = stagedAllocation(sector);
         const adding = numeric(button.dataset.delta) > 0;
         const reason = !this.#canAct
           ? denial
+          : !shields.directional
+          ? "Bubble shields have no directional allocation."
           : adding
           ? sector.collapse
-            ? "Collapsed sector cannot receive charge."
+            ? "Collapsed sector cannot receive allocation."
             : !sector.canReceive || value >= sector.capacity
             ? "Sector capacity reached."
             : unassigned <= 0
             ? "Redistribute: remove from another sector first"
             : ""
           : value <= 0
-          ? "No charge to remove."
+          ? "No allocation to remove."
           : "";
         button.disabled = Boolean(reason);
         button.title = reason ||
           (adding
-            ? "Assign one unassigned charge."
-            : "Remove one charge for redistribution.");
+            ? "Add one allocation point."
+            : "Remove one allocation point.");
       });
-      const sum = inputs.reduce(
-        (value, input) => value + numeric(input.value),
-        0,
-      );
-      for (let index = 0; index < inputs.length; index++) {
-        const input = inputs[index];
-        const limit = Math.max(0, 100 - sum + numeric(input.value));
-        input.style.setProperty("--regen-limit", `${limit}%`);
-        form.querySelectorAll(
-          `[data-regen-value='${shields.sectors[index].id}']`,
-        ).forEach((output) => {
-          output.textContent = `${input.value}%`;
-        });
+      form.querySelectorAll("[data-shield-regen]").forEach((button) => {
+        const sector = shields.sectors.find((entry) =>
+          entry.id === button.dataset.shieldRegen
+        );
+        if (!sector) return;
+        const weight = stagedWeight(sector);
+        const adding = numeric(button.dataset.delta) > 0;
+        const reason = !this.#canAct
+          ? denial
+          : !shields.directional
+          ? "Bubble shields regenerate as one pool."
+          : adding
+          ? weight >= 100
+            ? "Regeneration policy is already fully assigned."
+            : unassignedRegen <= 0
+            ? "Redistribute: remove pips from another sector first"
+            : ""
+          : weight <= 0
+          ? "No regeneration pips to remove."
+          : "";
+        button.disabled = Boolean(reason);
+        button.title = reason ||
+          (!shields.regeneration
+            ? "0 regeneration at current tier; policy persists."
+            : adding
+            ? "Add one regeneration pip."
+            : "Remove one regeneration pip.");
+      });
+
+      if (pipSector && pipIndex) {
+        form.querySelector(
+          `[data-shield-regen-pips='${pipSector}'] [data-shield-pip-index='${pipIndex}']`,
+        )?.focus();
       }
     };
-    inputs.forEach((input, index) => {
-      input.min = "0";
-      input.max = "100";
-      input.step = "1";
-      const draft = this.#uiDrafts.get("routeDefense:");
-      input.value = String(
-        draft
-          ? numeric(draft.values[input.name], shields.sectors[index].allocation)
-          : shields.sectors[index].allocation,
-      );
-      input.disabled = !this.#canAct || !shields.directional;
-      input.title = !this.#canAct
-        ? denial
-        : !shields.directional
-        ? "Bubble shields regenerate as one pool."
-        : !shields.regeneration
-        ? "0 regeneration at current tier; policy persists."
-        : "Persistent regeneration percentage policy.";
-      input.addEventListener("input", () => {
-        let excess = inputs.reduce((sum, entry) =>
-          sum + numeric(entry.value), 0) - 100;
-        const others = inputs.filter((entry) => entry !== input);
-        while (excess > 0 && others.some((entry) => numeric(entry.value) > 0)) {
-          for (const other of others) {
-            if (excess > 0 && numeric(other.value) > 0) {
-              other.value = String(numeric(other.value) - 1);
-              excess--;
-            }
-          }
-        }
-        let free = 100 -
-          inputs.reduce((sum, entry) => sum + numeric(entry.value), 0);
-        while (free > 0 && others.length) {
-          for (const other of others) {
-            if (free > 0) {
-              other.value = String(numeric(other.value) + 1);
-              free--;
-            }
-          }
-        }
-      });
-    });
-    form.querySelectorAll("[data-shield-charge]").forEach((button) =>
+
+    form.querySelectorAll("[data-shield-alloc]").forEach((button) => {
       button.addEventListener("click", () => {
         if (button.disabled || !this.#canAct) return;
-        const input = form.elements.namedItem(
-          `charge-${button.dataset.shieldCharge}`,
+        const sector = shields.sectors.find((entry) =>
+          entry.id === button.dataset.shieldAlloc
         );
-        input.value = String(
-          numeric(input.value) + numeric(button.dataset.delta),
+        if (!sector) return;
+        const input = inputs.get(sector.id).allocation;
+        const current = stagedAllocation(sector);
+        const next = Math.max(
+          0,
+          Math.min(current + numeric(button.dataset.delta), sector.capacity),
         );
+        if (next === current) return;
+        if (next > current) {
+          const others = shields.sectors.reduce(
+            (sum, entry) =>
+              sum + (entry.id === sector.id ? 0 : stagedAllocation(entry)),
+            0,
+          );
+          if (others + next > shields.budget) return;
+        }
+        input.value = String(next);
         form.dispatchEvent(new Event("input", { bubbles: true }));
-      })
-    );
+      });
+    });
+    form.querySelectorAll("[data-shield-regen]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.disabled || !this.#canAct) return;
+        const sector = shields.sectors.find((entry) =>
+          entry.id === button.dataset.shieldRegen
+        );
+        if (!sector) return;
+        const input = inputs.get(sector.id).regen;
+        const current = stagedWeight(sector);
+        const next = Math.max(
+          0,
+          Math.min(current + numeric(button.dataset.delta) * 5, 100),
+        );
+        if (next === current) return;
+        if (next > current && (next - current) / 5 > unassignedRegen) return;
+        input.value = String(next);
+        form.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
     form.addEventListener("input", refresh);
     refresh();
   }
@@ -2986,14 +3125,16 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       form.querySelectorAll(`input[name^="${prefix}-"]`),
     );
     if (!inputs.length) return;
+    const step = prefix === "regen" ? 5 : 1;
     const caps = inputs.map((input) => {
-      if (prefix !== "charge") return numeric(input.max, Infinity);
+      if (prefix === "regen") return Infinity;
       const sector = this.#view.shields.sectors.find((entry) =>
-        `charge-${entry.id}` === input.name
+        `allocation-${entry.id}` === input.name
       );
-      return sector?.canReceive ? sector.capacity : sector?.charge ?? 0;
+      return sector?.canReceive ? sector.capacity : numeric(input.value);
     });
-    const total = prefix === "regen" ? 100 : this.#view.shields.total;
+    const pool = this.#view.shields.regenPipsTotal ?? 20;
+    const total = prefix === "regen" ? pool : this.#view.shields.budget;
     const values = inputs.map(() => 0);
     let remaining = total;
     let cursor = 0;
@@ -3009,7 +3150,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       cursor += 1;
     }
     inputs.forEach((input, index) => {
-      input.value = String(values[index]);
+      input.value = String(values[index] * step);
     });
     form.dispatchEvent(new Event("input", { bubbles: true }));
   }
@@ -3235,26 +3376,37 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         output.textContent = "";
         output.dataset.error = "false";
       } else if (type === "routeDefense") {
-        const assigned = Object.values(operation.payload.charge).reduce(
+        const assigned = Object.values(operation.payload.allocation).reduce(
           (sum, value) => sum + value,
           0,
         );
-        const unassigned = this.#view.shields.total - assigned;
-        if (unassigned > 0) {
-          output.textContent =
-            `Transfer in progress: assign ${unassigned} charge before committing.`;
+        const unassigned = Math.max(0, this.#view.shields.budget - assigned);
+        const stagedPips = Object.values(
+          operation.payload.regenerationAllocation,
+        ).reduce((sum, value) => sum + value, 0) / 5;
+        const unassignedRegen = Math.max(
+          0,
+          (this.#view.shields.regenPipsTotal ?? 20) - stagedPips,
+        );
+        if (unassigned > 0 || unassignedRegen > 0) {
+          output.textContent = unassigned > 0
+            ? `Transfer in progress: assign ${unassigned} charge before committing.`
+            : `Assign ${unassignedRegen} regen pips before committing.`;
           output.dataset.error = "false";
           const submit = form.querySelector("button[type='submit']");
           if (submit) submit.disabled = true;
           return;
         }
         const result = previewDefenseRoute(config, state, operation.payload);
-        output.textContent =
-          `${result.totalCharge} shield charge conserved · regeneration ${
-            Object.entries(result.regenerationAllocation).map((
-              [sector, value],
-            ) => `${sector} ${value}%`).join(" · ")
-          }`;
+        output.textContent = `${
+          result.totalAllocation
+        } shield allocation committed · HP ${result.totalHp} / ${
+          this.#view.shields.budget
+        } · regeneration ${
+          Object.entries(result.regenerationAllocation).map((
+            [sector, value],
+          ) => `${sector} ${value}%`).join(" · ")
+        }`;
       } else if (type === "attack") {
         const targetUuid = operation.targetUuids[0];
         if (!this.#foundryTargets().length) {

@@ -503,7 +503,15 @@ describe("sensor signatures and tracks", () => {
           currentShields: 8,
           armor: { fore: 3 },
           secret: "gm-only",
-          shields: { current: 8, capacity: 24, secret: "gm-only" },
+          shields: {
+            current: 8,
+            capacity: 24,
+            hp: { fore: 8 },
+            allocation: { fore: 24 },
+            topology: "sector",
+            secret: "gm-only",
+            charge: { fore: 8 },
+          },
         },
         systems: {
           damagedSystems: ["sensor"],
@@ -523,12 +531,19 @@ describe("sensor signatures and tracks", () => {
       defenses: {
         currentShields: 8,
         armor: { fore: 3 },
-        shields: { current: 8, capacity: 24 },
+        shields: {
+          current: 8,
+          capacity: 24,
+          hp: { fore: 8 },
+          allocation: { fore: 24 },
+          topology: "sector",
+        },
       },
       systems: { damagedSystems: ["sensor"], installedWeapons: ["railgun"] },
     });
     expect(Object.hasOwn(targeted.defenses, "secret")).toBe(false);
     expect(Object.hasOwn(targeted.defenses.shields, "secret")).toBe(false);
+    expect(Object.hasOwn(targeted.defenses.shields, "charge")).toBe(false);
     expect(Object.hasOwn(targeted.systems, "secret")).toBe(false);
   });
 });
@@ -716,7 +731,7 @@ describe("attack previews, commitment, and damage", () => {
       firingSolution: true,
     });
     declaration.barrageRounds = 4;
-    target.state.shields.charge.fore = 8;
+    target.state.shields.hp.fore = 8;
     const result = commitAttack({
       attackerConfig: attacker.config,
       attackerDraft: attacker.state,
@@ -750,7 +765,7 @@ describe("attack previews, commitment, and damage", () => {
 
   test("a projectile resolves shield breakthrough, Armor, Hull, then Heat in order", () => {
     const target = freshShip();
-    target.state.shields.charge.fore = 2;
+    target.state.shields.hp.fore = 2;
     target.state.hull = 50;
     target.state.heat = 1;
     const result = resolveProjectile(target.config, target.state, {
@@ -766,9 +781,24 @@ describe("attack previews, commitment, and damage", () => {
       heat: { listed: 6, transmitted: 4, before: 1, after: 5 },
     });
     expect(result.gm.breakthrough.fraction).toBeCloseTo(2 / 3);
-    expect(target.state).toMatchObject({ hull: 47, heat: 5, shields: { charge: { fore: 0 } } });
+    expect(target.state).toMatchObject({ hull: 47, heat: 5, shields: { hp: { fore: 0 } } });
     expect(result.public).toEqual({ sector: "fore", shieldCollapsed: true, hullReachedZero: false });
     expect(Object.hasOwn(result.public, "armor")).toBe(false);
+  });
+
+  test("damage consumes shield hp without touching the allocation ceiling", () => {
+    const target = freshShip();
+    target.state.shields.hp.fore = 2;
+    const result = resolveProjectile(target.config, target.state, {
+      sector: "fore",
+      damage: { shield: 6, hull: 8, heat: 0 },
+      armorPiercing: 0,
+    });
+
+    expect(result.gm.shield).toMatchObject({ activeBefore: 2, after: 0, collapsed: true });
+    expect(target.state.shields.hp.fore).toBe(0);
+    expect(target.state.shields.allocation.fore).toBe(15);
+    expect(target.state.shields.collapse.fore).toBe(target.config.components.shield.rechargeDelay);
   });
 
   test("shieldless damage on an empty loadout reaches Hull without degraded-state errors", () => {
@@ -794,7 +824,7 @@ describe("attack previews, commitment, and damage", () => {
   test("natural-20 criticals deterministically select and then escalate the same condition", () => {
     const target = freshShip();
     target.state.power.shields = 0;
-    target.state.shields.charge.fore = 0;
+    target.state.shields.hp.fore = 0;
     const helpers = { applyConditionTiers, selectCondition };
     const attack = {
       effectiveHits: 1,
@@ -887,7 +917,7 @@ describe("attack previews, commitment, and damage", () => {
   test("Non-Lethal zero Hull resolves fate as disabled instead of pending or destroyed", () => {
     const target = freshShip();
     target.state.power.shields = 0;
-    target.state.shields.charge.fore = 0;
+    target.state.shields.hp.fore = 0;
     target.state.hull = 2;
     const result = resolveAttack(target.config, target.state, {
       effectiveHits: 1,

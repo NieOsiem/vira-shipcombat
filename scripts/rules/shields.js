@@ -117,10 +117,16 @@ function shieldTier(config, state) {
   return tier;
 }
 
-function currentCharge(state, sector) {
-  const charge = state.shields?.charge?.[sector] ?? 0;
-  requireNonnegativeInteger(charge, "INVALID_SHIELD_CHARGE", `${sector}.charge`);
-  return charge;
+function currentHp(state, sector) {
+  const hp = state.shields?.hp?.[sector] ?? 0;
+  requireNonnegativeInteger(hp, "INVALID_SHIELD_HP", `${sector}.hp`);
+  return hp;
+}
+
+function currentAllocation(state, sector) {
+  const allocation = state.shields?.allocation?.[sector] ?? 0;
+  requireNonnegativeInteger(allocation, "INVALID_SHIELD_ALLOCATION", `${sector}.allocation`);
+  return allocation;
 }
 
 function collapseCounter(state, sector) {
@@ -155,74 +161,55 @@ function validateWeights(config, weights) {
   return result;
 }
 
+// Projects the committed shield state onto current emitter capacities:
+// allocation is clamped to the sector Max first, then hp is clamped to allocation.
 function capacityProjection(config, state) {
   const shield = shieldConfig(config);
   requireNonnegativeInteger(shield.totalBudget, "INVALID_SHIELD_CAPACITY", "totalBudget");
   const sectors = sectorsFor(config);
-  const charge = {};
   const capacities = {};
   const emitter = {};
+  const allocation = {};
+  const hp = {};
   const losses = [];
   for (const sector of sectors) {
     const profile = effectiveSector(config, state, sector);
-    const before = currentCharge(state, sector);
-    const after = Math.min(before, profile.capacity);
-    charge[sector] = after;
-    capacities[sector] = profile.capacity;
     emitter[sector] = profile;
-    if (after < before) losses.push({ sector, amount: before - after, reason: "sectorCapacity" });
-  }
-  let total = sectors.reduce((sum, sector) => sum + charge[sector], 0);
-  let excess = Math.max(0, total - shield.totalBudget);
-  for (const sector of [...sectors].reverse()) {
-    if (excess === 0) break;
-    const removed = Math.min(charge[sector], excess);
-    if (removed > 0) {
-      charge[sector] -= removed;
-      excess -= removed;
-      losses.push({ sector, amount: removed, reason: "totalBudget" });
+    capacities[sector] = profile.capacity;
+    const allocationBefore = currentAllocation(state, sector);
+    const allocationAfter = Math.min(allocationBefore, profile.capacity);
+    allocation[sector] = allocationAfter;
+    if (allocationAfter < allocationBefore) {
+      losses.push({ sector, amount: allocationBefore - allocationAfter, reason: "emitterDamage" });
+    }
+    const hpBefore = currentHp(state, sector);
+    const hpAfter = Math.min(hpBefore, allocationAfter);
+    hp[sector] = hpAfter;
+    if (hpAfter < hpBefore) {
+      losses.push({ sector, amount: hpBefore - hpAfter, reason: "sectorCapacity" });
     }
   }
-  total = sectors.reduce((sum, sector) => sum + charge[sector], 0);
-  return { charge, capacities, emitter, losses, total, totalBudget: shield.totalBudget };
+  return {
+    allocation,
+    hp,
+    capacities,
+    emitter,
+    losses,
+    totalAllocation: sectors.reduce((sum, sector) => sum + allocation[sector], 0),
+    totalHp: sectors.reduce((sum, sector) => sum + hp[sector], 0),
+  };
 }
 
 function applyCapacityProjection(state, projection) {
   state.shields ??= {};
-  state.shields.charge ??= {};
-  for (const [sector, charge] of Object.entries(projection.charge)) {
-    state.shields.charge[sector] = charge;
+  state.shields.allocation ??= {};
+  state.shields.hp ??= {};
+  for (const [sector, value] of Object.entries(projection.allocation)) {
+    state.shields.allocation[sector] = value;
   }
-}
-
-function allocateToTargets(total, targets) {
-  requireNonnegativeInteger(total, "INVALID_REGENERATION_BUDGET", "total");
-  const order = orderedKeys(targets);
-  const targetTotal = order.reduce((sum, sector) => {
-    requireNonnegativeInteger(targets[sector], "INVALID_REGENERATION_GAIN", `${sector}.gain`);
-    return sum + targets[sector];
-  }, 0);
-  const budget = Math.min(total, targetTotal);
-  const allocation = Object.fromEntries(order.map((sector) => [sector, 0]));
-  if (budget === 0 || targetTotal === 0) return allocation;
-  const ideals = Object.fromEntries(
-    order.map((sector) => [sector, (budget * targets[sector]) / targetTotal]),
-  );
-  for (let remaining = budget; remaining > 0; remaining -= 1) {
-    let selected = null;
-    let selectedDeficit = -Infinity;
-    for (const sector of order) {
-      if (allocation[sector] >= targets[sector]) continue;
-      const deficit = ideals[sector] - allocation[sector];
-      if (deficit > selectedDeficit) {
-        selected = sector;
-        selectedDeficit = deficit;
-      }
-    }
-    if (selected == null) break;
-    allocation[selected] += 1;
+  for (const [sector, value] of Object.entries(projection.hp)) {
+    state.shields.hp[sector] = value;
   }
-  return allocation;
 }
 
 function fieldActive(config, state) {
@@ -351,20 +338,22 @@ export function applyShieldCapacityClamping(config, state) {
   if (!hasShield(config)) {
     return {
       capacities: {},
-      charge: {},
-      destroyedCharge: 0,
+      allocation: {},
+      hp: {},
       losses: [],
-      total: 0,
+      totalAllocation: 0,
+      totalHp: 0,
     };
   }
   const projection = capacityProjection(config, state);
   applyCapacityProjection(state, projection);
   return {
     capacities: projection.capacities,
-    charge: { ...projection.charge },
-    destroyedCharge: projection.losses.reduce((sum, loss) => sum + loss.amount, 0),
+    allocation: { ...projection.allocation },
+    hp: { ...projection.hp },
     losses: projection.losses,
-    total: projection.total,
+    totalAllocation: projection.totalAllocation,
+    totalHp: projection.totalHp,
   };
 }
 
@@ -376,7 +365,8 @@ export function applyShieldRegeneration(config, state) {
       planned: {},
       gains: {},
       losses: [],
-      charge: {},
+      hp: {},
+      allocation: {},
       regenerated: 0,
     };
   }
@@ -408,31 +398,22 @@ export function applyShieldRegeneration(config, state) {
     let effective = Math.floor(share * profile.multiplier);
     if (share > 0 && effective < 1) effective = 1;
     if (effective < share) losses.push({ sector, amount: share - effective, reason: "emitterDamage" });
-    const capacityRemaining = Math.max(0, projection.capacities[sector] - projection.charge[sector]);
-    planned[sector] = Math.min(effective, capacityRemaining);
+    planned[sector] = Math.min(effective, projection.allocation[sector] - projection.hp[sector]);
     if (effective > planned[sector]) {
       losses.push({ sector, amount: effective - planned[sector], reason: "sectorCapacity" });
     }
   }
-  const plannedTotal = sectors.reduce((sum, sector) => sum + planned[sector], 0);
-  const totalRemaining = Math.max(0, shield.totalBudget - projection.total);
-  const gains =
-    plannedTotal > totalRemaining ? allocateToTargets(totalRemaining, planned) : { ...planned };
-  for (const sector of sectors) {
-    if (planned[sector] > gains[sector]) {
-      losses.push({ sector, amount: planned[sector] - gains[sector], reason: "totalBudget" });
-    }
-    projection.charge[sector] += gains[sector];
-  }
+  for (const sector of sectors) projection.hp[sector] += planned[sector];
   applyCapacityProjection(state, projection);
   return {
     budget: tier.regeneration ?? 0,
     assigned,
     planned,
-    gains,
+    gains: { ...planned },
     losses: [...projection.losses, ...losses],
-    charge: { ...projection.charge },
-    regenerated: sectors.reduce((sum, sector) => sum + gains[sector], 0),
+    hp: { ...projection.hp },
+    allocation: { ...projection.allocation },
+    regenerated: sectors.reduce((sum, sector) => sum + planned[sector], 0),
   };
 }
 
@@ -456,62 +437,66 @@ export function previewDefenseRoute(config, state, staged) {
   const shield = shieldConfig(config);
   const sectors = sectorsFor(config);
   const projection = capacityProjection(config, state);
-  const sourceCharge = staged?.charge ?? staged?.shields?.charge ?? {};
-  const charge = {};
+  const sourceAllocation = staged?.allocation ?? {};
+  const allocation = {};
+  const capacityLosses = [...projection.losses];
   for (const sector of sectors) {
-    const value = sourceCharge[sector] ?? projection.charge[sector];
-    requireNonnegativeInteger(value, "INVALID_SHIELD_CHARGE", `${sector}.charge`);
+    const stagedValue = sourceAllocation[sector];
+    const value = stagedValue ?? projection.allocation[sector];
+    requireNonnegativeInteger(value, "INVALID_SHIELD_ALLOCATION", `${sector}.allocation`);
     if (value > projection.capacities[sector]) {
       violation("SHIELD_SECTOR_CAP_EXCEEDED", `${sector} exceeds its shield capacity`, {
         sector,
-        charge: value,
+        allocation: value,
         capacity: projection.capacities[sector],
       });
     }
     const ineligible = collapseCounter(state, sector) > 0 || projection.emitter[sector].destroyed;
-    if (ineligible && value > projection.charge[sector]) {
-      violation("SHIELD_SECTOR_INELIGIBLE", `${sector} cannot receive transferred charge`, {
+    if (stagedValue != null && ineligible && value > projection.allocation[sector]) {
+      violation("SHIELD_SECTOR_INELIGIBLE", `${sector} cannot receive additional allocation`, {
         sector,
-        charge: value,
+        allocation: value,
       });
     }
-    charge[sector] = value;
+    allocation[sector] = value;
   }
-  const beforeTotal = projection.total;
-  const afterTotal = sectors.reduce((sum, sector) => sum + charge[sector], 0);
-  if (afterTotal !== beforeTotal) {
-    violation("SHIELD_CHARGE_NOT_CONSERVED", "Defense routing must conserve surviving shield charge", {
-      before: beforeTotal,
-      after: afterTotal,
-    });
-  }
-  if (afterTotal > shield.totalBudget) {
-    violation("SHIELD_TOTAL_BUDGET_EXCEEDED", "Shield charge exceeds total budget", {
-      charge: afterTotal,
+  const totalAllocation = sectors.reduce((sum, sector) => sum + allocation[sector], 0);
+  if (totalAllocation > shield.totalBudget) {
+    violation("SHIELD_TOTAL_BUDGET_EXCEEDED", "Shield allocation exceeds total budget", {
+      allocation: totalAllocation,
       budget: shield.totalBudget,
     });
   }
-  const weightSource =
-    staged?.regenerationAllocation ??
-    staged?.shields?.regenerationAllocation ??
-    state.shields?.regenerationAllocation;
+  const hp = {};
+  for (const sector of sectors) {
+    const before = projection.hp[sector];
+    const after = Math.min(before, allocation[sector]);
+    hp[sector] = after;
+    if (after < before) {
+      capacityLosses.push({ sector, amount: before - after, reason: "sectorCapacity" });
+    }
+  }
+  const weightSource = staged?.regenerationAllocation ?? state.shields?.regenerationAllocation;
   const regenerationAllocation = validateWeights(config, weightSource);
   return {
-    charge,
+    allocation,
+    hp,
     regenerationAllocation,
     capacities: projection.capacities,
-    destroyedCharge: projection.losses.reduce((sum, loss) => sum + loss.amount, 0),
-    capacityLosses: projection.losses,
-    totalCharge: afterTotal,
+    capacityLosses,
+    totalAllocation,
+    totalHp: sectors.reduce((sum, sector) => sum + hp[sector], 0),
   };
 }
 
 export function commitDefenseRoute(config, state, staged) {
   const result = previewDefenseRoute(config, state, staged);
   state.shields ??= {};
-  state.shields.charge ??= {};
+  state.shields.allocation ??= {};
+  state.shields.hp ??= {};
   state.shields.regenerationAllocation ??= {};
-  Object.assign(state.shields.charge, result.charge);
+  Object.assign(state.shields.allocation, result.allocation);
+  Object.assign(state.shields.hp, result.hp);
   Object.assign(state.shields.regenerationAllocation, result.regenerationAllocation);
   return result;
 }
@@ -539,7 +524,7 @@ export function resolveShieldDamage(config, state, input = {}) {
   const projection = capacityProjection(config, state);
   const profile = projection.emitter[sector];
   const active = fieldActive(config, state) && !profile.destroyed && collapseCounter(state, sector) === 0;
-  const shieldBefore = projection.charge[sector];
+  const shieldBefore = projection.hp[sector];
   const activeShield = active ? shieldBefore : 0;
   let shieldAfter = shieldBefore;
   let penetratingFraction;
@@ -550,7 +535,6 @@ export function resolveShieldDamage(config, state, input = {}) {
     penetratingFraction = 0;
   } else {
     shieldAfter = Math.max(0, activeShield - shieldDamage);
-    projection.charge[sector] = shieldAfter;
     if (shieldAfter > 0) {
       penetratingFraction = 0;
     } else {
@@ -568,7 +552,9 @@ export function resolveShieldDamage(config, state, input = {}) {
   const hullDamageTaken = Math.max(0, transmittedHull - effectiveArmor);
   if (state.hull != null) state.hull = Math.max(0, state.hull - hullDamageTaken);
   state.heat = (state.heat ?? 0) + transmittedHeat;
-  applyCapacityProjection(state, projection);
+  state.shields ??= {};
+  state.shields.hp ??= {};
+  state.shields.hp[sector] = shieldAfter;
   if (collapsed) {
     state.shields.collapse ??= {};
     state.shields.collapse[sector] = delay;
@@ -627,9 +613,9 @@ export function recoverShieldEmitter(config, state, sectorInput) {
   requireNonnegativeInteger(delay, "INVALID_RECHARGE_DELAY", "rechargeDelay");
   condition.severity = "critical";
   state.shields ??= {};
-  state.shields.charge ??= {};
+  state.shields.hp ??= {};
   state.shields.collapse ??= {};
-  state.shields.charge[sector] = 0;
+  state.shields.hp[sector] = 0;
   state.shields.collapse[sector] = delay;
   return {
     recovered: true,
@@ -638,7 +624,7 @@ export function recoverShieldEmitter(config, state, sectorInput) {
     sector,
     from: "destroyed",
     to: "critical",
-    charge: 0,
+    hp: 0,
     collapsed: true,
     rechargeCounter: delay,
     capacity: Math.floor(baseSectorCap(shield, sector) * EMITTER_MULTIPLIER.critical),

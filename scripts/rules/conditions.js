@@ -147,7 +147,8 @@ function cloneDraftForConditions(draft) {
   const conditions = Object.fromEntries(Object.entries(draft?.conditions ?? {}).map(([key, value]) => [key, { ...value }]));
   const shields = draft?.shields ? {
     ...draft.shields,
-    charge: { ...(draft.shields.charge ?? {}) },
+    hp: { ...(draft.shields.hp ?? {}) },
+    allocation: { ...(draft.shields.allocation ?? {}) },
     collapse: { ...(draft.shields.collapse ?? {}) },
   } : undefined;
   const weapons = draft?.weapons && typeof draft.weapons === "object"
@@ -269,11 +270,17 @@ function applyImmediateFaultConsequences(config, draft, condition) {
   }
   if (condition.conditionId === "shieldEmitterDamage") {
     const sector = condition.sector ?? targetSector(config, condition);
-    if (!sector || !draft.shields?.charge) return;
+    if (!sector || !draft.shields?.hp) return;
     const healthyCapacity = configuredShieldCapacity(config, sector);
     const cap = healthyCapacity == null ? null : scaledInteger(healthyCapacity, effects.capacityMultiplier);
-    if (condition.severity === "destroyed") draft.shields.charge[sector] = 0;
-    else if (cap != null) draft.shields.charge[sector] = Math.min(Number(draft.shields.charge[sector] ?? 0), cap);
+    draft.shields.allocation ??= {};
+    if (condition.severity === "destroyed") {
+      draft.shields.allocation[sector] = 0;
+      draft.shields.hp[sector] = 0;
+    } else if (cap != null) {
+      draft.shields.allocation[sector] = Math.min(Number(draft.shields.allocation[sector] ?? 0), cap);
+      draft.shields.hp[sector] = Math.min(Number(draft.shields.hp[sector] ?? 0), draft.shields.allocation[sector]);
+    }
   }
 }
 

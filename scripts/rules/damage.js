@@ -55,28 +55,22 @@ function shieldDefinition(config) {
   return config?.components?.shield ?? config?.shield ?? null;
 }
 
-function isBubbleShield(config, state) {
+function isBubbleShield(config) {
   const shield = shieldDefinition(config);
-  return shield?.topology === "bubble" || shield?.type === "bubble" || typeof state?.shields?.charge === "number";
+  return shield?.topology === "bubble" || shield?.type === "bubble";
 }
 
-function shieldSlot(config, state, sector) {
-  if (isBubbleShield(config, state)) return "bubble";
+function shieldSlot(config, sector) {
+  if (isBubbleShield(config)) return "bubble";
   return sector;
 }
 
-function shieldCharge(state, slot) {
-  const charge = state?.shields?.charge;
-  if (typeof charge === "number") return charge;
-  return number(charge?.[slot], 0);
+function shieldHp(state, slot) {
+  return number(state?.shields?.hp?.[slot], 0);
 }
 
-function setShieldCharge(state, slot, value) {
-  if (typeof state.shields.charge === "number") {
-    state.shields.charge = value;
-    return;
-  }
-  state.shields.charge[slot] = value;
+function setShieldHp(state, slot, value) {
+  state.shields.hp[slot] = value;
 }
 
 function collapseCounter(state, slot) {
@@ -210,8 +204,8 @@ export function resolveProjectile(config, draft, input, helpers = {}) {
     };
   }
 
-  const slot = shieldSlot(config, draft, sector);
-  const storedShieldBefore = shieldCharge(draft, slot);
+  const slot = shieldSlot(config, sector);
+  const storedShieldBefore = shieldHp(draft, slot);
   const active = typeof helpers.isShieldActive === "function"
     ? helpers.isShieldActive(config, draft, { sector, slot }) === true
     : defaultShieldActive(config, draft, slot);
@@ -222,7 +216,7 @@ export function resolveProjectile(config, draft, input, helpers = {}) {
   let collapsed = false;
   if (activeShieldBefore > 0 && bypass.damageShield && shieldDamage > 0) {
     shieldAfter = Math.max(0, activeShieldBefore - shieldDamage);
-    setShieldCharge(draft, slot, shieldAfter);
+    setShieldHp(draft, slot, shieldAfter);
     if (shieldAfter === 0) {
       collapsed = true;
       setCollapseCounter(config, draft, slot);

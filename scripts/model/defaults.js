@@ -121,7 +121,8 @@ export function createInitialState(config) {
 
   const sectors = shieldSectors(config);
   const shield = config.components?.shield ?? {};
-  const charge = distribute(shield.totalBudget, sectors, shield.sectorCap);
+  const allocation = distribute(shield.totalBudget, sectors, shield.sectorCap);
+  const hp = { ...allocation };
   const regenerationAllocation = distribute(100, sectors, 100);
   const collapse = Object.fromEntries(sectors.map((sector) => [sector, 0]));
   const power = initialPower(config);
@@ -136,7 +137,7 @@ export function createInitialState(config) {
     sheddingPriority: [...(config?.sheddingPriority ?? [])],
     weaponPriority: [...(config?.weaponPriority ?? [])],
     power,
-    shields: { charge, regenerationAllocation, collapse },
+    shields: { hp, allocation, regenerationAllocation, collapse },
     weapons: initialWeapons(config, power.weapons),
     roster: initialRoster(config),
     resources: { actions: {}, orders: {} },

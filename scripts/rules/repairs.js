@@ -302,11 +302,11 @@ export function contributeRecoveryWork(config, draft, { operatorId, conditionId,
     draft.work[jobId].current = 0;
     if (recoveryChannel === "shieldEmitterDamage") {
       draft.shields ??= {};
-      draft.shields.charge ??= {};
+      draft.shields.hp ??= {};
       draft.shields.collapse ??= {};
-      draft.shields.charge[recoverySector] = 0;
+      draft.shields.hp[recoverySector] = 0;
       draft.shields.collapse[recoverySector] = rechargeDelay;
-      events.push({ type: "shieldEmitterRecovered", conditionId: target.key, sector: recoverySector, charge: 0, collapse: rechargeDelay });
+      events.push({ type: "shieldEmitterRecovered", conditionId: target.key, sector: recoverySector, hp: 0, collapse: rechargeDelay });
     }
     events.push({ type: "faultRecovered", conditionId: target.key, severity: "critical" });
   }

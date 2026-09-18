@@ -186,10 +186,10 @@ function shieldSectorCapacity(shield, sector) {
   return Number(configured ?? shield?.totalBudget ?? 0);
 }
 
-function shieldAppearance(charge, capacity, collapsed) {
-  const ratio = capacity > 0 ? Math.min(1, Math.max(0, charge / capacity)) : 0;
+function shieldAppearance(hp, capacity, collapsed) {
+  const ratio = capacity > 0 ? Math.min(1, Math.max(0, hp / capacity)) : 0;
   if (collapsed) return { color: COLORS.shieldCritical, ratio: 0 };
-  if (charge <= 0) return { color: COLORS.shieldEmpty, ratio: 0 };
+  if (hp <= 0) return { color: COLORS.shieldEmpty, ratio: 0 };
   if (ratio <= 0.25) return { color: COLORS.shieldCritical, ratio };
   if (ratio <= 0.5) return { color: COLORS.shieldLow, ratio };
   return { color: COLORS.shield, ratio };
@@ -320,10 +320,10 @@ function drawTokenShields(entry, token) {
     child.destroy?.({ children: true })
   );
   for (const sector of sectors) {
-    const charge = Number(state.charge?.[sector] ?? 0);
+    const hp = Number(state.hp?.[sector] ?? 0);
     const collapsed = Number(state.collapse?.[sector] ?? 0) > 0;
     const appearance = shieldAppearance(
-      charge,
+      hp,
       shieldSectorCapacity(shield, sector),
       collapsed,
     );
@@ -339,7 +339,7 @@ function drawTokenShields(entry, token) {
     );
     entry.labels.addChild(
       shieldLabel(
-        collapsed ? "×" : String(charge),
+        collapsed ? "×" : String(hp),
         appearance.color,
         heading,
         radius + 12,

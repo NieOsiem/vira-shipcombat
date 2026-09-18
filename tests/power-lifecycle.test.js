@@ -12,14 +12,18 @@ import {
   commitPowerRoute,
   previewPowerRoute,
 } from "../scripts/rules/power.js";
+import { applyConditionTiers, conditionKey } from "../scripts/rules/conditions.js";
 import {
   allocateRegeneration,
+  applyShieldCapacityClamping,
   applyShieldRegeneration,
+  commitDefenseRoute,
+  previewDefenseRoute,
   recoverShieldEmitter,
   resolveShieldDamage,
   tickShieldRecharge,
 } from "../scripts/rules/shields.js";
-import { runEndPhase } from "../scripts/rules/lifecycle.js";
+import { runEndPhase, runStartPhase } from "../scripts/rules/lifecycle.js";
 
 const SOURCE = "Scene.test.Token.power-lifecycle";
 const clone = (value) => structuredClone(value);
@@ -403,10 +407,235 @@ describe("shield allocation, collapse, and recovery", () => {
     });
   });
 
+  test("a fresh shield commits hp, allocation, weights, and zero counters", () => {
+    const { state } = freshShip();
+
+    expect(state.shields).toEqual({
+      hp: { fore: 15, port: 15, starboard: 15, aft: 15 },
+      allocation: { fore: 15, port: 15, starboard: 15, aft: 15 },
+      regenerationAllocation: { fore: 25, port: 25, starboard: 25, aft: 25 },
+      collapse: { fore: 0, port: 0, starboard: 0, aft: 0 },
+    });
+  });
+
+  test("regeneration raises hp toward the allocation ceiling and loses the excess", () => {
+    const { config, state } = freshShip();
+    state.power.shields = 3;
+    state.shields.allocation = { fore: 4, port: 20, starboard: 20, aft: 1 };
+    state.shields.hp = { fore: 4, port: 0, starboard: 0, aft: 0 };
+
+    const regeneration = applyShieldRegeneration(config, state);
+
+    expect(regeneration.assigned).toEqual({ fore: 2, port: 2, starboard: 2, aft: 2 });
+    // Fore is already at its ceiling and aft can hold only one point: both shares are lost.
+    expect(regeneration.gains).toEqual({ fore: 0, port: 2, starboard: 2, aft: 1 });
+    expect(regeneration.regenerated).toBe(5);
+    expect(regeneration.losses).toEqual([
+      { sector: "fore", amount: 2, reason: "sectorCapacity" },
+      { sector: "aft", amount: 1, reason: "sectorCapacity" },
+    ]);
+    expect(state.shields.hp).toEqual({ fore: 4, port: 2, starboard: 2, aft: 1 });
+    expect(state.shields.allocation).toEqual({ fore: 4, port: 20, starboard: 20, aft: 1 });
+
+    // hp stops at the committed ceiling, never at the 24-point emitter capacity.
+    const clamping = applyShieldCapacityClamping(config, state);
+    expect(clamping.capacities).toEqual({ fore: 24, port: 24, starboard: 24, aft: 24 });
+    expect(clamping).toMatchObject({ totalAllocation: 45, totalHp: 9, losses: [] });
+  });
+
+  test("an emitter-damaged sector still regenerates the minimum one point of its share", () => {
+    const { config, state } = freshShip();
+    state.power.shields = 2;
+    state.shields.hp = { fore: 0, port: 0, starboard: 0, aft: 0 };
+    state.conditions.portEmitter = emitterFault(config, "port", "major");
+
+    const regeneration = applyShieldRegeneration(config, state);
+
+    expect(regeneration.assigned).toEqual({ fore: 1, port: 1, starboard: 1, aft: 1 });
+    // Port's one-point share rounds below one against the Major 0.5 multiplier and is lifted to 1.
+    expect(regeneration.gains).toEqual({ fore: 1, port: 1, starboard: 1, aft: 1 });
+    expect(state.shields.hp).toEqual({ fore: 1, port: 1, starboard: 1, aft: 1 });
+  });
+
+  test("committed allocation above current hp survives a Start with no regeneration", () => {
+    const { config, state } = freshShip();
+    state.phase = "start";
+    state.power.shields = 1;
+    state.shields.allocation = { fore: 20, port: 20, starboard: 20, aft: 0 };
+    state.shields.hp = { fore: 5, port: 5, starboard: 5, aft: 0 };
+
+    const start = runStartPhase(config, state);
+    const shields = start.events.find((event) => event.type === "shieldRegeneration");
+
+    expect(shields.regeneration.gains).toEqual({ fore: 0, port: 0, starboard: 0, aft: 0 });
+    expect(shields.regeneration.regenerated).toBe(0);
+    expect(shields.clamping).toMatchObject({ totalAllocation: 60, totalHp: 15, losses: [] });
+    expect(state.phase).toBe("active");
+    expect(state.shields.allocation).toEqual({ fore: 20, port: 20, starboard: 20, aft: 0 });
+    expect(state.shields.hp).toEqual({ fore: 5, port: 5, starboard: 5, aft: 0 });
+  });
+
+  test("defense routing re-allocates ceilings freely and clamps hp on a lowered sector", () => {
+    const { config, state } = freshShip();
+    const staged = { allocation: { fore: 10, port: 20, starboard: 15, aft: 15 } };
+
+    const preview = previewDefenseRoute(config, state, staged);
+    expect(preview.allocation).toEqual(staged.allocation);
+    expect(preview.hp).toEqual({ fore: 10, port: 15, starboard: 15, aft: 15 });
+    expect(preview.regenerationAllocation).toEqual({
+      fore: 25,
+      port: 25,
+      starboard: 25,
+      aft: 25,
+    });
+    expect(preview.totalAllocation).toBe(60);
+    expect(preview.totalHp).toBe(55);
+    expect(preview.capacityLosses).toEqual([
+      { sector: "fore", amount: 5, reason: "sectorCapacity" },
+    ]);
+    expect(state.shields.allocation).toEqual({ fore: 15, port: 15, starboard: 15, aft: 15 });
+
+    expect(commitDefenseRoute(config, state, staged).allocation).toEqual(staged.allocation);
+    expect(state.shields.allocation).toEqual(staged.allocation);
+    expect(state.shields.hp).toEqual({ fore: 10, port: 15, starboard: 15, aft: 15 });
+    expect(state.shields.collapse.fore).toBe(0);
+
+    // Lowering a ceiling without raising another is legal: the excess is lost, never transferred.
+    const lowered = commitDefenseRoute(config, state, { allocation: { fore: 5 } });
+    expect(lowered.totalAllocation).toBe(55);
+    expect(state.shields.hp).toEqual({ fore: 5, port: 15, starboard: 15, aft: 15 });
+    expect(state.shields.collapse.fore).toBe(0);
+    expect(state.shields.collapse.port).toBe(0);
+  });
+
+  test("defense routing rejects staged ceilings above the budget or a sector cap", () => {
+    const { config, state } = freshShip();
+    const before = clone(state.shields);
+
+    captureViolation(
+      () =>
+        previewDefenseRoute(config, state, {
+          allocation: { fore: 24, port: 24, starboard: 24, aft: 24 },
+        }),
+      "SHIELD_TOTAL_BUDGET_EXCEEDED",
+    );
+    captureViolation(
+      () => previewDefenseRoute(config, state, { allocation: { fore: 25 } }),
+      "SHIELD_SECTOR_CAP_EXCEEDED",
+    );
+    expect(state.shields).toEqual(before);
+
+    const exact = previewDefenseRoute(config, state, {
+      allocation: { fore: 24, port: 12, starboard: 12, aft: 12 },
+    });
+    expect(exact.totalAllocation).toBe(60);
+  });
+
+  test("defense routing refuses to raise a collapsed or emitter-destroyed sector", () => {
+    const collapsed = freshShip();
+    collapsed.state.shields.collapse.fore = 1;
+
+    captureViolation(
+      () =>
+        previewDefenseRoute(collapsed.config, collapsed.state, { allocation: { fore: 16 } }),
+      "SHIELD_SECTOR_INELIGIBLE",
+    );
+    expect(
+      previewDefenseRoute(collapsed.config, collapsed.state, { allocation: { fore: 10 } })
+        .allocation.fore,
+    ).toBe(10);
+
+    const destroyed = freshShip();
+    destroyed.state.conditions.foreEmitter = emitterFault(destroyed.config, "fore");
+    expect(previewDefenseRoute(destroyed.config, destroyed.state, {}).capacities.fore).toBe(0);
+
+    captureViolation(
+      () =>
+        previewDefenseRoute(destroyed.config, destroyed.state, { allocation: { fore: 5 } }),
+      "SHIELD_SECTOR_CAP_EXCEEDED",
+    );
+  });
+
+  test("damage reduces hp only and collapses an active sector at zero", () => {
+    const { config, state } = freshShip();
+    state.power.shields = 2;
+    const allocation = clone(state.shields.allocation);
+
+    const glancing = resolveShieldDamage(config, state, {
+      sector: "fore",
+      shieldDamage: 5,
+      hullDamage: 40,
+      heatDamage: 4,
+    });
+    expect(glancing).toMatchObject({
+      collapsed: false,
+      shieldBefore: 15,
+      shieldAfter: 10,
+      penetratingFraction: 0,
+      transmittedHull: 0,
+      transmittedHeat: 0,
+    });
+    expect(state.shields.hp.fore).toBe(10);
+    expect(state.shields.collapse.fore).toBe(0);
+
+    const collapse = resolveShieldDamage(config, state, { sector: "fore", shieldDamage: 10 });
+    expect(collapse).toMatchObject({
+      collapsed: true,
+      shieldBefore: 10,
+      shieldAfter: 0,
+      penetratingFraction: 0.4,
+      rechargeCounter: 1,
+    });
+    expect(state.shields.hp).toEqual({ fore: 0, port: 15, starboard: 15, aft: 15 });
+    expect(state.shields.allocation).toEqual(allocation);
+    expect(state.shields.collapse).toEqual({ fore: 1, port: 0, starboard: 0, aft: 0 });
+  });
+
+  test("emitter damage clamps the ceiling to the scaled Max and destroy zeroes both fields", () => {
+    const { config, state } = freshShip();
+    state.power.shields = 2;
+    state.shields.allocation = { fore: 20, port: 14, starboard: 14, aft: 12 };
+    state.shields.hp = { fore: 20, port: 14, starboard: 14, aft: 12 };
+    const conditionId = conditionKey(
+      config.criticalPools.fore.find((entry) => entry.channelId === "shieldEmitterDamage"),
+    );
+
+    applyConditionTiers(config, state, { conditionId, tiers: 2 });
+    expect(state.shields.allocation).toEqual({ fore: 12, port: 14, starboard: 14, aft: 12 });
+    expect(state.shields.hp).toEqual({ fore: 12, port: 14, starboard: 14, aft: 12 });
+
+    applyConditionTiers(config, state, { conditionId, tiers: 1 });
+    expect(state.shields.allocation.fore).toBe(6);
+    expect(state.shields.hp.fore).toBe(6);
+
+    applyConditionTiers(config, state, { conditionId, tiers: 1 });
+    expect(state.shields.allocation.fore).toBe(0);
+    expect(state.shields.hp.fore).toBe(0);
+
+    const recovered = recoverShieldEmitter(config, state, "fore");
+    expect(recovered).toMatchObject({
+      recovered: true,
+      hp: 0,
+      collapsed: true,
+      rechargeCounter: 1,
+      capacity: 6,
+    });
+    expect(state.shields.hp.fore).toBe(0);
+    expect(state.shields.collapse.fore).toBe(1);
+    // Recovery keeps the committed ceiling: it must be re-routed before it can hold hp again.
+    expect(state.shields.allocation.fore).toBe(0);
+
+    const clamping = applyShieldCapacityClamping(config, state);
+    expect(clamping.capacities.fore).toBe(6);
+    expect(clamping.allocation.fore).toBe(0);
+    expect(clamping.hp.fore).toBe(0);
+    expect(clamping).toMatchObject({ totalAllocation: 40, totalHp: 40, losses: [] });
+  });
+
   test("collapsed and destroyed directional emitters lose their shares until recovery", () => {
     const { config, state } = freshShip();
     state.power.shields = 2;
-    state.shields.charge = { fore: 0, port: 0, starboard: 0, aft: 0 };
+    state.shields.hp = { fore: 0, port: 0, starboard: 0, aft: 0 };
     state.shields.regenerationAllocation = {
       fore: 25,
       port: 25,
@@ -428,6 +657,8 @@ describe("shield allocation, collapse, and recovery", () => {
       { sector: "fore", amount: 1, reason: "collapsed" },
       { sector: "port", amount: 1, reason: "destroyed" },
     ]));
+    expect(state.shields.hp).toEqual({ fore: 0, port: 0, starboard: 1, aft: 1 });
+    expect(state.shields.allocation).toEqual({ fore: 15, port: 0, starboard: 15, aft: 15 });
 
     state.shields.collapse.port = 1;
 
@@ -442,10 +673,15 @@ describe("shield allocation, collapse, and recovery", () => {
       sector: "port",
       from: "destroyed",
       to: "critical",
-      charge: 0,
+      hp: 0,
+      collapsed: true,
       rechargeCounter: 1,
       capacity: 6,
     });
+    expect(state.shields.hp.port).toBe(0);
+    expect(state.shields.collapse.port).toBe(1);
+    expect(state.shields.allocation.port).toBe(0);
+
     expect(tickShieldRecharge(config, state).events).toEqual([
       { sector: "port", from: 1, to: 0, reactivated: true },
     ]);
@@ -456,10 +692,13 @@ describe("shield allocation, collapse, and recovery", () => {
       starboard: 0,
       aft: 0,
     };
+    expect(commitDefenseRoute(config, state, { allocation: { port: 6 } }).allocation.port).toBe(6);
+
     const restored = applyShieldRegeneration(config, state);
     expect(restored.assigned.port).toBe(4);
     expect(restored.gains.port).toBe(1);
-    expect(state.shields.charge.port).toBe(1);
+    expect(state.shields.hp.port).toBe(1);
+    expect(state.shields.allocation.port).toBe(6);
   });
 
   test("a bubble maps directional impacts to one field, then recharges and regenerates", () => {
@@ -471,11 +710,18 @@ describe("shield allocation, collapse, and recovery", () => {
         sector: "bubble",
         regions: ["fore", "port", "starboard", "aft"],
       }];
-      draft.components.shield.sectorCap = 30;
-      draft.components.shield.totalBudget = 30;
+      delete draft.components.shield.sectorCap;
     });
+    expect(state.shields).toEqual({
+      hp: { bubble: 60 },
+      allocation: { bubble: 60 },
+      regenerationAllocation: { bubble: 100 },
+      collapse: { bubble: 0 },
+    });
+
     state.power.shields = 2;
-    state.shields.charge.bubble = 10;
+    state.shields.hp.bubble = 10;
+    expect(applyShieldCapacityClamping(config, state).capacities).toEqual({ bubble: 60 });
 
     const impact = resolveShieldDamage(
       config,
@@ -503,15 +749,18 @@ describe("shield allocation, collapse, and recovery", () => {
       heatAfter: 3,
       rechargeCounter: 1,
     });
-    expect(state.shields.charge).toEqual({ bubble: 0 });
+    expect(state.shields.hp).toEqual({ bubble: 0 });
+    expect(state.shields.allocation).toEqual({ bubble: 60 });
 
     expect(tickShieldRecharge(config, state).events).toEqual([
       { sector: "bubble", from: 1, to: 0, reactivated: true },
     ]);
+    // The single bubble slot always regenerates at its fixed full weight.
+    state.shields.regenerationAllocation = { bubble: 0 };
     const regeneration = applyShieldRegeneration(config, state);
     expect(regeneration.assigned).toEqual({ bubble: 4 });
     expect(regeneration.gains).toEqual({ bubble: 4 });
-    expect(state.shields.charge).toEqual({ bubble: 4 });
+    expect(state.shields.hp).toEqual({ bubble: 4 });
   });
 });
 

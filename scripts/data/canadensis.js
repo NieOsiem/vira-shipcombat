@@ -156,7 +156,8 @@ export const CANADENSIS_ENCOUNTER_DEFAULTS = deepFreeze({
   heat: 0,
   power: { engines: 3, shields: 3, sensors: 2, cooling: 1, weapons: 3 },
   shields: {
-    charge: { fore: 15, port: 15, starboard: 15, aft: 15 },
+    hp: { fore: 15, port: 15, starboard: 15, aft: 15 },
+    allocation: { fore: 15, port: 15, starboard: 15, aft: 15 },
     regenerationAllocation: { fore: 25, port: 25, starboard: 25, aft: 25 },
     collapse: { fore: 0, port: 0, starboard: 0, aft: 0 },
   },

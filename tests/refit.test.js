@@ -711,7 +711,8 @@ describe("refit API", () => {
       },
       hazard: { id: "fire:fore", kind: "hazard", targetId: "fore" },
     };
-    actor.system.shipCombat.state.shields.charge.fore = 7;
+    actor.system.shipCombat.state.shields.allocation.fore = 7;
+    actor.system.shipCombat.state.shields.hp.fore = 5;
     actor.system.shipCombat.state.tracks = {
       contact: { targetUuid: "Scene.s.Token.t", state: "contact" },
     };
@@ -735,7 +736,8 @@ describe("refit API", () => {
     expect(state.conditions.fault).toMatchObject({ severity: "major" });
     expect(state.conditions.hazard).toEqual(expect.any(Object));
     expect(state.weaponPriority).toEqual(priority);
-    expect(state.shields.charge.fore).toBe(7);
+    expect(state.shields.allocation.fore).toBe(7);
+    expect(state.shields.hp.fore).toBe(5);
     expect(state.tracks.contact).toEqual(expect.any(Object));
     expect(state.revision).toBe(revision + 1);
   });
@@ -760,7 +762,8 @@ describe("refit API", () => {
     actor.system.shipCombat.state.tracks = {
       contact: { targetUuid: "Scene.s.Token.t", state: "targeted" },
     };
-    actor.system.shipCombat.state.shields.charge.fore = 9;
+    actor.system.shipCombat.state.shields.allocation.fore = 9;
+    actor.system.shipCombat.state.shields.hp.fore = 6;
     const power = clone(actor.system.shipCombat.state.power);
     const priority = clone(actor.system.shipCombat.state.weaponPriority);
     const revision = actor.system.shipCombat.state.revision;
@@ -777,7 +780,8 @@ describe("refit API", () => {
     expect(state.weapons[weaponId].readiness).toBe(0);
     expect(state.conditions.fault).toEqual(expect.any(Object));
     expect(state.weaponPriority).toEqual(priority);
-    expect(state.shields.charge.fore).toBe(9);
+    expect(state.shields.allocation.fore).toBe(9);
+    expect(state.shields.hp.fore).toBe(6);
     expect(state.tracks.contact).toEqual(expect.any(Object));
     expect(state.power).toEqual(power);
     expect(state.revision).toBe(revision + 1);
@@ -828,7 +832,8 @@ describe("refit API", () => {
       bubble,
     );
     const itemId = installed.id;
-    actor.system.shipCombat.state.shields.charge.bubble = 20;
+    actor.system.shipCombat.state.shields.allocation.bubble = 20;
+    actor.system.shipCombat.state.shields.hp.bubble = 20;
     const draft = componentDraft(actor, itemId);
     draft.system.definition.topology = "directional";
     draft.system.definition.sectors = ["fore", "port", "starboard", "aft"];
@@ -847,9 +852,10 @@ describe("refit API", () => {
     expect(actor.items.get(itemId).system.definition.topology).toBe(
       "directional",
     );
-    expect(Object.keys(state.shields.charge).sort()).toEqual(
+    expect(Object.keys(state.shields.allocation).sort()).toEqual(
       [...sectors].sort(),
     );
+    expect(Object.keys(state.shields.hp).sort()).toEqual([...sectors].sort());
     expect(Object.keys(state.shields.regenerationAllocation).sort()).toEqual(
       [...sectors].sort(),
     );
@@ -862,13 +868,22 @@ describe("refit API", () => {
         0,
       ),
     ).toBe(100);
-    const total = Object.values(state.shields.charge).reduce(
-      (sum, charge) => sum + charge,
+    const totalHp = Object.values(state.shields.hp).reduce(
+      (sum, value) => sum + value,
       0,
     );
-    expect(total).toBe(20);
-    expect(Math.max(...Object.values(state.shields.charge)))
-      .toBeLessThanOrEqual(24);
+    expect(totalHp).toBe(20);
+    const totalAllocation = Object.values(state.shields.allocation).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+    expect(totalAllocation).toBeLessThanOrEqual(60);
+    for (const sector of sectors) {
+      expect(state.shields.hp[sector]).toBeLessThanOrEqual(
+        state.shields.allocation[sector],
+      );
+      expect(state.shields.allocation[sector]).toBeLessThanOrEqual(24);
+    }
     expect(state.revision).toBe(revision + 1);
 
     const updateEvent = actor.events.at(-1);
@@ -880,7 +895,8 @@ describe("refit API", () => {
 
     const effective = refit.materializeActorConfig(actor);
     const route = previewDefenseRoute(effective, state, {});
-    expect(route.totalCharge).toBe(20);
+    expect(route.totalAllocation).toBe(20);
+    expect(route.totalHp).toBe(20);
     expect(route.capacities.fore).toBe(24);
     expect(route.regenerationAllocation).toEqual({
       fore: 25,
@@ -899,7 +915,8 @@ describe("refit API", () => {
     expect(actor.items.has(itemId)).toBe(true);
     expect(actor.items.size).toBe(12);
     expect(actor.items.get(itemId).system.definition.topology).toBe("bubble");
-    expect(bubbleState.shields.charge).toEqual({ bubble: 20 });
+    expect(bubbleState.shields.allocation).toEqual({ bubble: 20 });
+    expect(bubbleState.shields.hp).toEqual({ bubble: 20 });
     expect(bubbleState.shields.regenerationAllocation).toEqual({ bubble: 100 });
     expect(bubbleState.shields.collapse).toEqual({ bubble: 0 });
     const bubbleRoute = previewDefenseRoute(
@@ -907,8 +924,47 @@ describe("refit API", () => {
       bubbleState,
       {},
     );
-    expect(bubbleRoute.totalCharge).toBe(20);
+    expect(bubbleRoute.totalAllocation).toBe(20);
+    expect(bubbleRoute.totalHp).toBe(20);
     expect(bubbleRoute.capacities.bubble).toBe(24);
+  });
+
+  test("re-caps allocation and clamps hp when the shield sector cap shrinks", async () => {
+    const hull = clone(actor.system.shipCombat.config);
+    const shieldId =
+      hull.slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.shield).itemId;
+    const state = actor.system.shipCombat.state;
+    state.shields.allocation.fore = 24;
+    state.shields.hp.fore = 24;
+    const draft = componentDraft(actor, shieldId);
+    draft.system.definition.sectorCap = 10;
+    const revision = state.revision;
+
+    await refit.saveInstalledShipComponent(actor, shieldId, draft, revision);
+
+    const sectors = ["fore", "port", "starboard", "aft"];
+    const shields = actor.system.shipCombat.state.shields;
+    expect(Object.keys(shields.allocation).sort()).toEqual([...sectors].sort());
+    expect(Object.keys(shields.hp).sort()).toEqual([...sectors].sort());
+    for (const sector of sectors) {
+      expect(shields.allocation[sector]).toBe(10);
+      expect(shields.hp[sector]).toBe(10);
+      expect(shields.hp[sector]).toBeLessThanOrEqual(shields.allocation[sector]);
+    }
+    const totalAllocation = Object.values(shields.allocation).reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+    expect(totalAllocation).toBeLessThanOrEqual(60);
+
+    const route = previewDefenseRoute(
+      refit.materializeActorConfig(actor),
+      actor.system.shipCombat.state,
+      {},
+    );
+    expect(route.totalAllocation).toBe(totalAllocation);
+    expect(route.totalHp).toBe(totalAllocation);
+    expect(route.capacities.fore).toBe(10);
   });
 
   test("clamps a lowered magazine capacity and never refills it", async () => {

@@ -7,7 +7,7 @@ import {
   sanitizeTrack,
   TRACK_STATUS,
 } from "../rules/sensors.js";
-import { allocateRegeneration, previewDefenseRoute } from "../rules/shields.js";
+import { previewDefenseRoute } from "../rules/shields.js";
 import { getDriveCapabilities } from "../rules/movement.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
 
@@ -443,17 +443,89 @@ function powerView(config, state) {
   };
 }
 
+// Direction-triangle icons for the defense HUD sector cards.
+const SECTOR_ICONS = Object.freeze({
+  fore: "fa-solid fa-caret-up",
+  port: "fa-solid fa-caret-left",
+  starboard: "fa-solid fa-caret-right",
+  aft: "fa-solid fa-caret-down",
+});
+// Mirror of the module-private emitter severity ranking in scripts/rules/shields.js.
+const EMITTER_SEVERITY_RANK = Object.freeze({
+  healthy: 0,
+  minor: 1,
+  major: 2,
+  critical: 3,
+  destroyed: 4,
+  catastrophic: 4,
+});
+
+function emitterSeverityOf(value) {
+  const severity = String(value ?? "healthy").toLowerCase();
+  return Object.hasOwn(EMITTER_SEVERITY_RANK, severity) ? severity : "healthy";
+}
+
+function emitterConditionChannel(condition) {
+  if (condition.conditionId) return condition.conditionId;
+  if (condition.channel) return condition.channel;
+  if (condition.type !== "fault" && condition.type !== "hazard") {
+    return condition.type;
+  }
+  return condition.name ?? condition.id;
+}
+
+function emitterSeverityFor(shield, state, sector) {
+  const emitterIds = (shield.emitters ?? [])
+    .filter((emitter) => emitter.sector === sector)
+    .map((emitter) => emitter.id);
+  let result = "healthy";
+  for (const condition of Object.values(state?.conditions ?? {})) {
+    if (!condition || emitterConditionChannel(condition) !== "shieldEmitterDamage") {
+      continue;
+    }
+    const applies =
+      condition.targetId === `${shield.id}:${sector}` ||
+      condition.sector === sector ||
+      condition.region === sector ||
+      emitterIds.includes(condition.targetId) ||
+      emitterIds.includes(condition.componentId) ||
+      (!condition.targetId &&
+        !condition.sector &&
+        !condition.region &&
+        condition.componentId === shield.id);
+    const severity = emitterSeverityOf(condition.severity);
+    if (applies && EMITTER_SEVERITY_RANK[severity] > EMITTER_SEVERITY_RANK[result]) {
+      result = severity;
+    }
+  }
+  return result;
+}
+
+function shieldStatusLabel(severity, collapse, capacity) {
+  if (EMITTER_SEVERITY_RANK[severity] >= EMITTER_SEVERITY_RANK.destroyed) {
+    return "Emitter destroyed";
+  }
+  const turns = whole(collapse);
+  if (turns > 0) return `Recovering · ${turns} round${turns === 1 ? "" : "s"}`;
+  if (severity !== "healthy") return `Emitter ${severity} · Max ${whole(capacity)}`;
+  return "";
+}
+
 function shieldView(config, state) {
   const shield = config?.components?.shield;
   if (!shield) {
     return {
       topology: "none",
       directional: false,
-      sectors: [],
-      total: 0,
       budget: 0,
       regeneration: 0,
+      totalHp: 0,
+      totalAllocation: 0,
+      unassigned: 0,
+      regenPipsTotal: 20,
+      total: 0,
       meter: meter(0, 0, "shield"),
+      sectors: [],
     };
   }
   const route = previewDefenseRoute(config, state, {});
@@ -461,35 +533,48 @@ function shieldView(config, state) {
     shield.tiers?.find((tier) => tier.power === state?.power?.shields)
       ?.regeneration,
   );
-  const assigned = allocateRegeneration(
-    regeneration,
-    route.regenerationAllocation,
-  );
-  const sectors = Object.keys(route.charge).map((id) => ({
-    id,
-    label: SECTOR_LABELS[id] ?? id,
-    charge: whole(route.charge[id]),
-    capacity: whole(route.capacities[id]),
-    allocation: route.regenerationAllocation[id],
-    regeneration: assigned[id],
-    canReceive: whole(state?.shields?.collapse?.[id]) === 0 &&
-      route.capacities[id] > 0,
-    collapse: whole(state?.shields?.collapse?.[id]),
-    collapseLabel: availabilityLabel(state?.shields?.collapse?.[id]),
-    meter: meter(
-      route.charge[id],
-      route.capacities[id],
-      state?.shields?.collapse?.[id] > 0 ? "danger" : "shield",
-    ),
-  }));
+  const budget = whole(shield.totalBudget);
+  const totalHp = whole(route.totalHp);
+  const totalAllocation = whole(route.totalAllocation);
+  const sectors = Object.keys(route.hp).map((id) => {
+    const hp = whole(route.hp[id]);
+    const allocation = whole(route.allocation[id]);
+    const capacity = whole(route.capacities[id]);
+    const weight = whole(route.regenerationAllocation[id]);
+    const collapse = whole(state?.shields?.collapse?.[id]);
+    const severity = emitterSeverityFor(shield, state, id);
+    return {
+      id,
+      label: SECTOR_LABELS[id] ?? id,
+      icon: SECTOR_ICONS[id] ?? "fa-solid fa-circle",
+      position: id,
+      hp,
+      allocation,
+      capacity,
+      hpPercent: percent(hp, capacity),
+      allocPercent: percent(allocation, capacity),
+      weight,
+      pips: Math.max(0, Math.min(20, Math.round(weight / 5))),
+      rate: ((regeneration * weight) / 100).toFixed(1),
+      canReceive: collapse === 0 && capacity > 0,
+      collapse,
+      collapseLabel: availabilityLabel(collapse),
+      statusLabel: shieldStatusLabel(severity, collapse, capacity),
+      emitterSeverity: severity,
+    };
+  });
   return {
     topology: shield.topology ?? "directional",
     directional: shield.topology !== "bubble",
+    budget,
     regeneration,
+    totalHp,
+    totalAllocation,
+    unassigned: budget - totalAllocation,
+    regenPipsTotal: 20,
     sectors,
-    total: whole(route.totalCharge),
-    budget: whole(shield.totalBudget),
-    meter: meter(route.totalCharge, shield.totalBudget, "shield"),
+    total: totalHp,
+    meter: meter(totalHp, budget, "shield"),
   };
 }
 

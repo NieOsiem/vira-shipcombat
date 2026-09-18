@@ -398,28 +398,22 @@ function positiveCharge(value) {
   return Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
 
-function projectShieldCharge(
-  beforeCharge,
-  beforeSectors,
-  sectors,
-  caps,
-  budget,
-) {
-  const charge = Object.fromEntries(sectors.map((sector) => [sector, 0]));
+function carryShieldValues(beforeValues, beforeSectors, sectors, caps, budget) {
+  const values = Object.fromEntries(sectors.map((sector) => [sector, 0]));
   let carried = 0;
   let orphaned = 0;
   for (const sector of beforeSectors) {
-    const value = positiveCharge(beforeCharge?.[sector]);
+    const value = positiveCharge(beforeValues?.[sector]);
     if (!sectors.includes(sector)) {
       orphaned += value;
       continue;
     }
     const kept = Math.min(value, caps[sector]);
-    charge[sector] = kept;
+    values[sector] = kept;
     carried += kept;
   }
   const spare = sectors.reduce(
-    (sum, sector) => sum + Math.max(0, caps[sector] - charge[sector]),
+    (sum, sector) => sum + Math.max(0, caps[sector] - values[sector]),
     0,
   );
   let remaining = Math.min(orphaned, Math.max(0, budget - carried), spare);
@@ -427,17 +421,31 @@ function projectShieldCharge(
   let guard = remaining * sectors.length + sectors.length;
   while (remaining > 0 && guard > 0) {
     const sector = sectors[cursor % sectors.length];
-    if (charge[sector] < caps[sector]) {
-      charge[sector] += 1;
+    if (values[sector] < caps[sector]) {
+      values[sector] += 1;
       remaining -= 1;
     }
     cursor += 1;
     guard -= 1;
   }
-  return charge;
+  return values;
 }
 
-function projectShieldAllocation(beforeAllocation, shield, sectors) {
+function projectShieldHp(beforeHp, beforeSectors, sectors, caps, budget) {
+  return carryShieldValues(beforeHp, beforeSectors, sectors, caps, budget);
+}
+
+function projectShieldAllocation(
+  beforeAllocation,
+  beforeSectors,
+  sectors,
+  caps,
+  budget,
+) {
+  return carryShieldValues(beforeAllocation, beforeSectors, sectors, caps, budget);
+}
+
+function projectShieldRegenerationWeights(beforeAllocation, shield, sectors) {
   if (sectors.length === 0) return {};
   if (shield.topology === "bubble") return { [sectors[0]]: 100 };
   const valid = sectors.every((sector) => {
@@ -501,15 +509,22 @@ function reconcileShieldDefinition(state, beforeConfig, config) {
       ? shield.totalBudget
       : 0;
   state.shields ??= {};
-  state.shields.charge = projectShieldCharge(
-    state.shields.charge,
+  state.shields.allocation = projectShieldAllocation(
+    state.shields.allocation,
+    beforeSectors,
+    sectors,
+    caps,
+    budget,
+  );
+  state.shields.hp = projectShieldHp(
+    state.shields.hp,
     beforeSectors,
     sectors,
     caps,
     budget,
   );
   applyShieldCapacityClamping(config, state);
-  state.shields.regenerationAllocation = projectShieldAllocation(
+  state.shields.regenerationAllocation = projectShieldRegenerationWeights(
     state.shields.regenerationAllocation,
     shield,
     sectors,
@@ -827,7 +842,7 @@ async function confirmComponentRemoval(actor, mount, action) {
   }
   if (componentClass === "shield") {
     warning +=
-      " All shield charge, allocation, collapse, and recharge state resets.";
+      " All shield hp, allocation, collapse, and recharge state resets.";
   }
   if (componentClass === "sensor") warning += " All sensor tracks are cleared.";
   if (componentClass === "cooling") warning += " Vent cooldown resets to zero.";

@@ -1077,7 +1077,8 @@ export function sanitizeTrack(input) {
     const shields = pick(defenses?.shields, [
       "current",
       "max",
-      "charge",
+      "hp",
+      "allocation",
       "capacity",
       "distribution",
       "topology",
