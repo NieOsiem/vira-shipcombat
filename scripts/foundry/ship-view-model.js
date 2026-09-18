@@ -523,6 +523,7 @@ function shieldView(config, state) {
       totalAllocation: 0,
       unassigned: 0,
       regenPipsTotal: 20,
+      unassignedRegen: 0,
       total: 0,
       meter: meter(0, 0, "shield"),
       sectors: [],
@@ -572,6 +573,11 @@ function shieldView(config, state) {
     totalAllocation,
     unassigned: budget - totalAllocation,
     regenPipsTotal: 20,
+    unassignedRegen: Math.max(
+      0,
+      (shield.topology === "bubble" ? 0 : 20) -
+        sectors.reduce((sum, sector) => sum + sector.pips, 0),
+    ),
     sectors,
     total: totalHp,
     meter: meter(totalHp, budget, "shield"),

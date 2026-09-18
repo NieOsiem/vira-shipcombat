@@ -407,6 +407,57 @@ describe("shield allocation, collapse, and recovery", () => {
     });
   });
 
+  test("regeneration allocation allows unassigned points and apportions allocated budget", () => {
+    // 95% assigned (19 pips, 1 unassigned pip): target is Math.round(8 * 95 / 100) = 8
+    expect(
+      allocateRegeneration(8, { fore: 25, port: 25, starboard: 25, aft: 20 }),
+    ).toEqual({ fore: 2, port: 2, starboard: 2, aft: 2 });
+
+    // 75% assigned (15 pips, 5 unassigned): target is Math.round(8 * 75 / 100) = 6
+    expect(
+      allocateRegeneration(8, { fore: 25, port: 25, starboard: 25, aft: 0 }),
+    ).toEqual({ fore: 2, port: 2, starboard: 2, aft: 0 });
+
+    // 0% assigned: all 0
+    expect(
+      allocateRegeneration(8, { fore: 0, port: 0, starboard: 0, aft: 0 }),
+    ).toEqual({ fore: 0, port: 0, starboard: 0, aft: 0 });
+
+    // Exceeding 100% throws violation
+    captureViolation(
+      () => allocateRegeneration(8, { fore: 30, port: 30, starboard: 30, aft: 20 }),
+      "INVALID_REGENERATION_TOTAL",
+    );
+  });
+
+  test("defense routing allows committing without assigning all regen points", () => {
+    const { config, state } = freshShip();
+    const staged = {
+      regenerationAllocation: { fore: 25, port: 25, starboard: 25, aft: 20 },
+    };
+
+    const preview = previewDefenseRoute(config, state, staged);
+    expect(preview.regenerationAllocation).toEqual(staged.regenerationAllocation);
+
+    const committed = commitDefenseRoute(config, state, staged);
+    expect(committed.regenerationAllocation).toEqual(staged.regenerationAllocation);
+    expect(state.shields.regenerationAllocation).toEqual(staged.regenerationAllocation);
+
+    // Turn start shield regeneration applies cleanly with unassigned weights
+    state.power.shields = 3;
+    const regeneration = applyShieldRegeneration(config, state);
+    expect(regeneration.assigned).toEqual({ fore: 2, port: 2, starboard: 2, aft: 2 });
+
+    // Staging weights above 100% still fails validation
+    captureViolation(
+      () =>
+        previewDefenseRoute(config, state, {
+          regenerationAllocation: { fore: 30, port: 30, starboard: 30, aft: 20 },
+        }),
+      "INVALID_REGENERATION_TOTAL",
+    );
+  });
+
   test("a fresh shield commits hp, allocation, weights, and zero counters", () => {
     const { state } = freshShip();
 

@@ -452,7 +452,7 @@ function projectShieldRegenerationWeights(beforeAllocation, shield, sectors) {
     const weight = beforeAllocation?.[sector];
     return Number.isSafeInteger(weight) && weight >= 0 && weight <= 100;
   }) && sectors.reduce((sum, sector) =>
-        sum + beforeAllocation[sector], 0) === 100;
+        sum + beforeAllocation[sector], 0) <= 100;
   if (valid) {
     return Object.fromEntries(
       sectors.map((sector) => [sector, beforeAllocation[sector]]),

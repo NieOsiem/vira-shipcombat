@@ -2273,12 +2273,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       write("[data-shield-unassigned]", String(unassigned));
       write("[data-shield-unassigned-regen]", String(unassignedRegen));
       if (hint) {
-        hint.textContent = unassignedRegen > 0
-          ? `Assign ${unassignedRegen} regen pips before committing.`
-          : "";
+        hint.textContent = "";
       }
       if (submit) {
-        submit.disabled = !this.#canAct || unassignedRegen > 0;
+        submit.disabled = !this.#canAct;
       }
 
       let totalHp = 0;
@@ -3380,22 +3378,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         output.textContent = "";
         output.dataset.error = "false";
       } else if (type === "routeDefense") {
-        const stagedPips = Object.values(
-          operation.payload.regenerationAllocation,
-        ).reduce((sum, value) => sum + value, 0) / 5;
-        const unassignedRegen = Math.max(
-          0,
-          (this.#view.shields.regenPipsTotal ?? 20) - stagedPips,
-        );
-        if (unassignedRegen > 0) {
-          output.textContent = `Assign ${unassignedRegen} regen pips before committing.`;
-          output.dataset.error = "false";
-          const submit = form.querySelector("button[type='submit']");
-          if (submit) submit.disabled = true;
-          return;
-        }
         // The HUD already shows allocation, HP and regeneration; keep the line
-        // free for errors and the staging gate above.
+        // free for errors.
         previewDefenseRoute(config, state, operation.payload);
         output.textContent = "";
       } else if (type === "attack") {

@@ -153,8 +153,8 @@ function validateWeights(config, weights) {
     result[sector] = weight;
     total += weight;
   }
-  if (total !== 100) {
-    violation("INVALID_REGENERATION_TOTAL", "Regeneration Allocation must total exactly 100", {
+  if (total > 100) {
+    violation("INVALID_REGENERATION_TOTAL", "Regeneration Allocation cannot exceed 100", {
       total,
     });
   }
@@ -306,20 +306,21 @@ export function allocateRegeneration(total, weights) {
     weightTotal += weight;
     if (weight > 0) positive.push(sector);
   }
-  if (weightTotal !== 100) {
-    violation("INVALID_REGENERATION_TOTAL", "Regeneration Allocation must total exactly 100", {
+  if (weightTotal > 100) {
+    violation("INVALID_REGENERATION_TOTAL", "Regeneration Allocation cannot exceed 100", {
       total: weightTotal,
     });
   }
-  if (total === 0 || positive.length === 0) return allocation;
-  if (total < positive.length) {
+  const target = Math.max(0, Math.min(total, Math.round((total * weightTotal) / 100)));
+  if (total === 0 || positive.length === 0 || target === 0) return allocation;
+  if (target < positive.length) {
     const ranked = [...positive].sort((a, b) => weights[b] - weights[a] || order.indexOf(a) - order.indexOf(b));
-    for (let index = 0; index < total; index += 1) allocation[ranked[index]] = 1;
+    for (let index = 0; index < target; index += 1) allocation[ranked[index]] = 1;
     return allocation;
   }
   for (const sector of positive) allocation[sector] = 1;
   const ideals = Object.fromEntries(positive.map((sector) => [sector, (total * weights[sector]) / 100]));
-  for (let remaining = total - positive.length; remaining > 0; remaining -= 1) {
+  for (let remaining = target - positive.length; remaining > 0; remaining -= 1) {
     let selected = positive[0];
     let selectedDeficit = ideals[selected] - allocation[selected];
     for (const sector of positive.slice(1)) {
