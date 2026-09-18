@@ -2269,13 +2269,14 @@
 .ship-weapon-card {
   position: relative;
   display: grid;
-  gap: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.05rem 0.5rem;
   min-width: 0;
-  padding: 0;
-  overflow: visible;
+  padding: 0.2rem 0.4rem 0.2rem 0.45rem;
 }
 
-/* The switch owns the state colour; the stripe only echoes it. */
+/* The stripe echoes the switch colour; the switch itself is text. */
 .ship-weapon-card::before {
   position: absolute;
   top: 0;
@@ -2290,42 +2291,63 @@
 .ship-weapon-card[data-status="online"][data-mode="overclock"]::before { background: var(--ship-orange); }
 .ship-weapon-card[data-status="booting"]::before { background: var(--ship-amber); }
 
-.ship-weapon-row {
-  position: relative;
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto 4.4rem auto auto;
-  align-items: center;
+/* Dial spans the three text rows so the envelope reads at a glance. */
+.ship-weapon-dial-cell {
+  display: flex;
+  grid-row: 1 / span 3;
+  grid-column: 1;
   gap: 0.3rem;
-  min-width: 0;
-  min-height: 1.75rem;
-  padding: 0.15rem 0.35rem 0.05rem 0.45rem;
+  align-items: center;
+  align-self: center;
 }
 
-/* Explicit placement: the fault chip is optional and must not shift the rest. */
-.ship-weapon-row > [data-weapon-validity] { grid-column: 1; }
-.ship-weapon-row > .ship-dial { grid-column: 2; }
-.ship-weapon-row > .ship-weapon-title { grid-column: 3; }
-.ship-weapon-row > .ship-fault-chip { grid-column: 4; }
-.ship-weapon-row > .ship-ammo { grid-column: 5; }
-.ship-weapon-row > .ship-switch { grid-column: 6; }
-.ship-weapon-row > .ship-fire { grid-column: 7; }
-
-.ship-weapon-title {
-  display: grid;
+.ship-weapon-head {
+  display: flex;
+  grid-row: 1;
+  grid-column: 2;
+  gap: 0.35rem;
+  align-items: center;
   min-width: 0;
 }
 
-.ship-weapon-title > h3,
-.ship-weapon-title > small {
+.ship-weapon-head > h3 {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ship-weapon-title > small {
+.ship-weapon-sub {
+  display: block;
+  grid-row: 2;
+  grid-column: 2;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--ship-muted);
-  font: 0.54rem/1.2 var(--font-monospace, monospace);
+  font: 0.54rem/1.25 var(--font-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ship-weapon-stats {
+  display: flex;
+  grid-row: 3;
+  grid-column: 2;
+  gap: 0.35rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.ship-weapon-stats-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ship-muted);
+  font: 0.58rem var(--font-monospace, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ship-fault-chip {
@@ -2348,14 +2370,14 @@
 /* Bearing dial: nose up, ship-relative arc, live target marker. */
 .ship-dial {
   position: relative;
-  width: 1.45rem;
-  height: 1.45rem;
+  width: 3rem;
+  height: 3rem;
   border: 1px solid var(--ship-border-bright);
   border-radius: 50%;
   background:
     conic-gradient(from calc(var(--dial-center, 0deg) - var(--dial-width, 0deg) / 2), rgb(62 232 208 / 48%) 0 var(--dial-width, 0deg), transparent var(--dial-width, 0deg)),
     radial-gradient(circle, var(--ship-bg) 0 24%, transparent 25%);
-  box-shadow: inset 0 0 6px rgb(0 0 0 / 45%);
+  box-shadow: inset 0 0 8px rgb(0 0 0 / 45%);
 }
 
 .ship-dial::before {
@@ -2381,122 +2403,112 @@
   position: absolute;
   left: calc(50% + var(--marker-x, 0) * 50%);
   top: calc(50% + var(--marker-y, 0) * 50%);
-  width: 0.34rem;
-  height: 0.34rem;
+  width: 0.42rem;
+  height: 0.42rem;
   border: 1px solid #041014;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   background: var(--ship-green);
-  box-shadow: 0 0 4px currentcolor;
+  box-shadow: 0 0 5px currentcolor;
 }
 
 .ship-dial-marker[hidden] { display: none; }
 .ship-dial-marker[data-out="true"] { background: var(--ship-red); }
 .ship-dial-marker[data-far="true"] { background: transparent; border-color: var(--ship-red); box-shadow: none; }
 
-/* Three-way power switch doubling as the state display. */
+/* Three-way power switch: frameless text, the lit word is the state. */
 .ship-switch {
   display: inline-flex;
-  overflow: hidden;
-  border: 1px solid var(--ship-border);
-  border-radius: 2px;
-  background: #05090c;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+  align-items: baseline;
 }
 
 .ship-console-layout .ship-switch-seg {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.12rem;
-  min-width: 1.85rem;
+  align-items: baseline;
+  gap: 0.15rem;
+  min-width: 0;
   min-height: 0;
-  padding: 0.2rem 0.25rem;
+  padding: 0;
   border: none;
   border-radius: 0;
-  color: #3a4a52;
-  background: #05090c;
+  color: #2f3d45;
+  background: none;
   box-shadow: none;
   cursor: not-allowed;
-  font: 800 0.55rem var(--font-monospace, monospace);
-  letter-spacing: 0.05em;
+  font: 800 0.6rem var(--font-monospace, monospace);
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  transition: color 140ms ease, background 140ms ease;
+  transition: color 140ms ease, text-shadow 140ms ease;
 }
 
-.ship-console-layout .ship-switch-seg + .ship-switch-seg { border-left: 1px solid rgb(38 59 72 / 70%); }
-.ship-console-layout .ship-switch-seg:focus-visible { outline: 1px solid var(--ship-cyan); outline-offset: -1px; }
+.ship-console-layout .ship-switch-seg:focus-visible { outline: 1px solid var(--ship-cyan); outline-offset: 3px; }
 
-/* Reachable transition that is not the current state: dim, never coloured. */
+/* Reachable transition that is not the current state: unlit grey. */
 .ship-console-layout .ship-switch-seg[data-reachable="true"]:not([data-current="true"]) {
-  color: var(--ship-muted);
-  background: #0d151b;
+  color: #6d818a;
   cursor: pointer;
 }
 
 .ship-console-layout .ship-switch-seg[data-reachable="true"]:not([data-current="true"]):hover {
-  border: none;
   color: var(--ship-text);
-  background: rgb(142 165 173 / 16%);
-  box-shadow: none;
 }
 
-.ship-switch-seg[data-current="true"] {
-  cursor: default;
-  --switch-glow: var(--ship-muted);
+/* Current state: its own colour, glowing. */
+.ship-console-layout .ship-switch-seg--off[data-current="true"] {
+  color: var(--ship-red);
+  --switch-glow: var(--ship-red);
+  text-shadow: 0 0 7px rgb(255 82 103 / 75%);
 }
 
-.ship-switch-seg--off[data-current="true"] { color: #1b0308; background: var(--ship-red); --switch-glow: var(--ship-red); }
-.ship-switch-seg--on[data-current="true"] { color: #03150a; background: var(--ship-green); --switch-glow: var(--ship-green); }
-.ship-switch-seg--oc[data-current="true"] { color: #1b0700; background: var(--ship-orange); --switch-glow: var(--ship-orange); }
+.ship-console-layout .ship-switch-seg--on[data-current="true"] {
+  color: var(--ship-green);
+  --switch-glow: var(--ship-green);
+  text-shadow: 0 0 7px rgb(85 225 139 / 75%);
+}
 
-/* Boot in progress: the segment being reached pulses amber with its counter. */
+.ship-console-layout .ship-switch-seg--oc[data-current="true"] {
+  color: var(--ship-orange);
+  --switch-glow: var(--ship-orange);
+  text-shadow: 0 0 7px rgb(255 122 69 / 75%);
+}
+
+.ship-switch-count { font-size: 0.5rem; opacity: 0.85; }
+
+/* Boot in progress: the word being reached blinks amber with its counter. */
 .ship-weapon-card[data-status="booting"] .ship-switch-seg--on[data-current="true"] {
-  color: #2a1a00;
   animation: ship-switch-boot 1.15s ease-in-out infinite;
 }
 
-.ship-switch-seg[data-intent="true"] {
-  color: var(--ship-amber);
-  animation: ship-switch-pending 0.9s ease-in-out infinite;
-}
-
-.ship-switch-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0.8rem;
-  height: 0.8rem;
-  border-radius: 2px;
-  background: rgb(0 0 0 / 45%);
-  font-size: 0.5rem;
-}
+.ship-switch-seg[data-intent="true"] { animation: ship-switch-pending 0.9s ease-in-out infinite; }
 
 @keyframes ship-switch-boot {
-  0%, 100% { background: rgb(255 189 82 / 40%); box-shadow: none; }
-  50% { background: var(--ship-amber); box-shadow: 0 0 7px rgb(255 189 82 / 70%); }
+  0%, 100% { color: rgb(255 189 82 / 45%); text-shadow: none; }
+  50% { color: var(--ship-amber); text-shadow: 0 0 10px rgb(255 189 82 / 85%); }
 }
 
 @keyframes ship-switch-pending {
-  0%, 100% { background: rgb(255 189 82 / 10%); box-shadow: none; }
-  50% { background: rgb(255 189 82 / 55%); box-shadow: 0 0 7px rgb(255 189 82 / 60%); }
+  0%, 100% { color: rgb(255 189 82 / 35%); text-shadow: none; }
+  50% { color: var(--ship-amber); text-shadow: 0 0 10px rgb(255 189 82 / 80%); }
 }
 
-/* A legal shot makes the current mode shine. */
+/* A legal shot makes the current word shine harder. */
 .ship-weapon-card[data-shot="valid"] .ship-switch-seg[data-current="true"] {
   animation: ship-switch-shine 2.2s ease-in-out infinite;
 }
 
 @keyframes ship-switch-shine {
-  0%, 100% { box-shadow: inset 0 0 0 0 transparent; }
-  50% { box-shadow: 0 0 9px var(--switch-glow); }
+  0%, 100% { text-shadow: 0 0 5px var(--switch-glow); }
+  50% { text-shadow: 0 0 14px var(--switch-glow), 0 0 4px var(--switch-glow); }
 }
 
 .ship-ammo {
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: baseline;
-  gap: 0 0.25rem;
-  min-width: 0;
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 3.4rem;
 }
 
 .ship-ammo-label {
@@ -2511,7 +2523,7 @@
   font: 700 0.62rem var(--font-monospace, monospace);
 }
 
-.ship-ammo > .ship-meter { grid-column: 1 / -1; height: 0.18rem; }
+.ship-ammo > .ship-meter { width: 100%; height: 0.18rem; }
 .ship-ammo:has(.ship-meter--danger) > strong { color: var(--ship-red); }
 
 /* FIRE is text, not a button: it only lights up when the shot is legal.
@@ -2552,72 +2564,51 @@
   50% { text-shadow: 0 0 12px rgb(255 82 103 / 95%), 0 0 3px var(--ship-red); }
 }
 
-.ship-weapon-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: 0;
-  padding: 0 0.35rem 0.15rem 0.45rem;
-}
-
-.ship-weapon-stats {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ship-muted);
-  font: 0.58rem var(--font-monospace, monospace);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* BARRAGE / AIM read as words: no frame, no checkbox chrome, colour = engaged. */
 .ship-console-layout .ship-weapon-toggle {
+  position: relative;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 0.25rem;
   min-height: 0;
-  padding: 0.06rem 0.3rem;
-  border: 1px solid var(--ship-border);
-  border-radius: 2px;
-  color: var(--ship-muted);
-  background: rgb(0 0 0 / 20%);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  color: #55666e;
+  background: none;
   cursor: pointer;
   font: 800 0.53rem var(--font-monospace, monospace);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
+  transition: color 140ms ease, text-shadow 140ms ease;
 }
 
 .ship-console-layout .ship-weapon-toggle > input {
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  width: 0.62rem;
-  height: 0.62rem;
+  position: absolute;
+  width: 1px;
+  height: 1px;
   min-width: 0;
   min-height: 0;
   margin: 0;
   padding: 0;
-  appearance: none;
-  border: 1px solid var(--ship-border-bright);
-  border-radius: 2px;
-  background: #0b1218;
-  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.ship-console-layout .ship-weapon-toggle > input:checked {
-  background: var(--ship-bg);
-  border-color: var(--ship-bg);
-  box-shadow: inset 0 0 0 2px var(--ship-cyan);
-}
-
-.ship-console-layout .ship-weapon-toggle > input:disabled { cursor: not-allowed; }
-.ship-weapon-toggle:has(input:checked) { color: var(--ship-bg); background: var(--ship-cyan); border-color: var(--ship-cyan); }
-.ship-weapon-toggle:has(input:disabled) { opacity: 0.6; cursor: not-allowed; }
+.ship-weapon-toggle:hover { color: var(--ship-text); }
+.ship-weapon-toggle[data-toggle="barrage"]:has(input:checked) { color: var(--ship-amber); text-shadow: 0 0 7px rgb(255 189 82 / 70%); }
+.ship-weapon-toggle[data-toggle="aim"]:has(input:checked) { color: var(--ship-cyan); text-shadow: 0 0 7px rgb(62 232 208 / 65%); }
+.ship-weapon-toggle:has(input:disabled) { color: #2f3d45; text-shadow: none; cursor: not-allowed; }
+.ship-weapon-toggle:has(input:focus-visible) { outline: 1px solid var(--ship-cyan); outline-offset: 3px; }
 
 .ship-weapon-options {
   display: none;
   flex-wrap: wrap;
-  align-items: center;
+  grid-column: 1 / -1;
   gap: 0.3rem;
+  align-items: center;
   min-width: 0;
-  padding: 0 0.35rem 0.25rem 0.45rem;
+  padding: 0.15rem 0 0.1rem;
 }
 
 .ship-weapon-card:has([data-barrage-enabled]:checked) [data-barrage-options],
@@ -2653,6 +2644,20 @@
 .ship-barrage-chip:has(input:checked) { color: var(--ship-amber); border-color: rgb(255 189 82 / 55%); background: rgb(255 189 82 / 14%); }
 .ship-barrage-chip:has(input:focus-visible) { outline: 1px solid var(--ship-cyan); outline-offset: 1px; }
 .ship-barrage-chip--infeasible { border-style: dashed; opacity: 0.45; }
+
+/* Reload is plain state, always readable: no disclosure to open. */
+.ship-weapon-reload {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.15rem 0 0.1rem;
+  border-top: 1px solid rgb(142 165 173 / 12%);
+  color: var(--ship-muted);
+  font: 0.58rem var(--font-monospace, monospace);
+}
 
 .ship-fire-panel {
   position: sticky;
@@ -2752,30 +2757,13 @@
 .ship-fire-violation::before { content: "▲"; font-size: 0.5rem; }
 
 @media (prefers-reduced-motion: reduce) {
-  .ship-weapon-card[data-shot="valid"] .ship-switch-seg[data-current="true"] { box-shadow: 0 0 6px var(--switch-glow); }
+  .ship-weapon-card[data-shot="valid"] .ship-switch-seg[data-current="true"] { text-shadow: 0 0 9px var(--switch-glow); }
+  .ship-weapon-card[data-status="booting"] .ship-switch-seg--on[data-current="true"],
+  .ship-switch-seg[data-intent="true"] { color: var(--ship-amber); text-shadow: 0 0 9px rgb(255 189 82 / 70%); }
   .ship-weapon-card[data-shot="valid"] .ship-fire-text { text-shadow: 0 0 8px var(--ship-red); }
 }
 
-.ship-weapon-secondary {
-  min-width: 0;
-  margin-top: 0;
-  border-top: 1px solid rgb(142 165 173 / 12%);
-}
-
-.ship-weapon-secondary > summary {
-  min-height: 1rem;
-  padding: 0.08rem 0.45rem;
-  color: var(--ship-cyan);
-  cursor: pointer;
-  font: 700 0.53rem/1 var(--font-monospace, monospace);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.ship-weapon-secondary > p,
-.ship-weapon-secondary > .ship-action-row { margin-inline: 0.45rem; }
-
-.vira-shipcombat.ship-console [data-target-lamp] {
+.ship-fire-panel {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;

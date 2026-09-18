@@ -1432,10 +1432,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           this.#panelWeapon = weaponId;
           this.#renderFirePanel();
         });
-        form.querySelector("details")?.addEventListener("toggle", () => {
-          const token = actorToken(this.actor);
-          if (token) clearMovementPreview(token.uuid);
-        });
         form.querySelector("[data-aim-enabled]")?.addEventListener(
           "change",
           () => {
