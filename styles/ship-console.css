@@ -1418,6 +1418,15 @@
 }
 .ship-shield-hud-grid > [data-position="bubble"] { grid-column: 1; grid-row: 2; }
 
+.ship-shield-hud-grid > .ship-shield-total {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+  justify-self: start;
+  margin-inline-start: 0.2rem;
+  z-index: 2;
+}
+
 .ship-shield-center {
   grid-column: 2;
   grid-row: 2;
@@ -1454,6 +1463,13 @@
 .ship-shield-hud--bubble .ship-shield-center {
   grid-column: 1;
   grid-row: 1;
+}
+
+.ship-shield-hud--bubble .ship-shield-hud-grid > .ship-shield-total {
+  grid-column: 1;
+  grid-row: auto;
+  justify-self: center;
+  margin-inline-start: 0;
 }
 
 .ship-shield-hud--bubble .ship-shield-hud-grid > [data-position="bubble"] {
@@ -2527,6 +2543,7 @@
   .ship-shield-hud-grid > [data-position="starboard"],
   .ship-shield-hud-grid > [data-position="aft"],
   .ship-shield-hud-grid > [data-position="bubble"],
+  .ship-shield-hud-grid > .ship-shield-total,
   .ship-shield-hud-grid > .ship-shield-center,
   .ship-shield-hud-grid > .ship-shield-pool {
     grid-column: 1;

@@ -423,6 +423,7 @@
       {{#if view.shields.sectors.length}}
         <form class="ship-shield-hud {{#unless view.shields.directional}}ship-shield-hud--bubble{{/unless}}" data-ui-operation="routeDefense" data-live-preview="routeDefense">
           <div class="ship-shield-hud-grid">
+            <p class="ship-shield-total"><span>Total</span><output data-shield-total-hp>{{view.shields.totalHp}}</output><span aria-hidden="true">/</span><output data-shield-total-budget>{{view.shields.budget}}</output></p>
             {{#each view.shields.sectors}}
               <article class="ship-shield-sector-card" data-sector="{{id}}" data-position="{{position}}">
                 <header class="ship-shield-sector-head">
@@ -473,7 +474,6 @@
                 <span class="ship-shield-compass-label ship-shield-compass-label--aft" aria-hidden="true">AFT</span>
                 <div class="ship-shield-compass-image"><img src="{{actor.img}}" alt="{{actor.name}}"></div>
               </div>
-              <p class="ship-shield-total"><span>Total</span><output data-shield-total-hp>{{view.shields.totalHp}}</output><span aria-hidden="true">/</span><output data-shield-total-budget>{{view.shields.budget}}</output></p>
             </div>
             <aside class="ship-shield-pool" data-pool="charge" aria-label="Unassigned charge" {{#unless view.shields.directional}}hidden{{/unless}}>
               <i class="fa-solid fa-draw-polygon" aria-hidden="true"></i>
@@ -490,7 +490,6 @@
               </div>
             </aside>
           </div>
-          <p class="ship-muted" data-shield-transfer-hint role="status">Redistribute: remove from another sector first</p>
           {{#unless view.shields.regeneration}}<p class="ship-muted">0 regeneration at current tier; regeneration policy persists.</p>{{/unless}}
           <p class="ship-preview-line" data-preview aria-live="polite"></p>
           <div class="ship-action-row ship-shield-actions">

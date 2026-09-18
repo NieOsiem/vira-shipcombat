@@ -2265,16 +2265,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       write("[data-shield-unassigned]", String(unassigned));
       write("[data-shield-unassigned-regen]", String(unassignedRegen));
       if (hint) {
-        hint.textContent = unassigned > 0
-          ? `Transfer in progress: assign ${unassigned} charge before committing.`
-          : unassignedRegen > 0
+        hint.textContent = unassignedRegen > 0
           ? `Assign ${unassignedRegen} regen pips before committing.`
           : "";
       }
       if (submit) {
-        submit.disabled = !this.#canAct ||
-          unassigned > 0 ||
-          unassignedRegen > 0;
+        submit.disabled = !this.#canAct || unassignedRegen > 0;
       }
 
       let totalHp = 0;
@@ -3376,11 +3372,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         output.textContent = "";
         output.dataset.error = "false";
       } else if (type === "routeDefense") {
-        const assigned = Object.values(operation.payload.allocation).reduce(
-          (sum, value) => sum + value,
-          0,
-        );
-        const unassigned = Math.max(0, this.#view.shields.budget - assigned);
         const stagedPips = Object.values(
           operation.payload.regenerationAllocation,
         ).reduce((sum, value) => sum + value, 0) / 5;
@@ -3388,10 +3379,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           0,
           (this.#view.shields.regenPipsTotal ?? 20) - stagedPips,
         );
-        if (unassigned > 0 || unassignedRegen > 0) {
-          output.textContent = unassigned > 0
-            ? `Transfer in progress: assign ${unassigned} charge before committing.`
-            : `Assign ${unassignedRegen} regen pips before committing.`;
+        if (unassignedRegen > 0) {
+          output.textContent = `Assign ${unassignedRegen} regen pips before committing.`;
           output.dataset.error = "false";
           const submit = form.querySelector("button[type='submit']");
           if (submit) submit.disabled = true;
