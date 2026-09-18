@@ -341,9 +341,9 @@ describe("Power routing and weapon lifecycle", () => {
   });
 });
 
-test("Power commits persist presets and validated shedding priorities", () => {
+test("Power commits persist allocations and validated shedding priorities", () => {
   const { config, state } = freshShip();
-  const preset = config.powerPresets.find(({ id }) => id === "pursuit");
+  const allocation = { engines: 4, shields: 1, sensors: 2, cooling: 1, weapons: 4 };
   const sheddingPriority = [
     "weapons",
     "cooling",
@@ -357,15 +357,14 @@ test("Power commits persist presets and validated shedding priorities", () => {
     config,
     state,
     clone({
-      powerPresetId: preset.id,
-      allocation: preset.allocations,
+      allocation,
       sheddingPriority,
       weaponPriority,
     }),
   );
 
-  expect(result.powerPresetId).toBe("pursuit");
-  expect(state.powerPresetId).toBe("pursuit");
+  expect(result.allocation).toEqual(allocation);
+  expect(state.power).toMatchObject(allocation);
   expect(state.sheddingPriority).toEqual(sheddingPriority);
   expect(state.weaponPriority).toEqual(weaponPriority);
 
@@ -375,7 +374,7 @@ test("Power commits persist presets and validated shedding priorities", () => {
         config,
         state,
         clone({
-          allocation: preset.allocations,
+          allocation,
           sheddingPriority: [
             "engines",
             "engines",

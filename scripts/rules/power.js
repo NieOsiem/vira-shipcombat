@@ -431,19 +431,6 @@ function stagedPriorities(config, state, staged) {
   };
 }
 
-function stagedPreset(config, staged, allocation) {
-  if (staged?.powerPresetId == null || staged.powerPresetId === "") return null;
-  const preset = (config?.powerPresets ?? []).find((candidate) => candidate.id === staged.powerPresetId);
-  if (!preset) violation("UNKNOWN_POWER_PRESET", `Unknown Power preset: ${staged.powerPresetId}`, { powerPresetId: staged.powerPresetId });
-  if (systemNames().some((system) => allocation[system] !== preset.allocations?.[system])) {
-    violation("POWER_PRESET_MISMATCH", "The staged allocation does not match the selected Power preset.", {
-      powerPresetId: preset.id,
-      allocation,
-    });
-  }
-  return preset.id;
-}
-
 function systemOverclockHeat(config, state, system, power, beforePower = null) {
   if (system === "engines") {
     let heat = 0;
@@ -541,7 +528,6 @@ export function previewPowerRoute(config, state, staged) {
     });
   }
   const priorities = stagedPriorities(config, state, staged);
-  const powerPresetId = stagedPreset(config, staged, allocation);
   const beforeAllocation = currentAllocation(state);
   const beforeRedlining = state.power?.redlining ?? totalPower(beforeAllocation) > ceilings.nominal;
   const redlining = committed > ceilings.nominal;
@@ -565,7 +551,6 @@ export function previewPowerRoute(config, state, staged) {
     emission: emissionState(config, committed),
     heatAdded: entered.heat,
     overclockEntries: entered.entries,
-    powerPresetId,
     ...priorities,
     tierChanges: systemNames()
       .filter((system) => beforeAllocation[system] !== allocation[system])
@@ -583,7 +568,6 @@ export function commitPowerRoute(config, state, staged) {
     state.weapons[weaponId] ??= {};
     Object.assign(state.weapons[weaponId], next);
   }
-  state.powerPresetId = result.powerPresetId;
   state.sheddingPriority = result.sheddingPriority;
   state.weaponPriority = result.weaponPriority;
   if (result.heatAdded) state.heat = Math.max(0, (state.heat ?? 0) + result.heatAdded);

@@ -233,7 +233,6 @@ function uiOperation(type, data, config, state) {
             ["engines", "shields", "sensors", "cooling", "weapons"]
               .map((system) => [system, numeric(data[system])]),
           ),
-          powerPresetId: data.powerPresetId || null,
           ...powerPriorities(config, state, {
             sheddingPriority: formPriority(data, "sheddingPriority"),
             weaponPriority: formPriority(data, "weaponPriority"),
@@ -1072,7 +1071,7 @@ const { HandlebarsApplicationMixin } = foundry.applications.api;
 class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   static DEFAULT_OPTIONS = {
     classes: [MODULE_ID, "ship-console"],
-    position: { width: 880, height: 820 },
+    position: { width: 880, height: 840 },
     window: { resizable: true },
     actions: {},
   };
@@ -1838,6 +1837,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const zeroPos = `${max > min ? -min / (max - min) * 100 : 50}%`;
       input.style.setProperty("--zero-position", zeroPos);
       input.closest(".ship-helm-slider-track")?.style.setProperty("--zero-position", zeroPos);
+      input.closest(".ship-helm-axis")?.style.setProperty("--zero-position", zeroPos);
       const digits = name === "rotation" ? 1 : 2;
       const refresh = () => {
         const value = Number(numeric(input.value).toFixed(digits));
@@ -2112,8 +2112,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             : `Set ${system.label} to ${next} Power`;
           button.addEventListener("click", () => {
             input.value = String(next);
-            const preset = form.elements.namedItem("powerPresetId");
-            if (preset) preset.value = "";
             form.dispatchEvent(new Event("input", { bubbles: true }));
           });
           container.append(button);
@@ -2124,34 +2122,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           `[data-power-blocks='${focusSystem}'] [data-power-index='${focusIndex}']`,
         )?.focus();
       }
-      form.querySelectorAll("[data-power-preset]").forEach((button) => {
-        button.setAttribute(
-          "aria-pressed",
-          String(
-            button.dataset.powerPreset ===
-              form.elements.namedItem("powerPresetId")?.value,
-          ),
-        );
-        button.disabled = !this.#canAct;
-        button.title = !this.#canAct
-          ? denial
-          : "Stage this allocation; commit below.";
-      });
     };
     form.addEventListener("input", refresh);
-    form.querySelectorAll("button[data-power-preset]").forEach((button) =>
-      button.addEventListener("click", () => {
-        if (!this.#canAct) return;
-        const allocation = JSON.parse(button.dataset.allocation ?? "{}");
-        for (const [system, value] of Object.entries(allocation)) {
-          const input = form.elements.namedItem(system);
-          if (input) input.value = String(value);
-        }
-        const preset = form.elements.namedItem("powerPresetId");
-        if (preset) preset.value = button.dataset.powerPreset;
-        form.dispatchEvent(new Event("input", { bubbles: true }));
-      })
-    );
     refresh();
   }
 

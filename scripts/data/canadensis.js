@@ -138,13 +138,7 @@ export const CANADENSIS_HULL_CONFIG = deepFreeze({
     { id: ids.portHardpoint, label: "Port", category: "hardpoint", mountSize: "medium", regions: ["port"], orientation: -90, traverse: "fixed", weaponId: ids.portMacrocannon },
     { id: ids.starboardHardpoint, label: "Starboard", category: "hardpoint", mountSize: "medium", regions: ["starboard"], orientation: 90, traverse: "fixed", weaponId: ids.starboardMacrocannon },
   ],
-  powerPresets: [
-    { id: "balanced-combat", label: "Balanced Combat", allocations: { engines: 3, shields: 3, sensors: 2, cooling: 1, weapons: 3 } },
-    { id: "all-guns", label: "All Guns", allocations: { engines: 2, shields: 2, sensors: 1, cooling: 1, weapons: 6 } },
-    { id: "pursuit", label: "Pursuit", allocations: { engines: 4, shields: 1, sensors: 2, cooling: 1, weapons: 4 } },
-    { id: "defensive", label: "Defensive", allocations: { engines: 2, shields: 4, sensors: 2, cooling: 2, weapons: 2 } },
-    { id: "silent-running", label: "Silent Running", allocations: { engines: 1, shields: 1, sensors: 1, cooling: 0, weapons: 0 } },
-  ],
+  initialPower: { engines: 3, shields: 3, sensors: 2, cooling: 1, weapons: 3 },
   sheddingPriority: ["sensors", "engines", "shields", "cooling", "weapons"],
   weaponPriority: [ids.prowHardpoint, ids.dorsalHardpoint, ids.portHardpoint, ids.starboardHardpoint],
   operators,
@@ -160,7 +154,6 @@ export const CANADENSIS_CONFIG = deepFreeze(materializeShipConfig(
 export const CANADENSIS_ENCOUNTER_DEFAULTS = deepFreeze({
   hull: 50,
   heat: 0,
-  powerPresetId: "balanced-combat",
   power: { engines: 3, shields: 3, sensors: 2, cooling: 1, weapons: 3 },
   shields: {
     charge: { fore: 15, port: 15, starboard: 15, aft: 15 },

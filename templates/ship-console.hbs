@@ -217,18 +217,29 @@
             <small class="ship-muted">Allocate time and set your maneuver vector</small>
           </div>
         </div>
-        <div class="ship-helm-heading-pilot">
-          <i class="fa-solid fa-user" aria-hidden="true"></i>
-          <div>
-            {{#if isGM}}<label class="ship-helm-pilot-select">Pilot<select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>{{else}}<span class="ship-helm-pilot-label">Pilot: {{view.helmHolderLabel}}</span>{{/if}}
-            <span class="ship-helm-station-status {{#if view.helmHeld}}is-active{{/if}}"><i class="fa-solid fa-circle" aria-hidden="true"></i> Station: Helm ({{#if view.helmHeld}}Active{{else}}Vacant{{/if}})</span>
+        <div class="ship-helm-heading-controls">
+          <div class="ship-helm-pilot-badge">
+            <i class="fa-solid fa-user" aria-hidden="true"></i>
+            {{#if isGM}}
+              <label class="ship-helm-pilot-select">
+                <span class="ship-helm-pilot-tag">Pilot</span>
+                <select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">
+                  {{#each view.operators}}
+                    <option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>
+                  {{/each}}
+                </select>
+              </label>
+            {{else}}
+              <span class="ship-helm-pilot-label"><span class="ship-helm-pilot-tag">Pilot</span> {{view.helmHolderLabel}}</span>
+            {{/if}}
+            <span class="ship-helm-status-pill {{#if view.helmHeld}}is-active{{/if}}" title="Helm Station Status">
+              <i class="fa-solid fa-circle" aria-hidden="true"></i> {{#if view.helmHeld}}Active{{else}}Vacant{{/if}}
+            </span>
           </div>
-        </div>
-        <div class="ship-helm-heading-actions">
           {{#if view.helmHeld}}
-            <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled{{/unless}}>Release Helm</button>
+            <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Release Helm</button>
           {{else}}
-            <button type="button" class="ship-station-btn ship-station-btn--take ship-primary" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}>Take Helm</button>
+            <button type="button" class="ship-station-btn ship-station-btn--take ship-primary" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-hand" aria-hidden="true"></i> Take Helm</button>
           {{/if}}
         </div>
       </div>
@@ -237,7 +248,7 @@
         <input type="hidden" name="operatorId" value="{{view.defaults.helm}}">
         <fieldset class="ship-helm-controls" {{#unless view.helmHeld}}disabled{{/unless}}>
 
-          <section class="ship-helm-axis" aria-label="Main thrust">
+          <section class="ship-helm-axis" aria-label="Main thrust" style="--zero-position: {{view.movement.forwardZeroPosition}}%;">
             <div class="ship-helm-axis-header">
               <i class="fa-solid fa-up-long" aria-hidden="true"></i>
               <h3>Main Thrust</h3>
@@ -250,7 +261,7 @@
             <div class="ship-helm-slider-labels"><span>Retro {{view.movement.retroMax}}</span><span>0</span><span>Forward {{view.movement.forwardMax}}</span></div>
           </section>
 
-          <section class="ship-helm-axis" aria-label="Lateral thrust">
+          <section class="ship-helm-axis" aria-label="Lateral thrust" style="--zero-position: {{view.movement.lateralZeroPosition}}%;">
             <div class="ship-helm-axis-header">
               <i class="fa-solid fa-left-right" aria-hidden="true"></i>
               <h3>Lateral Thrust</h3>
@@ -263,7 +274,7 @@
             <div class="ship-helm-slider-labels"><span>Port {{view.movement.portMax}}</span><span>0</span><span>Starboard {{view.movement.starboardMax}}</span></div>
           </section>
 
-          <section class="ship-helm-axis" aria-label="Rotation">
+          <section class="ship-helm-axis" aria-label="Rotation" style="--zero-position: 50%;">
             <div class="ship-helm-axis-header">
               <i class="fa-solid fa-rotate" aria-hidden="true"></i>
               <h3>Rotation</h3>
@@ -276,7 +287,7 @@
             <div class="ship-helm-slider-labels"><span>Left {{view.movement.rotationMax}}°</span><span>0</span><span>Right {{view.movement.rotationMax}}°</span></div>
           </section>
 
-          <section class="ship-helm-axis" aria-label="Coast">
+          <section class="ship-helm-axis" aria-label="Coast" style="--zero-position: 50%;">
             <div class="ship-helm-axis-header">
               <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
               <h3>Coast</h3>
@@ -325,7 +336,7 @@
 
         <div class="ship-helm-actions">
           <button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-play" aria-hidden="true"></i> <span>Commit maneuver<small>Spend allocated time</small></span></button>
-          <button type="button" data-coast-remaining="true" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span>Set coast<small>Use remaining time</small></span></button>
+          <button type="button" data-coast-remaining="true" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span>Coast remaining<small>Use remaining time</small></span></button>
           <button type="button" data-helm-reset {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span>Reset sliders<small>Clear current inputs</small></span></button>
           {{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Disarm evasion<small>Release reserve</small></span></button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-shield" aria-hidden="true"></i> <span>Arm evasion<small>Reserve timeline</small></span></button>{{/if}}
         </div>
@@ -338,42 +349,34 @@
       <div class="ship-panel-heading"><h2>Power</h2><span class="ship-readout {{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</span></div>
       <label class="ship-page-operator">Engineer<select data-page-operator="power" data-default="{{view.defaults.power}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
       <div class="ship-systems-layout">
-        <details class="ship-card" open>
-          <summary>Reactor allocation · {{view.power.committed}} / {{view.power.ceilings.maximum}}</summary>
-          <form data-ui-operation="routePower" data-live-preview="routePower">
-            <input type="hidden" name="powerPresetId" value="">
-            <div class="ship-segmented" aria-label="Power presets">{{#each view.power.presets}}<button type="button" data-power-preset="{{id}}" data-allocation='{{allocation}}' aria-pressed="{{selected}}" {{#unless ../canAct}}disabled{{/unless}}>{{label}}</button>{{/each}}</div>
-            <div class="ship-power-grid">{{#each view.power.systems}}<div><span>{{label}}</span><input type="hidden" name="{{id}}" value="{{value}}" data-power-system><div data-power-blocks="{{id}}" role="group" aria-label="{{label}} power"></div><output data-power-effect="{{id}}">{{#if reservation}}{{reservation}} reserved{{/if}}</output></div>{{/each}}</div>
-            <details class="ship-power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
-            <p class="ship-preview-line" data-preview aria-live="polite"></p>
-            <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
-          </form>
-        </details>
+        <form class="ship-card" data-ui-operation="routePower" data-live-preview="routePower">
+          <div class="ship-power-grid">{{#each view.power.systems}}<div><span>{{label}}</span><input type="hidden" name="{{id}}" value="{{value}}" data-power-system><div data-power-blocks="{{id}}" role="group" aria-label="{{label}} power"></div><output data-power-effect="{{id}}">{{#if reservation}}{{reservation}} reserved{{/if}}</output></div>{{/each}}</div>
+          <details class="ship-power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
+          <p class="ship-preview-line" data-preview aria-live="polite"></p>
+          <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
+        </form>
         {{#if view.shields.sectors.length}}
-          <details class="ship-card ship-shield-card">
-            <summary>Shield allocation · {{view.shields.total}} / {{view.shields.budget}}</summary>
-            <form data-ui-operation="routeDefense" data-live-preview="routeDefense">
-              <div class="ship-shield-diagram {{#unless view.shields.directional}}ship-shield-diagram--bubble{{/unless}}">
-                <div class="ship-shield-core"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><strong>{{view.shields.total}}</strong><span>total charge</span></div>
-                {{#each view.shields.sectors}}
-                  <div class="ship-shield-sector" data-sector="{{id}}">
-                    <span>{{label}}</span><strong><output data-shield-charge-value="{{id}}">{{charge}}</output> / {{capacity}}</strong>
-                    <div class="ship-meter ship-meter--shield" style="{{meter.style}}"><span></span></div>
-                    <input name="charge-{{id}}" type="hidden" min="0" max="{{capacity}}" value="{{charge}}">
-                    <div class="ship-shield-adjust"><button type="button" data-shield-charge="{{id}}" data-delta="-1" aria-label="Remove one {{label}} shield charge">−</button><button type="button" data-shield-charge="{{id}}" data-delta="+1" aria-label="Add one {{label}} shield charge">+</button></div>
-                    <label>Regen policy <output data-regen-value="{{id}}">{{allocation}}%</output><input name="regen-{{id}}" type="range" min="0" max="100" step="1" value="{{allocation}}" aria-label="{{label}} regeneration percentage" {{#unless ../canAct}}disabled{{/unless}}></label>
-                    {{#if collapse}}<em>{{collapseLabel}}</em>{{/if}}
-                  </div>
-                {{/each}}
-              </div>
-              <p class="ship-readout">Unassigned charge: <output data-shield-unassigned>0</output></p>
-              <p class="ship-muted" data-shield-transfer-hint role="status">Redistribute: remove from another sector first</p>
-              {{#unless view.shields.regeneration}}<p class="ship-muted">0 regeneration at current tier; regeneration policy persists.</p>{{/unless}}
-              <div class="ship-action-row"><button type="button" data-distribute="charge" {{#unless canAct}}disabled{{/unless}}>Balance charge</button><button type="button" data-distribute="regen" {{#unless canAct}}disabled{{/unless}}>Balance regen</button></div>
-              <p class="ship-preview-line" data-preview aria-live="polite"></p>
-              <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled{{/unless}}>Take defense</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
-            </form>
-          </details>
+          <form class="ship-card ship-shield-card" data-ui-operation="routeDefense" data-live-preview="routeDefense">
+            <div class="ship-shield-diagram {{#unless view.shields.directional}}ship-shield-diagram--bubble{{/unless}}">
+              <div class="ship-shield-core"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><strong>{{view.shields.total}}</strong><span>total charge</span></div>
+              {{#each view.shields.sectors}}
+                <div class="ship-shield-sector" data-sector="{{id}}">
+                  <span>{{label}}</span><strong><output data-shield-charge-value="{{id}}">{{charge}}</output> / {{capacity}}</strong>
+                  <div class="ship-meter ship-meter--shield" style="{{meter.style}}"><span></span></div>
+                  <input name="charge-{{id}}" type="hidden" min="0" max="{{capacity}}" value="{{charge}}">
+                  <div class="ship-shield-adjust"><button type="button" data-shield-charge="{{id}}" data-delta="-1" aria-label="Remove one {{label}} shield charge">−</button><button type="button" data-shield-charge="{{id}}" data-delta="+1" aria-label="Add one {{label}} shield charge">+</button></div>
+                  <label>Regen policy <output data-regen-value="{{id}}">{{allocation}}%</output><input name="regen-{{id}}" type="range" min="0" max="100" step="1" value="{{allocation}}" aria-label="{{label}} regeneration percentage" {{#unless ../canAct}}disabled{{/unless}}></label>
+                  {{#if collapse}}<em>{{collapseLabel}}</em>{{/if}}
+                </div>
+              {{/each}}
+            </div>
+            <p class="ship-readout">Unassigned charge: <output data-shield-unassigned>0</output></p>
+            <p class="ship-muted" data-shield-transfer-hint role="status">Redistribute: remove from another sector first</p>
+            {{#unless view.shields.regeneration}}<p class="ship-muted">0 regeneration at current tier; regeneration policy persists.</p>{{/unless}}
+            <div class="ship-action-row"><button type="button" data-distribute="charge" {{#unless canAct}}disabled{{/unless}}>Balance charge</button><button type="button" data-distribute="regen" {{#unless canAct}}disabled{{/unless}}>Balance regen</button></div>
+            <p class="ship-preview-line" data-preview aria-live="polite"></p>
+            <div class="ship-action-row"><button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled{{/unless}}>Take defense</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
+          </form>
         {{/if}}
       </div>
     </section>

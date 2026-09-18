@@ -51,7 +51,7 @@ function distribute(total, keys, cap = Infinity) {
 }
 
 function initialPower(config) {
-  const allocations = config?.powerPresets?.[0]?.allocations ?? {};
+  const allocations = config?.initialPower ?? config?.powerPresets?.[0]?.allocations ?? {};
   const installed = {
     engines: Object.values(config?.components?.drives ?? {}).some(Boolean),
     shields: Boolean(config?.components?.shield),
@@ -133,7 +133,6 @@ export function createInitialState(config) {
     turnKey: null,
     hull: config.maxHull ?? 0,
     heat: 0,
-    powerPresetId: config?.powerPresets?.[0]?.id ?? null,
     sheddingPriority: [...(config?.sheddingPriority ?? [])],
     weaponPriority: [...(config?.weaponPriority ?? [])],
     power,

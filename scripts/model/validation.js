@@ -275,7 +275,7 @@ export function validateEffectiveLoadout(config, { tokenWidth } = {}) {
     }
   });
 
-  validatePowerConfig(config, weapons, error, requireNumber);
+  validatePowerConfig(config, weapons, error);
   validateOperators(config, componentById, hardpointById, error, requireString, requireNumber);
   validateCriticalPools(config, componentById, error, requireString, requireNumber);
 
@@ -532,53 +532,7 @@ function validateBarrageProfiles(profiles, path, error) {
   });
 }
 
-function validatePowerConfig(config, weapons, error, requireNumber) {
-  const presetIds = new Set();
-  if (!Array.isArray(config.powerPresets)) error("POWER_PRESETS_REQUIRED", "powerPresets", "Power presets must be an array.");
-  else config.powerPresets.forEach((preset, index) => {
-    const path = `powerPresets[${index}]`;
-    if (!isObject(preset)) {
-      error("INVALID_POWER_PRESET", path, "Power preset must be an object.");
-      return;
-    }
-    if (typeof preset.id !== "string" || preset.id.trim() === "") {
-      error("REQUIRED_STRING", `${path}.id`, "Preset ID must be stable.");
-    } else if (presetIds.has(preset.id)) {
-      error("DUPLICATE_STABLE_ID", `${path}.id`, `Preset ID '${preset.id}' is duplicated.`);
-    } else {
-      presetIds.add(preset.id);
-    }
-    if (typeof preset.label !== "string" || preset.label.trim() === "") error("REQUIRED_STRING", `${path}.label`, "Preset label is required.");
-    let total = 0;
-    for (const system of POWER_SYSTEMS) {
-      const value = preset.allocations?.[system];
-      requireNumber(value, `${path}.allocations.${system}`, { min: 0, integer: true });
-      if (isFiniteNumber(value)) total += value;
-      if (system !== "weapons" && Number.isInteger(value)) {
-        const componentName = { shields: "shield", sensors: "sensor", cooling: "cooling" }[system];
-        const installed = system === "engines"
-          ? isObject(config.components?.drives) && Object.values(config.components.drives).some(isObject)
-          : Boolean(config.components?.[componentName]);
-        const component = installed
-          ? (system === "engines" ? config.powerSystems?.engines : config.components?.[componentName])
-          : null;
-        if (component) {
-          const powers = new Set(tierArray(component.tiers).map((tier) => tier.power));
-          if (!powers.has(value)) error("UNSUPPORTED_POWER_TIER", `${path}.allocations.${system}`, `No ${system} tier exists at Power ${value}.`);
-        }
-      }
-    }
-    const redline = config.components?.reactor?.redlineOutput;
-    if (isFiniteNumber(redline) && total > redline) error("POWER_PRESET_EXCEEDS_REACTOR", `${path}.allocations`, "Preset exceeds reactor Redline output.");
-    const maxWeapons = weapons.reduce((sum, weapon) => {
-      const overclock = weapon.modes?.overclock?.overrides?.powerRating;
-      return sum + Math.max(weapon.powerRating ?? 0, overclock ?? 0);
-    }, 0);
-    if (weapons.length > 0 && isFiniteNumber(preset.allocations?.weapons) && preset.allocations.weapons > maxWeapons) {
-      error("WEAPONS_POWER_EXCEEDS_LOADOUT", `${path}.allocations.weapons`, "Weapons allocation exceeds all supported weapon reservations.");
-    }
-  });
-
+function validatePowerConfig(config, weapons, error) {
   validatePriority(config.sheddingPriority, POWER_SYSTEMS, "sheddingPriority", error);
   validatePriority(config.weaponPriority, weapons.map((weapon) => weapon.id), "weaponPriority", error);
 }

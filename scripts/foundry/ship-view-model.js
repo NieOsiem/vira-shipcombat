@@ -378,12 +378,6 @@ function powerView(config, state) {
       options: powerOptions(config, powerState, id),
       reservation: id === "weapons" ? whole(powerState.weaponReserved) : null,
     })),
-    presets: (config?.powerPresets ?? []).map((preset) => ({
-      id: preset.id,
-      label: preset.label ?? preset.id,
-      allocation: JSON.stringify(preset.allocations ?? {}),
-      selected: preset.id === state?.powerPresetId,
-    })),
     sheddingPriority: prioritySlots(systems, sheddingPriority),
     weaponPriority: prioritySlots(weapons, weaponPriority),
   };
