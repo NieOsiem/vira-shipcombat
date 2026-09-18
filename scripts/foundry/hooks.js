@@ -14,6 +14,7 @@ import {
   nativeVehicleFieldChanges,
   shipFieldsFromNativeVehicleChanges,
 } from "../model/native-vehicle.js";
+import { assignedUserIds } from "../rules/operators.js";
 
 import {
   submitAutomaticShipOperation,
@@ -239,28 +240,6 @@ function allowComponentDeletion(item, options) {
   return allowComponentMutation(item, options);
 }
 
-function assignmentOperatorId(assignment) {
-  if (typeof assignment === "string") return assignment;
-  return assignment?.operatorId ?? assignment?.id ?? null;
-}
-
-function assignedUserIds(shipData) {
-  const profiles = new Map(
-    (shipData?.config?.operators ?? []).map((
-      profile,
-    ) => [profile?.id, profile]),
-  );
-  const ids = new Set();
-  for (const kind of ["command", "crew"]) {
-    for (const assignment of shipData?.state?.roster?.[kind] ?? []) {
-      const profile = profiles.get(assignmentOperatorId(assignment));
-      const userId = assignment?.userId ?? profile?.userId;
-      if (typeof userId === "string" && userId) ids.add(userId);
-    }
-  }
-  return ids;
-}
-
 async function enforceOperatorOwnership(subject) {
   const contextActor = subject?.documentName === "Actor"
     ? subject
@@ -271,7 +250,7 @@ async function enforceOperatorOwnership(subject) {
   if (!actor || !shipData || !activeGm()) return;
   const observer = CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;
   const ownershipUpdates = {};
-  for (const userId of assignedUserIds(shipData)) {
+  for (const userId of assignedUserIds(shipData.config, shipData.state)) {
     const user = game.users.get(userId);
     if (!user || user.isGM) continue;
     const current = actor.ownership?.[userId] ?? actor.ownership?.default ?? 0;
@@ -625,25 +604,12 @@ export function registerShipHooks() {
   hooksRegistered = true;
   installShipInitiative();
 
-  if (globalThis.DocumentSheetConfig?.registerSheet) {
-    globalThis.DocumentSheetConfig.registerSheet(
-      globalThis.Item,
-      MODULE_ID,
-      CrewRatingSheet,
-      { types: ["feat"], label: "Ship Station Qualifications" },
-    );
-  }
-
-  Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
-    const actor = sheet?.actor;
-    if (!actor || actor.type === SHIP_TYPE) return;
-    buttons.unshift({
-      label: "Ship Ratings",
-      class: "vira-shipcombat-ratings",
-      icon: "fa-solid fa-compass",
-      onclick: () => void openCrewRatingEditor(actor),
-    });
-  });
+  foundry.applications.apps.DocumentSheetConfig.registerSheet(
+    Item,
+    MODULE_ID,
+    CrewRatingSheet,
+    { types: ["feat"], label: "Ship Station Qualifications" },
+  );
 
   Hooks.on("getHeaderControlsApplicationV2", (sheet, controls) => {
     const actor = sheet?.actor;

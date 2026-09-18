@@ -1,6 +1,6 @@
 import { SHIP_TYPE } from "../constants.js";
 import { materializeActorConfig } from "../foundry/refit.js";
-import { registerShipVisibility } from "./visibility.js";
+import { isAssignedOperator, registerShipVisibility } from "./visibility.js";
 
 const MODULE_ID = "vira-shipcombat";
 const previews = new Map();
@@ -262,7 +262,7 @@ function hasVisibleShields(token) {
   if (
     actor?.type !== SHIP_TYPE || document?.hidden || token?.visible === false
   ) return false;
-  if (!globalThis.game?.user?.isGM && !actor?.isOwner) return false;
+  if (!globalThis.game?.user?.isGM && !isAssignedOperator(actor)) return false;
   return Boolean(tokenShieldData(token));
 }
 

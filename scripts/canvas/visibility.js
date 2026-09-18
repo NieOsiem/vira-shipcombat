@@ -1,4 +1,5 @@
 import { SHIP_TYPE } from "../constants.js";
+import { assignedUserIds } from "../rules/operators.js";
 import { sanitizeTrack, TRACK_STATUS } from "../rules/sensors.js";
 
 const hookIds = new Map();
@@ -14,15 +15,25 @@ function isShipToken(token) {
   return isShipActor(token?.actor ?? token?.document?.actor);
 }
 
+/**
+ * Whether the user is one of this ship's assigned operators. The module grants assigned
+ * operators OBSERVER ownership, so ownership levels can never gate ship visibility.
+ */
+export function isAssignedOperator(actor, userId = globalThis.game?.user?.id) {
+  if (!userId || !isShipActor(actor)) return false;
+  const shipCombat = actor.system.shipCombat;
+  return assignedUserIds(shipCombat.config, shipCombat.state).has(String(userId));
+}
+
 function currentTokens() {
   return Array.from(globalThis.canvas?.tokens?.placeables ?? []);
 }
 
+/** Interaction flags suppressed by this module, captured before the first suppression. */
 function rememberRenderState(token) {
   let state = tokenRenderState.get(token);
   if (!state) {
     state = {
-      renderable: token.renderable,
       eventMode: token.eventMode,
       interactiveChildren: token.interactiveChildren,
     };
@@ -31,33 +42,47 @@ function rememberRenderState(token) {
   return state;
 }
 
+/** Undo module suppression for a token. Untouched tokens stay untouched, so the GM path
+ * and non-ship tokens write nothing. */
 function restoreToken(token) {
-  const state = tokenRenderState.get(token);
-  if (!state || token?.destroyed) {
+  if (!tokenRenderState.has(token) || token?.destroyed) {
     tokenRenderState.delete(token);
     return;
   }
-  token.renderable = state.renderable;
-  token.eventMode = state.eventMode;
-  token.interactiveChildren = state.interactiveChildren;
-  tokenRenderState.delete(token);
+  setLocallyVisible(token, true);
 }
 
+/** Only the interaction flags below are module state: `renderable` is derived from the
+ * TokenDocument, because the `renderable:false` a Token carries mid-draw was previously
+ * snapshotted and replayed, pinning ships that should be visible to invisible. */
 function setLocallyVisible(token, visible) {
-  const state = rememberRenderState(token);
-  token.renderable = visible ? state.renderable : false;
-  token.eventMode = visible ? state.eventMode : "none";
-  token.interactiveChildren = visible ? state.interactiveChildren : false;
+  if (visible) {
+    const state = tokenRenderState.get(token);
+    tokenRenderState.delete(token);
+    token.renderable = !token.document?.hidden;
+    if (state) {
+      token.eventMode = state.eventMode;
+      token.interactiveChildren = state.interactiveChildren;
+    }
+    return;
+  }
+  rememberRenderState(token);
+  token.renderable = false;
+  token.eventMode = "none";
+  token.interactiveChildren = false;
 }
 
 function observerActors() {
   const actors = new Map();
+  const userId = globalThis.game?.user?.id;
   for (const token of currentTokens()) {
     const actor = token?.actor;
-    if (isShipActor(actor) && actor.isOwner) actors.set(actor.uuid ?? token.document?.uuid, actor);
+    if (isAssignedOperator(actor, userId)) {
+      actors.set(actor.uuid ?? token.document?.uuid, actor);
+    }
   }
   for (const actor of globalThis.game?.actors ?? []) {
-    if (isShipActor(actor) && actor.isOwner) actors.set(actor.uuid, actor);
+    if (isAssignedOperator(actor, userId)) actors.set(actor.uuid, actor);
   }
   return actors.values();
 }
@@ -140,7 +165,7 @@ function refreshShipVisibility() {
       setLocallyVisible(token, false);
       continue;
     }
-    if (token.actor?.isOwner) {
+    if (isAssignedOperator(token.actor)) {
       for (const key of keys) suppressedMarkerTargets.add(key);
       setLocallyVisible(token, true);
       continue;

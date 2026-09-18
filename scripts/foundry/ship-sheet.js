@@ -32,6 +32,10 @@ import {
 import { calculateStruckSector, previewAttack } from "../rules/combat.js";
 import { getSensorStats, TRACK_STATUS } from "../rules/sensors.js";
 import {
+  assignedUserIds,
+  rosterIdentityConflicts,
+} from "../rules/operators.js";
+import {
   getOperationLog,
   rollbackShipOperation,
   submitShipOperation,
@@ -388,23 +392,6 @@ function escapeSecrets(value, isGM, key = "") {
 function errorText(error) {
   return error?.message ?? String(error);
 }
-function assignedUserIds(config, state) {
-  const profiles = new Map(
-    (config?.operators ?? []).map((profile) => [profile.id, profile]),
-  );
-  const ids = new Set();
-  for (const kind of ["command", "crew"]) {
-    for (const assignment of state?.roster?.[kind] ?? []) {
-      const operatorId = typeof assignment === "string"
-        ? assignment
-        : assignment?.operatorId ?? assignment?.id;
-      const userId = assignment?.userId ?? profiles.get(operatorId)?.userId;
-      if (typeof userId === "string" && userId) ids.add(userId);
-    }
-  }
-  return ids;
-}
-
 function signed(value, digits = 2) {
   const number = Number(value ?? 0);
   const rounded = Number(number.toFixed(digits));
@@ -451,13 +438,30 @@ function sourceUnavailableReason(actor) {
   )
     .filter((token) => (token?.parent?.id ?? token?.scene?.id) === scene?.id)
     .map((token) => `${token.name ?? actor.name} (${token.id})`);
-  return names.length > 1
-    ? `Multiple linked tokens on Scene “${scene?.name ?? "Unnamed"}”: ${
+  if (names.length > 1) {
+    return `Multiple linked tokens on Scene “${scene?.name ?? "Unnamed"}”: ${
       names.join(", ")
-    }. Open a specific token's console to choose the source.`
-    : `No linked token on Scene “${
-      scene?.name ?? "No active scene"
-    }”. Place this ship on the active Scene to use operational controls.`;
+    }. Open a specific token's console to choose the source.`;
+  }
+  const baseId = actor?.isToken
+    ? actor?.token?.actorId ?? actor?.token?.baseActor?.id ?? actor?.id
+    : actor?.id;
+  const placements = scene
+    ? sceneTokenDocuments(scene).filter((token) =>
+      (token?.actorId ?? token?.actor?.id) === baseId
+    )
+    : [];
+  if (placements.length) {
+    const placed = placements.map((token) =>
+      `${token.name ?? actor.name} (${token.id})`
+    );
+    return `This ship is placed on Scene “${scene.name}” as an unlinked token copy: ${
+      placed.join(", ")
+    }. Open the console from that token on the canvas (double-click the ship token); this sidebar sheet edits the unplaced template.`;
+  }
+  return `No linked token on Scene “${
+    scene?.name ?? "No active scene"
+  }”. Place this ship on the active Scene to use operational controls.`;
 }
 
 function draftKey(source, type) {
@@ -1128,6 +1132,19 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       : !isGM && !assigned
       ? "No ship operator is assigned to your user."
       : "";
+    const actReason = canOperate
+      ? state.phase === "active" ? "" : "Active Phase required."
+      : unavailableReason || "Operational access required.";
+    const rosterConflicts = rosterIdentityConflicts(config, state?.roster)
+      .map((conflict) => ({
+        tokens: conflict.tokens.join(" · "),
+        slots: conflict.operators.map(({ slot, index, operatorId }) => {
+          const label = (config.operators ?? []).find((entry) =>
+            entry.id === operatorId
+          )?.label ?? operatorId;
+          return `${slot === "command" ? "Command" : "Crew"} ${index} — ${label}`;
+        }).join("; "),
+      }));
 
     const targetLabels = {};
     const targetComponents = new Map();
@@ -1241,6 +1258,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       isGM,
       canOperate,
       unavailableReason,
+      actReason,
+      rosterConflicts,
       canRefit: !refitDenial,
       refitDenial,
       refitSlots,
@@ -2005,6 +2024,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const release = html.querySelector("[data-tab-panel='helm'] [data-ui-operation='releaseControl'][data-control='helm']");
       if (release) {
         release.disabled = !holder || !this.#canAct;
+        release.title = !this.#canAct
+          ? denial
+          : !holder
+          ? "No helm operator to release."
+          : "Release helm control.";
       }
       let reason = "";
       try {
@@ -2033,6 +2057,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       if (arm) {
         arm.hidden = Boolean(state.evasion?.armed || reason);
         arm.disabled = !this.#canAct;
+        arm.title = !this.#canAct ? denial : "Reserve timeline to evade.";
       }
       const disarm = form.querySelector("[data-ui-operation='disarmEvasion']");
       if (disarm) {
@@ -2175,7 +2200,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             `${system.label} power point ${index}`,
           );
           button.disabled = !this.#canAct;
-          button.title = `${system.label} ${index} Power${isOverclock ? " (Overclock)" : ""}${isReserved ? " (Weapon Reserved)" : ""}`;
+          button.title = !this.#canAct
+            ? denial
+            : `${system.label} ${index} Power${
+              isOverclock ? " (Overclock)" : ""
+            }${isReserved ? " (Weapon Reserved)" : ""}`;
 
           // Direct slab click
           button.addEventListener("click", (e) => {
@@ -2229,7 +2258,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           const cur = numeric(input.value);
           const next = values.find((v) => v > cur);
           const prev = values.filter((v) => v < cur).at(-1);
-          iconBtn.title = `${system.label}: ${cur} Power\nLeft-click: +1 (${next ?? "max"})\nRight-click: −1 (${prev ?? "min"})`;
+          iconBtn.title = !this.#canAct
+            ? denial
+            : `${system.label}: ${cur} Power\nLeft-click: +1 (${
+              next ?? "max"
+            })\nRight-click: −1 (${prev ?? "min"})`;
         }
       }
       if (focusSystem && focusIndex) {
@@ -2321,6 +2354,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       }
       if (submit) {
         submit.disabled = !this.#canAct;
+        submit.title = !this.#canAct
+          ? denial
+          : "Commit the staged shield allocation.";
       }
 
       let totalHp = 0;
@@ -2556,8 +2592,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     if (target) target.value = this.#sensorFocus;
     const reasonFor = (type) => {
       if (!this.#canAct) return "Inactive phase or not your station";
-      if (type === "fade") return "";
       if (!online) return "Sensors offline";
+      if (type === "fade") return "";
       if (type === "ping") return "";
       if (!contact) return "Select a contact";
       if (type === "acquire" || type === "breakLock" || type === "jam") {
@@ -2874,7 +2910,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       indicator.setAttribute("aria-label", message);
     }
     const fire = form.querySelector("button[type='submit']");
-    if (fire) fire.disabled = legal !== true || !this.#canAct;
+    if (fire) {
+      fire.disabled = legal !== true || !this.#canAct;
+      fire.title = fire.disabled
+        ? message || "Not a valid shot."
+        : "Fire this weapon at the selected target.";
+    }
   }
 
   #activeWeaponId() {

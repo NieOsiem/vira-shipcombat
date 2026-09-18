@@ -188,8 +188,13 @@ beforeEach(() => {
       activeGM: activeGm,
     }),
   };
+  // Foundry exposes Actor/Item as globals; sheet registration dereferences them.
+  globalThis.Item = class Item {};
   globalThis.foundry = {
-    applications: { api: { DialogV2: { confirm: async () => true } } },
+    applications: {
+      api: { DialogV2: { confirm: async () => true } },
+      apps: { DocumentSheetConfig: { registerSheet() {} } },
+    },
     data: { operators: { ForcedReplacement: FakeForcedReplacement } },
     utils: { deepClone: clone },
   };

@@ -1029,6 +1029,7 @@ test("registered hooks repair mixed synthetic data, retry failed startup, and gr
     "Hooks",
     "ui",
     "CONST",
+    "Item",
     "fromUuid",
     "JournalEntry",
   ];
@@ -1192,6 +1193,8 @@ test("registered hooks repair mixed synthetic data, retry failed startup, and gr
   }
   try {
     globalThis.Hooks = hooks;
+    // Foundry exposes Actor/Item as globals; sheet registration dereferences them.
+    globalThis.Item = class Item {};
     globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { NONE: 0, OBSERVER: 2 } };
     globalThis.ui = {
       notifications: {
@@ -1200,6 +1203,7 @@ test("registered hooks repair mixed synthetic data, retry failed startup, and gr
       },
     };
     globalThis.foundry = {
+      applications: { apps: { DocumentSheetConfig: { registerSheet() {} } } },
       utils: { deepClone: clone, escapeHTML: (value) => String(value) },
       data: { operators: { ForcedReplacement: Replacement } },
       documents: {

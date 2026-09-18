@@ -145,6 +145,7 @@ export function runStartPhase(config, state, {
   turnKey = state?.turnKey,
   roster = state?.roster,
   occupiedIdentities = [],
+  conflictPolicy = "advisory",
   targets = [],
   nextStartKey = true,
   expiringJamSourceUuid,
@@ -165,7 +166,7 @@ export function runStartPhase(config, state, {
     draft.turnKey = turnKey ?? null;
     const expired = expireEffects(draft, "nextStart", draft.turnKey);
     resetEvasionAtStart(draft);
-    const rosterValidation = validateRoster(config, roster ?? { command: [], crew: [] }, { occupiedIdentities });
+    const rosterValidation = validateRoster(config, roster ?? { command: [], crew: [] }, { occupiedIdentities, conflictPolicy });
     draft.roster = { ...(draft.roster ?? {}), command: rosterValidation.command, crew: rosterValidation.crew };
     const shedding = applyPowerShedding(config, draft);
     events.push(event(0, "openingHousekeeping", { expired, roster: rosterValidation, shedding }));
@@ -179,7 +180,7 @@ export function runStartPhase(config, state, {
     events.push(event(6, "weaponReadiness", { events: automaticReadiness(config, draft) }));
     events.push(event(7, "beneficialSystems", { counters: tickEntryCounters(draft, entryCounters) }));
 
-    const resources = refreshResources(config, draft, { turnKey: draft.turnKey, roster: draft.roster, occupiedIdentities });
+    const resources = refreshResources(config, draft, { turnKey: draft.turnKey, roster: draft.roster, occupiedIdentities, conflictPolicy });
     draft.timeline = 0;
     draft.rotationSpent = 0;
     resetEvasionAtStart(draft);

@@ -989,6 +989,7 @@ export function executeShipOperation(operation, context) {
       result = runStartPhase(source.config, source.state, {
         ...request.payload,
         occupiedIdentities: occupiedRosterIdentities(source, drafts),
+        conflictPolicy: "advisory",
         targets,
         random: randomSource(context),
       });
@@ -1024,6 +1025,7 @@ export function executeShipOperation(operation, context) {
       const roster = request.payload.roster ?? request.payload;
       const validated = validateRoster(source.config, roster, {
         occupiedIdentities: occupiedRosterIdentities(source, drafts),
+        conflictPolicy: "explicit",
       });
       source.state.roster = {
         ...(source.state.roster ?? {}),
@@ -1037,6 +1039,7 @@ export function executeShipOperation(operation, context) {
       result = refreshResources(source.config, source.state, {
         ...request.payload,
         occupiedIdentities: occupiedRosterIdentities(source, drafts),
+        conflictPolicy: "advisory",
       });
       break;
     case OPERATION_TYPES.SPEND_RESOURCE:

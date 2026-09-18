@@ -70,18 +70,24 @@ class FakeActor {
 
 let previousFoundry;
 let previousGame;
+let previousItem;
 beforeEach(() => {
   previousFoundry = globalThis.foundry;
   previousGame = globalThis.game;
+  previousItem = globalThis.Item;
+  // Foundry exposes Actor/Item as globals; sheet registration dereferences them.
+  globalThis.Item = class Item {};
   const gm = { id: "gm", active: true, isGM: true };
   globalThis.game = { user: gm, users: { activeGM: gm } };
   globalThis.foundry = {
+    applications: { apps: { DocumentSheetConfig: { registerSheet() {} } } },
     data: { operators: { ForcedReplacement: FakeForcedReplacement } },
   };
 });
 afterEach(() => {
   globalThis.foundry = previousFoundry;
   globalThis.game = previousGame;
+  globalThis.Item = previousItem;
 });
 
 function effectiveConfig(actor) {

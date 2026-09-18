@@ -232,6 +232,7 @@ describe("crew qualification feature persistence and sync", () => {
 
     globalThis.game = {
       actors: [mockShip],
+      user: { id: "gm", isGM: true },
     };
 
     await syncAssignedShips("actor-42", {
@@ -244,6 +245,35 @@ describe("crew qualification feature persistence and sync", () => {
     expect(updatedOps[0].label).toBe("Tali'Zorah vas Normandy");
     expect(updatedOps[0].ratings.engineering).toBe(10);
     expect(updatedOps[0].ratings.sensors).toBe(8);
+  });
+
+  test("syncAssignedShips writes nothing for a non-GM client", async () => {
+    const { syncAssignedShips } = await import("../scripts/foundry/crew-sheet.js");
+    let updatedPayload = null;
+    const mockShip = {
+      type: "vira-shipcombat.ship",
+      system: {
+        shipCombat: {
+          config: {
+            operators: [
+              { id: "actor-actor-42", actorId: "actor-42", label: "Tali'Zorah" },
+            ],
+          },
+        },
+      },
+      async update(diff) {
+        updatedPayload = diff;
+      },
+    };
+
+    globalThis.game = {
+      actors: [mockShip],
+      user: { id: "player", isGM: false },
+    };
+
+    await syncAssignedShips("actor-42", { label: "Tali'Zorah vas Normandy" });
+
+    expect(updatedPayload).toBeNull();
   });
 });
 

@@ -2,6 +2,23 @@ import { RuleViolation } from "../constants.js";
 
 const COMMAND_ACTIONS = 3;
 const CREW_ORDERS = 1;
+const ROSTER_SLOTS = ["command", "crew"];
+
+/**
+ * Conflict policies: an explicit roster edit rejects duplicate identities, every
+ * other caller only reports them.
+ */
+const CONFLICT_POLICY_EXPLICIT = "explicit";
+const CONFLICT_POLICY_ADVISORY = "advisory";
+
+function rosterEntries(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function assignmentOperatorId(assignment) {
+  if (typeof assignment === "string") return assignment;
+  return assignment?.operatorId ?? assignment?.id ?? null;
+}
 
 function asAssignment(value) {
   if (typeof value === "string") return { operatorId: value };
@@ -95,7 +112,34 @@ function occupiedTokens(occupiedIdentities) {
   return result;
 }
 
-function normalizedRoster(config, roster, occupiedIdentities = []) {
+function crossShipConflicts(assignments, occupiedIdentities) {
+  const occupied = occupiedTokens(occupiedIdentities);
+  if (!occupied.size) return [];
+  const colliding = new Map();
+  for (const { slot, index, identity } of assignments) {
+    for (const token of identityTokens(identity)) {
+      if (!occupied.has(token)) continue;
+      if (!colliding.has(token)) colliding.set(token, []);
+      colliding.get(token).push({ slot, index, operatorId: identity.operatorId });
+    }
+  }
+  return Array.from(
+    colliding,
+    ([token, operators]) => ({ tokens: [token], operators, scope: "crossShip" }),
+  );
+}
+
+/**
+ * Resolve the roster into canonical entries, capacities, and identity conflicts.
+ * Collisions with individuals bound on other ships (`occupiedIdentities`) are always
+ * advisory; collisions inside this roster abort only under the explicit-edit policy.
+ */
+function normalizedRoster(
+  config,
+  roster,
+  occupiedIdentities = [],
+  { conflictPolicy = CONFLICT_POLICY_ADVISORY } = {},
+) {
   const command = Array.isArray(roster?.command)
     ? roster.command.map(asAssignment)
     : [];
@@ -129,7 +173,6 @@ function normalizedRoster(config, roster, occupiedIdentities = []) {
     );
   }
 
-  const used = occupiedTokens(occupiedIdentities);
   const assignments = [];
   for (
     const [slot, entries, capacity] of [[
@@ -187,20 +230,6 @@ function normalizedRoster(config, roster, occupiedIdentities = []) {
         );
       }
       const identity = assignmentIdentity(profile, assignment);
-      const duplicates = identityTokens(identity).filter((token) =>
-        used.has(token)
-      );
-      if (duplicates.length) {
-        throw new RuleViolation(
-          "DUPLICATE_OPERATOR",
-          "An individual, actor, user, AI, or drone cannot occupy more than one resource-granting slot.",
-          {
-            operatorId: profile.id,
-            identities: duplicates,
-          },
-        );
-      }
-      for (const token of identityTokens(identity)) used.add(token);
       assignments.push({
         slot,
         index: slotIndex,
@@ -210,7 +239,29 @@ function normalizedRoster(config, roster, occupiedIdentities = []) {
       });
     }
   }
-  return { command, crew, assignments };
+
+  const conflicts = [
+    ...rosterIdentityConflicts(config, { command, crew }).map((conflict) => ({
+      ...conflict,
+      scope: "roster",
+    })),
+    ...crossShipConflicts(assignments, occupiedIdentities),
+  ];
+  if (conflictPolicy === CONFLICT_POLICY_EXPLICIT) {
+    const conflict = conflicts.find((entry) => entry.scope === "roster");
+    if (conflict) {
+      throw new RuleViolation(
+        "DUPLICATE_OPERATOR",
+        "An individual, actor, user, AI, or drone cannot occupy more than one resource-granting slot.",
+        {
+          operatorId: conflict.operators[conflict.operators.length - 1]
+            .operatorId,
+          identities: conflict.tokens,
+        },
+      );
+    }
+  }
+  return { command, crew, assignments, conflicts };
 }
 
 function assignmentFor(config, draft, operatorId) {
@@ -360,12 +411,112 @@ function releaseOperatorControls(draft, operatorId) {
   return released;
 }
 
+/**
+ * Identity collisions inside ONE ship's roster: the same operator twice, or two
+ * slots binding the same actorId or userId. Pure reporting: callers apply policy.
+ * @param {object} config ship configuration
+ * @param {object} roster raw or normalized command/crew roster
+ * @returns {Array<{ tokens: string[], operators: Array<{ slot: "command"|"crew", index: number, operatorId: string }> }>}
+ */
+export function rosterIdentityConflicts(config, roster) {
+  const entries = [];
+  for (const slot of ROSTER_SLOTS) {
+    const list = rosterEntries(roster?.[slot]);
+    for (let position = 0; position < list.length; position += 1) {
+      const assignment = asAssignment(list[position]);
+      const profile = profileById(config, assignment.operatorId);
+      entries.push({
+        slot,
+        index: Number.isInteger(assignment.slot) ? assignment.slot : position,
+        operatorId: assignment.operatorId,
+        tokens: identityTokens({
+          operatorId: assignment.operatorId,
+          actorId: assignment.actorId ?? profile?.actorId ?? null,
+          userId: assignment.userId ?? profile?.userId ?? null,
+        }),
+      });
+    }
+  }
+
+  const parents = entries.map((_, index) => index);
+  const rootOf = (index) => {
+    let cursor = index;
+    while (parents[cursor] !== cursor) cursor = parents[cursor];
+    return cursor;
+  };
+  const ownerByToken = new Map();
+  for (let index = 0; index < entries.length; index += 1) {
+    for (const token of entries[index].tokens) {
+      const owner = ownerByToken.get(token);
+      if (owner === undefined) {
+        ownerByToken.set(token, index);
+        continue;
+      }
+      const left = Math.min(rootOf(owner), rootOf(index));
+      const right = Math.max(rootOf(owner), rootOf(index));
+      parents[right] = left;
+    }
+  }
+
+  const groups = new Map();
+  for (let index = 0; index < entries.length; index += 1) {
+    const key = rootOf(index);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(index);
+  }
+
+  const conflicts = [];
+  for (const indices of groups.values()) {
+    if (indices.length < 2) continue;
+    const counts = new Map();
+    for (const index of indices) {
+      for (const token of entries[index].tokens) {
+        counts.set(token, (counts.get(token) ?? 0) + 1);
+      }
+    }
+    conflicts.push({
+      tokens: Array.from(counts)
+        .filter(([, count]) => count > 1)
+        .map(([token]) => token),
+      operators: indices.map((index) => ({
+        slot: entries[index].slot,
+        index: entries[index].index,
+        operatorId: entries[index].operatorId,
+      })),
+    });
+  }
+  return conflicts;
+}
+
+/**
+ * User ids seated in this ship's roster.
+ * @param {object} config ship configuration
+ * @param {object} state ship state
+ * @returns {Set<string>}
+ */
+export function assignedUserIds(config, state) {
+  const profiles = new Map(
+    operatorProfiles(config).map((profile) => [profile?.id, profile]),
+  );
+  const ids = new Set();
+  for (const slot of ROSTER_SLOTS) {
+    for (const assignment of rosterEntries(state?.roster?.[slot])) {
+      const userId = assignment?.userId ??
+        profiles.get(assignmentOperatorId(assignment))?.userId;
+      if (typeof userId === "string" && userId) ids.add(userId);
+    }
+  }
+  return ids;
+}
+
 export function validateRoster(
   config,
   roster,
-  { occupiedIdentities = [] } = {},
+  { occupiedIdentities = [], conflictPolicy = CONFLICT_POLICY_ADVISORY } = {},
 ) {
-  const normalized = normalizedRoster(config, roster, occupiedIdentities);
+  const normalized = normalizedRoster(config, roster, occupiedIdentities, {
+    conflictPolicy,
+  });
   return {
     valid: true,
     command: normalized.command,
@@ -375,16 +526,24 @@ export function validateRoster(
       index,
       ...identity,
     })),
+    conflicts: normalized.conflicts,
   };
 }
 
 export function refreshResources(
   config,
   draft,
-  { turnKey = draft?.turnKey, roster = null, occupiedIdentities = [] } = {},
+  {
+    turnKey = draft?.turnKey,
+    roster = null,
+    occupiedIdentities = [],
+    conflictPolicy = CONFLICT_POLICY_ADVISORY,
+  } = {},
 ) {
   const nextRoster = roster ?? draft?.roster ?? { command: [], crew: [] };
-  const normalized = normalizedRoster(config, nextRoster, occupiedIdentities);
+  const normalized = normalizedRoster(config, nextRoster, occupiedIdentities, {
+    conflictPolicy,
+  });
   const actions = {};
   const orders = {};
   for (const entry of normalized.assignments) {
@@ -410,6 +569,7 @@ export function refreshResources(
     turnKey: turnKey ?? null,
     actions: { ...actions },
     orders: { ...orders },
+    conflicts: normalized.conflicts,
   };
 }
 

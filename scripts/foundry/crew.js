@@ -1,7 +1,7 @@
 import { MODULE_ID, OPERATOR_TYPES } from "../constants.js";
 
 export const CREW_FEATURE_NAME = "Ship Station Qualifications";
-export const CREW_FEATURE_IMG = "icons/tools/navigation/compass-brass-vintage.svg";
+export const CREW_FEATURE_IMG = "icons/tools/navigation/compass-plain-blue.webp";
 
 export const DEFAULT_RATINGS = Object.freeze({
   piloting: 1,

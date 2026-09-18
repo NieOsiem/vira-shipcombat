@@ -119,7 +119,8 @@
 
 .ship-console-layout button:disabled {
   cursor: not-allowed;
-  opacity: 0.85;
+  filter: grayscale(45%);
+  opacity: 0.55;
 }
 
 .ship-console-layout input,
@@ -202,6 +203,15 @@
   align-items: center;
   min-width: 0;
   gap: 0.4rem;
+}
+
+.ship-console-title-row h1 {
+  flex: 1 1 auto;
+}
+
+.ship-console-title-row .ship-phase {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .ship-console-heading h1 {
@@ -665,6 +675,36 @@
 .ship-operator-card { display: grid; gap: 0.35rem; }
 .ship-roster-editor { margin-top: 0.45rem; }
 
+.ship-roster-conflicts {
+  margin-bottom: 0.5rem;
+  border-color: rgb(255 189 82 / 55%) !important;
+  background: rgb(255 189 82 / 10%) !important;
+}
+
+.ship-roster-conflicts header h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ship-amber);
+}
+
+.ship-roster-conflicts ul {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0.3rem 0 0;
+  padding-left: 1rem;
+  font-size: 0.68rem;
+}
+
+.ship-roster-conflicts li {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.ship-roster-conflicts li span {
+  color: var(--ship-muted);
+}
+
 .ship-page-operator {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -785,7 +825,8 @@
 
 .ship-console-layout input[type="range"]:disabled {
   cursor: not-allowed;
-  opacity: 0.85;
+  filter: grayscale(45%);
+  opacity: 0.5;
 }
 
 .ship-slider-track input[type="range"]::-webkit-slider-runnable-track,
@@ -4242,7 +4283,7 @@
 .ship-helm-slider-track input[type="range"]:disabled {
   cursor: not-allowed;
   filter: none !important;
-  opacity: 0.85;
+  opacity: 0.5;
 }
 
 /* Track styling with colored zones */

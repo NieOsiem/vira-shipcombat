@@ -6,6 +6,10 @@ import {
   createInitialState,
 } from "../scripts/model/defaults.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
+import {
+  assignedUserIds,
+  rosterIdentityConflicts,
+} from "../scripts/rules/operators.js";
 import { trackKey } from "../scripts/rules/sensors.js";
 import { publishOperationEvents } from "../scripts/foundry/chat.js";
 
@@ -139,6 +143,17 @@ function lifecycleResult(type, phase, payload = {}) {
     request(type, SOURCE, [], payload),
     context([[SOURCE, source]]),
   );
+}
+
+function operationDetail(result, type) {
+  return [...result.gmEvents, ...result.publicEvents]
+    .find((entry) => entry.type === type).detail;
+}
+
+function startPhaseConflicts(result) {
+  const { events } = operationDetail(result, "startPhase");
+  return events.find((event) => event.type === "openingHousekeeping").roster
+    .conflicts;
 }
 
 describe("executeShipOperation lifecycle dispatch", () => {
@@ -349,7 +364,7 @@ describe("authority invariants", () => {
     }
   });
 
-  test("Start rejects a bound actor already assigned to another participating ship", () => {
+  test("Start reports a bound actor already assigned to another participating ship", () => {
     const source = ship(SOURCE);
     const target = ship(TARGET_A);
     source.state.phase = "start";
@@ -359,15 +374,20 @@ describe("authority invariants", () => {
     target.state.roster.command.find((entry) => entry.operatorId === GUNNER)
       .actorId = "shared-actor";
 
-    expect(errorCode(() =>
-      executeShipOperation(
-        request("startPhase", SOURCE, [], { occupiedIdentities: [] }),
-        context([[SOURCE, source], [TARGET_A, target]]),
-      )
-    )).toBe("DUPLICATE_OPERATOR");
+    const result = executeShipOperation(
+      request("startPhase", SOURCE, [], { occupiedIdentities: [] }),
+      context([[SOURCE, source], [TARGET_A, target]]),
+    );
+
+    expect(result.shipStates[SOURCE].phase).toBe("active");
+    expect(startPhaseConflicts(result)).toEqual([{
+      tokens: ["actor:shared-actor"],
+      operators: [{ slot: "command", index: 0, operatorId: PILOT }],
+      scope: "crossShip",
+    }]);
   });
 
-  test("roster edits reject a bound user already assigned to another participating ship", () => {
+  test("roster edits report a bound user already assigned to another participating ship", () => {
     const source = ship(SOURCE);
     const target = ship(TARGET_A);
     source.state.phase = "start";
@@ -375,15 +395,43 @@ describe("authority invariants", () => {
     assignedUser(source, PILOT, "shared-user");
     assignedUser(target, GUNNER, "shared-user");
 
-    expect(errorCode(() =>
-      executeShipOperation(
-        request("setRoster", SOURCE, [TARGET_A], {
-          roster: clone(source.state.roster),
-          occupiedIdentities: [],
-        }),
-        context([[SOURCE, source], [TARGET_A, target]]),
-      )
-    )).toBe("DUPLICATE_OPERATOR");
+    const result = executeShipOperation(
+      request("setRoster", SOURCE, [TARGET_A], {
+        roster: clone(source.state.roster),
+        occupiedIdentities: [],
+      }),
+      context([[SOURCE, source], [TARGET_A, target]]),
+    );
+
+    const roster = result.shipStates[SOURCE].roster;
+    expect(roster.command.find((entry) => entry.operatorId === PILOT).userId)
+      .toBe("shared-user");
+    expect(operationDetail(result, "setRoster").conflicts).toEqual([{
+      tokens: ["user:shared-user"],
+      operators: [{ slot: "command", index: 0, operatorId: PILOT }],
+      scope: "crossShip",
+    }]);
+  });
+
+  test("resource refresh reports but never rejects a user bound on another ship", () => {
+    const source = ship(SOURCE);
+    const target = ship(TARGET_A);
+    source.state.phase = "active";
+    target.state.phase = "active";
+    assignedUser(source, PILOT, "shared-user");
+    assignedUser(target, GUNNER, "shared-user");
+
+    const result = executeShipOperation(
+      request("refreshResources", SOURCE),
+      context([[SOURCE, source], [TARGET_A, target]]),
+    );
+
+    expect(result.shipStates[SOURCE].resources.actions[PILOT]).toBe(3);
+    expect(operationDetail(result, "refreshResources").conflicts).toEqual([{
+      tokens: ["user:shared-user"],
+      operators: [{ slot: "command", index: 0, operatorId: PILOT }],
+      scope: "crossShip",
+    }]);
   });
 
   test("Start ignores bound individuals on ships outside combat", () => {
@@ -417,6 +465,34 @@ describe("authority invariants", () => {
         context([[SOURCE, source]]),
       )
     )).toBe("DUPLICATE_OPERATOR");
+  });
+
+  test("Start with one operator in two slots resolves Active and reports the conflict", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "start";
+    source.state.roster.command[1].operatorId = PILOT;
+
+    const result = executeShipOperation(
+      request("startPhase", SOURCE),
+      context([[SOURCE, source]]),
+    );
+
+    expect(result.shipStates[SOURCE].phase).toBe("active");
+    expect(result.shipStates[SOURCE].resources.actions).toEqual({
+      [PILOT]: 3,
+    });
+    expect(result.shipStates[SOURCE].roster.command).toEqual([
+      { operatorId: PILOT, slot: 0 },
+      { operatorId: PILOT, slot: 1 },
+    ]);
+    expect(startPhaseConflicts(result)).toEqual([{
+      tokens: [`operator:${PILOT}`],
+      operators: [
+        { slot: "command", index: 0, operatorId: PILOT },
+        { slot: "command", index: 1, operatorId: PILOT },
+      ],
+      scope: "roster",
+    }]);
   });
 
   test("Start cannot run twice and End requires the mandatory coast", () => {
@@ -795,5 +871,77 @@ describe("administrative reposition", () => {
       });
       expect(created).toHaveLength(1);
     });
+  });
+});
+
+describe("operator identity helpers", () => {
+  test("assignedUserIds collects profile users and per-slot overrides", () => {
+    const source = ship(SOURCE);
+    const { config, state } = source;
+    config.operators.find((entry) => entry.id === PILOT).userId = "profile-user";
+    config.operators.find((entry) => entry.id === GUNNER).userId =
+      "profile-gunner";
+    const gunner = state.roster.command.find((entry) =>
+      entry.operatorId === GUNNER
+    );
+    gunner.userId = "slot-user";
+
+    expect([...assignedUserIds(config, state)].sort()).toEqual([
+      "profile-user",
+      "slot-user",
+    ]);
+  });
+
+  test("assignedUserIds ignores unbound operators and blank user ids", () => {
+    const source = ship(SOURCE);
+    const { config, state } = source;
+    state.roster.crew[0].userId = "";
+    config.operators.find((entry) => entry.id === GUNNER).userId = "";
+
+    expect(assignedUserIds(config, state).size).toBe(0);
+    expect(assignedUserIds(config, {}).size).toBe(0);
+  });
+
+  test("rosterIdentityConflicts reports one operator holding two slots", () => {
+    const source = ship(SOURCE);
+    source.state.roster.command[1].operatorId = PILOT;
+
+    expect(rosterIdentityConflicts(source.config, source.state.roster))
+      .toEqual([{
+        tokens: [`operator:${PILOT}`],
+        operators: [
+          { slot: "command", index: 0, operatorId: PILOT },
+          { slot: "command", index: 1, operatorId: PILOT },
+        ],
+      }]);
+  });
+
+  test("rosterIdentityConflicts reports two operators bound to the same actor", () => {
+    const source = ship(SOURCE);
+    const { config, state } = source;
+    for (const operatorId of [PILOT, GUNNER]) {
+      config.operators.find((entry) => entry.id === operatorId).actorId =
+        "shared-actor";
+    }
+
+    expect(rosterIdentityConflicts(config, state.roster)).toEqual([{
+      tokens: ["actor:shared-actor"],
+      operators: [
+        { slot: "command", index: 0, operatorId: PILOT },
+        { slot: "command", index: 1, operatorId: GUNNER },
+      ],
+    }]);
+  });
+
+  test("rosterIdentityConflicts is empty for a distinct roster", () => {
+    const source = ship(SOURCE);
+    source.config.operators.find((entry) => entry.id === PILOT).userId =
+      "pilot-user";
+    source.config.operators.find((entry) => entry.id === GUNNER).userId =
+      "gunner-user";
+
+    expect(rosterIdentityConflicts(source.config, source.state.roster))
+      .toEqual([]);
+    expect(rosterIdentityConflicts(source.config, {})).toEqual([]);
   });
 });

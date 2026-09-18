@@ -2,7 +2,7 @@
   <header class="ship-console-header">
     <div class="ship-console-portrait"><img src="{{actor.img}}" alt=""></div>
     <div class="ship-console-heading">
-      <div class="ship-console-title-row"><h1>{{actor.name}}</h1></div>
+      <div class="ship-console-title-row"><h1>{{actor.name}}</h1><span class="ship-phase{{#unless view.combat.inCombat}} ship-phase--outsideCombat{{/unless}}" data-phase-chip title="{{view.status.phaseLabel}}{{#if view.status.turnLabel}} · {{view.status.turnLabel}}{{/if}}">{{view.combat.label}}</span></div>
     </div>
     <section class="ship-status-strip" aria-label="Ship resources">
       <article class="ship-status-meter"><div><span>Hull</span><strong>{{view.status.hull.value}} / {{view.status.hull.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.hull.tone}}" style="{{view.status.hull.style}}"><span></span></div></article>
@@ -18,6 +18,7 @@
     <nav class="ship-console-tabs" role="tablist" aria-label="Combat sections">
       {{#each tabs}}<button type="button" role="tab" data-tab-button="{{id}}" aria-selected="{{active}}" tabindex="{{#if active}}0{{else}}-1{{/if}}" aria-controls="panel-{{id}}">{{label}}</button>{{/each}}
     </nav>
+    {{#if isGM}}
     <details class="ship-maintenance-menu">
       <summary title="Maintenance and configuration" aria-label="Maintenance and configuration"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></summary>
       <nav aria-label="Maintenance sections">
@@ -25,6 +26,7 @@
         <button type="button" data-native-vehicle-sheet><i class="fa-solid fa-file-shield" aria-hidden="true"></i> Vehicle configuration</button>
       </nav>
     </details>
+    {{/if}}
   </div>
 
   <div class="ship-console-panels">
@@ -43,6 +45,8 @@
 
     <section id="panel-crew" class="ship-console-panel" role="tabpanel" aria-label="Crew" data-tab-panel="crew" {{#unless tabState.crew.active}}hidden{{/unless}}>
       <div class="ship-panel-heading"><h2>Crew &amp; Stations</h2><span class="ship-readout">Orders {{view.crewOrders.availableOrders}} · Command {{view.stationSlots.command.length}} · Crew {{view.stationSlots.crew.length}}</span></div>
+
+      {{#if rosterConflicts.length}}<section class="ship-card ship-roster-conflicts" role="alert" aria-label="Roster conflicts"><header><h3><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Station conflicts</h3></header><ul>{{#each rosterConflicts}}<li><strong>{{tokens}}</strong><span>{{slots}}</span></li>{{/each}}</ul><p class="ship-muted">An identity bound to more than one station of this ship is reported here; the engine does not block combat on it.</p></section>{{/if}}
 
       <!-- Support Crew Orders Console -->
       <section class="ship-card ship-crew-orders-board" aria-label="Support Crew Orders">
@@ -69,7 +73,7 @@
                   <input type="hidden" name="operatorId" value="{{../view.crewOrders.defaultOperatorId}}">
                   {{#if conditionId}}<input type="hidden" name="conditionId" value="{{conditionId}}"><input type="hidden" name="rating" value="engineering">{{/if}}
                   {{#if weaponId}}<input type="hidden" name="weaponId" value="{{weaponId}}">{{/if}}
-                  <button type="submit" class="ship-crew-job-btn" {{#unless ../canAct}}disabled{{/unless}}>
+                  <button type="submit" class="ship-crew-job-btn" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>
                     <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> {{actionLabel}} ({{costLabel}})
                   </button>
                 </form>
@@ -106,9 +110,9 @@
               </dl>
               <p class="ship-muted">Controls: {{operator.controlsLabel}}</p>
               <div class="ship-segmented">
-                <button type="button" data-ui-operation="takeControl" data-control="helm" {{#unless ../canAct}}disabled{{/unless}}>Helm</button>
-                <button type="button" data-ui-operation="takeControl" data-control="power" {{#unless ../canAct}}disabled{{/unless}}>Power</button>
-                <button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless ../canAct}}disabled{{/unless}}>Defense</button>
+                <button type="button" data-ui-operation="takeControl" data-control="helm" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Helm</button>
+                <button type="button" data-ui-operation="takeControl" data-control="power" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Power</button>
+                <button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Defense</button>
               </div>
               <div class="ship-action-row ship-slot-actions">
                 <button type="button" class="ship-slot-action-btn" data-roster-edit="{{operator.actorId}}" title="Edit character station ratings"><i class="fa-solid fa-pen-to-square"></i> Ratings</button>
@@ -218,9 +222,9 @@
         <div class="ship-helm-actions-inline">
           <span class="ship-readout" title="Helm Station Status">{{#if view.helmHeld}}ACTIVE{{else}}VACANT{{/if}}</span>
           {{#if view.helmHeld}}
-            <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Release Helm</button>
+            <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Release Helm</button>
           {{else}}
-            <button type="button" class="ship-station-btn ship-station-btn--take ship-primary" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-hand" aria-hidden="true"></i> Take Helm</button>
+            <button type="button" class="ship-station-btn ship-station-btn--take ship-primary" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-hand" aria-hidden="true"></i> Take Helm</button>
           {{/if}}
         </div>
       </div>
@@ -289,7 +293,7 @@
             <div class="ship-vector-compass">
               <span class="ship-vector-label ship-vector-label--f">F</span>
               <span class="ship-vector-label ship-vector-label--r">R</span>
-              <span class="ship-vector-label ship-vector-label--a">R</span>
+              <span class="ship-vector-label ship-vector-label--a">A</span>
               <span class="ship-vector-label ship-vector-label--l">L</span>
               <div class="ship-vector-image" data-vector-image style="transform: rotate({{view.movement.heading}}deg)">
                 <img src="{{actor.img}}" alt="{{actor.name}}">
@@ -316,10 +320,10 @@
         </div>
 
         <div class="ship-helm-actions">
-          <button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-play" aria-hidden="true"></i> <span>Commit maneuver<small>Spend allocated time</small></span></button>
-          <button type="button" data-coast-remaining="true" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span>Coast remaining<small>Use remaining time</small></span></button>
-          <button type="button" data-helm-reset {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span>Reset sliders<small>Clear current inputs</small></span></button>
-          {{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Disarm evasion<small>Release reserve</small></span></button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled{{/unless}}><i class="fa-solid fa-shield" aria-hidden="true"></i> <span>Arm evasion<small>Reserve timeline</small></span></button>{{/if}}
+          <button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-play" aria-hidden="true"></i> <span>Commit maneuver<small>Spend allocated time</small></span></button>
+          <button type="button" data-coast-remaining="true" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span>Coast remaining<small>Use remaining time</small></span></button>
+          <button type="button" data-helm-reset {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span>Reset sliders<small>Clear current inputs</small></span></button>
+          {{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Disarm evasion<small>Release reserve</small></span></button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield" aria-hidden="true"></i> <span>Arm evasion<small>Reserve timeline</small></span></button>{{/if}}
         </div>
         <p class="ship-muted" data-evasion-reason role="status"></p>
       </form>
@@ -350,7 +354,7 @@
                 <div class="ship-ftl-system" data-system="{{id}}">
                   <input type="hidden" name="{{id}}" value="{{value}}" data-power-system>
                   <div class="ship-ftl-stack" data-power-blocks="{{id}}" role="group" aria-label="{{label}} power"></div>
-                  <button type="button" class="ship-ftl-icon" data-power-icon="{{id}}" aria-label="{{label}}: Left-click increase, Right-click decrease" title="{{label}} · Left-click: +1 · Right-click: −1" {{#unless ../canAct}}disabled{{/unless}}>
+                  <button type="button" class="ship-ftl-icon" data-power-icon="{{id}}" aria-label="{{label}}: Left-click increase, Right-click decrease{{#unless ../canAct}} — {{../actReason}}{{/unless}}" title="{{#unless ../canAct}}{{../actReason}}{{else}}{{label}} · Left-click: +1 · Right-click: −1{{/unless}}" {{#unless ../canAct}}disabled{{/unless}}>
                     <i class="{{icon}}" aria-hidden="true"></i>
                   </button>
                   <span class="ship-ftl-system-label">{{shortLabel}}</span>
@@ -398,7 +402,7 @@
           </div>
           <div class="ship-power-footer">
             <details class="ship-power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
-            <div class="ship-action-row ship-power-actions"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button></div>
+            <div class="ship-action-row ship-power-actions"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Commit and release</button></div>
           </div>
           <p class="ship-preview-line" data-preview aria-live="polite"></p>
         </form>
@@ -425,15 +429,15 @@
                   <div class="ship-shield-control ship-shield-control--charge">
                     <div class="ship-shield-row">
                       <span class="ship-shield-row-label">Charge</span>
-                      <button type="button" data-shield-alloc="{{id}}" data-delta="-1" aria-label="Remove one {{label}} shield allocation" {{#unless ../canAct}}disabled{{/unless}}>−</button>
+                      <button type="button" data-shield-alloc="{{id}}" data-delta="-1" aria-label="Remove one {{label}} shield allocation" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>−</button>
                       <strong class="ship-shield-row-value" data-shield-row-value="{{id}}">{{allocation}} / {{capacity}}</strong>
-                      <button type="button" data-shield-alloc="{{id}}" data-delta="+1" aria-label="Add one {{label}} shield allocation" {{#unless ../canAct}}disabled{{/unless}}>+</button>
+                      <button type="button" data-shield-alloc="{{id}}" data-delta="+1" aria-label="Add one {{label}} shield allocation" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>+</button>
                     </div>
                   </div>
                   <div class="ship-shield-control-divider" aria-hidden="true"></div>
                   <div class="ship-shield-control ship-shield-control--regen">
                     <div class="ship-shield-row ship-shield-row--regen">
-                      <button type="button" data-shield-regen="{{id}}" data-delta="-1" aria-label="Decrease {{label}} regen weight" {{#unless ../canAct}}disabled{{/unless}}>−</button>
+                      <button type="button" data-shield-regen="{{id}}" data-delta="-1" aria-label="Decrease {{label}} regen weight" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>−</button>
                       <div class="ship-shield-regen-middle">
                         <div class="ship-shield-regen-topline">
                           <span class="ship-shield-row-label">Regen</span>
@@ -441,7 +445,7 @@
                         </div>
                         <div class="ship-shield-pips" data-shield-regen-pips="{{id}}" role="group" aria-label="{{label}} regeneration weight, one pip per 5 percent"></div>
                       </div>
-                      <button type="button" data-shield-regen="{{id}}" data-delta="+1" aria-label="Increase {{label}} regen weight" {{#unless ../canAct}}disabled{{/unless}}>+</button>
+                      <button type="button" data-shield-regen="{{id}}" data-delta="+1" aria-label="Increase {{label}} regen weight" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>+</button>
                     </div>
                   </div>
                 </div>
@@ -476,10 +480,10 @@
           {{#unless view.shields.regeneration}}<p class="ship-muted">0 regeneration at current tier; regeneration policy persists.</p>{{/unless}}
           <p class="ship-preview-line" data-preview aria-live="polite"></p>
           <div class="ship-action-row ship-shield-actions">
-            <button type="button" data-distribute="allocation" {{#unless canAct}}disabled{{/unless}}>Balance charge</button>
-            <button type="button" data-distribute="regen" {{#unless canAct}}disabled{{/unless}}>Balance regen</button>
-            <button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled{{/unless}}>Take defense</button>
-            <button class="ship-primary" type="submit" {{#unless canAct}}disabled{{/unless}}>Commit and release</button>
+            <button type="button" data-distribute="allocation" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Balance charge</button>
+            <button type="button" data-distribute="regen" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Balance regen</button>
+            <button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take defense</button>
+            <button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Commit and release</button>
           </div>
         </form>
       {{/if}}
@@ -550,9 +554,9 @@
                 {{#if fault.visible}}<span class="ship-fault-chip ship-fault-chip--{{fault.severity}}" title="{{fault.detail}}">{{fault.label}}</span>{{/if}}
                 <span class="ship-ammo" title="Ammunition {{readiness}} of {{capacity}}"><span class="ship-ammo-label">Ammo</span><strong>{{readiness}}/{{capacity}}</strong><span class="ship-meter ship-meter--{{readinessMeter.tone}}" style="{{readinessMeter.style}}"><span></span></span></span>
                 <div class="ship-switch" role="group" aria-label="{{label}} power state">
-                  <button type="button" class="ship-switch-seg ship-switch-seg--off" data-weapon-setting="off" data-current="{{switch.off.current}}" data-reachable="{{switch.off.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Power Off{{#if switch.off.current}} — current state{{/if}}" title="{{#if switch.off.reason}}{{switch.off.reason}}{{else}}Shut this weapon down{{/if}}">Off</button>
-                  <button type="button" class="ship-switch-seg ship-switch-seg--on" data-weapon-setting="nominal" data-current="{{switch.nominal.current}}" data-reachable="{{switch.nominal.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Power On{{#if switch.nominal.current}} — current state{{/if}}" title="{{#if switch.nominal.reason}}{{switch.nominal.reason}}{{else}}Online in Nominal mode{{/if}}">On{{#if booting}}<span class="ship-switch-count" aria-hidden="true">{{bootCounter}}</span>{{/if}}</button>
-                  {{#if switch.overclock}}<button type="button" class="ship-switch-seg ship-switch-seg--oc" data-weapon-setting="overclock" data-current="{{switch.overclock.current}}" data-reachable="{{switch.overclock.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Overclock{{#if switch.overclock.current}} — current state{{/if}}" title="{{#if switch.overclock.reason}}{{switch.overclock.reason}}{{else}}Online in Overclock mode{{/if}}">OC</button>{{/if}}
+                  <button type="button" class="ship-switch-seg ship-switch-seg--off" data-weapon-setting="off" data-current="{{switch.off.current}}" data-reachable="{{switch.off.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Power Off{{#if switch.off.current}} — current state{{/if}}{{#unless ../canAct}} — {{../actReason}}{{/unless}}" title="{{#unless ../canAct}}{{../actReason}}{{else}}{{#if switch.off.reason}}{{switch.off.reason}}{{else}}Shut this weapon down{{/if}}{{/unless}}">Off</button>
+                  <button type="button" class="ship-switch-seg ship-switch-seg--on" data-weapon-setting="nominal" data-current="{{switch.nominal.current}}" data-reachable="{{switch.nominal.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Power On{{#if switch.nominal.current}} — current state{{/if}}{{#unless ../canAct}} — {{../actReason}}{{/unless}}" title="{{#unless ../canAct}}{{../actReason}}{{else}}{{#if switch.nominal.reason}}{{switch.nominal.reason}}{{else}}Online in Nominal mode{{/if}}{{/unless}}">On{{#if booting}}<span class="ship-switch-count" aria-hidden="true">{{bootCounter}}</span>{{/if}}</button>
+                  {{#if switch.overclock}}<button type="button" class="ship-switch-seg ship-switch-seg--oc" data-weapon-setting="overclock" data-current="{{switch.overclock.current}}" data-reachable="{{switch.overclock.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Overclock{{#if switch.overclock.current}} — current state{{/if}}{{#unless ../canAct}} — {{../actReason}}{{/unless}}" title="{{#unless ../canAct}}{{../actReason}}{{else}}{{#if switch.overclock.reason}}{{switch.overclock.reason}}{{else}}Online in Overclock mode{{/if}}{{/unless}}">OC</button>{{/if}}
                 </div>
                 <button class="ship-fire" type="submit" {{#unless ../canAttack}}disabled{{/unless}} aria-label="Fire {{label}}"><i class="fa-solid fa-crosshairs" aria-hidden="true"></i><span class="ship-fire-text">Fire</span></button>
               </div>
@@ -564,7 +568,7 @@
               </div>
               {{#if barrage}}<div class="ship-weapon-options" data-barrage-options><span class="ship-options-label">Barrage</span>{{#each barrageProfiles}}<label class="ship-barrage-chip{{#unless feasible}} ship-barrage-chip--infeasible{{/unless}}" title="{{#if feasible}}×{{rounds}} · {{penalty}} attack · up to {{hits}} hits{{else}}Needs {{rounds}} rounds loaded{{/if}}"><input type="radio" name="barrageRounds" value="{{rounds}}" {{#if selected}}checked{{/if}}><span>×{{rounds}}</span><small>{{penaltyLabel}} · {{hits}} cap</small></label>{{/each}}</div>{{/if}}
               <div class="ship-weapon-options" data-aim-options><span data-aim-slot></span><span class="ship-options-guidance" data-aim-guidance></span></div>
-              {{#if manualReload}}<div class="ship-weapon-reload">{{#if reloadWork}}<span>Reload {{reloadLabel}}</span><button type="button" data-ui-operation="reload" {{#unless ../canAct}}disabled{{/unless}}>Contribute reload Work</button><button type="button" data-ui-operation="cancelReload" {{#unless ../canAct}}disabled{{/unless}}>Cancel reload</button>{{else}}<span class="ship-muted">Manual reload: 1 Work</span><button type="button" data-ui-operation="beginReload" title="Manual reload: 1 Work" {{#unless ../canAct}}disabled{{/unless}}>Begin reload</button>{{/if}}</div>{{/if}}
+              {{#if manualReload}}<div class="ship-weapon-reload">{{#if reloadWork}}<span>Reload {{reloadLabel}}</span><button type="button" data-ui-operation="reload" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Contribute reload Work</button><button type="button" data-ui-operation="cancelReload" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Cancel reload</button>{{else}}<span class="ship-muted">Manual reload: 1 Work</span><button type="button" data-ui-operation="beginReload" title="{{#unless ../canAct}}{{../actReason}}{{else}}Manual reload: 1 Work{{/unless}}" {{#unless ../canAct}}disabled{{/unless}}>Begin reload</button>{{/if}}</div>{{/if}}
             </form>
           {{else}}<p class="ship-empty">No weapons installed. Open Refit from the maintenance menu to inspect hardpoints.</p>{{/each}}
         </div>
@@ -591,8 +595,8 @@
           <header><h3>Thermal Management</h3><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></header>
           <div class="ship-meter ship-meter--heat" style="{{view.status.heat.style}}"><span></span></div>
           <div class="ship-button-grid">
-            <button type="button" data-ui-operation="cooling" {{#unless canAct}}disabled{{/unless}}>Active cooling</button>
-            <button type="button" data-ui-operation="vent" {{#unless canAct}}disabled{{/unless}}>Emergency vent</button>
+            <button type="button" data-ui-operation="cooling" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Active cooling</button>
+            <button type="button" data-ui-operation="vent" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Emergency vent</button>
           </div>
           <p class="ship-muted">Emergency vent: {{view.cooling.ventCooldownLabel}}</p>
         </form>
@@ -603,7 +607,7 @@
               <span class="ship-kicker">Structural Integrity</span>
               <h3>Damage Control &amp; Repairs</h3>
             </div>
-            <button type="button" class="ship-slot-action-btn" data-ui-operation="hullRepair" {{#unless canAct}}disabled{{/unless}}>
+            <button type="button" class="ship-slot-action-btn" data-ui-operation="hullRepair" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>
               <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Field-Patch Hull
             </button>
           </header>
@@ -615,7 +619,7 @@
                 <header><div><span class="ship-kicker">{{kind}}{{#if sector}} · {{sector}}{{/if}}</span><h3>{{label}}</h3></div><span class="ship-status-chip">{{severity}}</span></header>
                 {{#if componentLabel}}<p class="ship-muted">{{componentLabel}}</p>{{/if}}{{#if clock}}<p>Hazard clock: <strong>{{clock}}</strong></p>{{/if}}{{#if work}}<p>Recovery Work: <strong>{{workLabel}}</strong></p>{{/if}}
                 <input type="hidden" name="conditionId" value="{{id}}"><input type="hidden" name="rating" value="engineering">
-                {{#if destroyed}}<button type="button" data-ui-operation="recoveryWork" {{#unless ../canAct}}disabled{{/unless}}>Contribute Recovery Work</button>{{else}}<button type="button" data-ui-operation="repair" {{#unless ../canAct}}disabled{{/unless}}>Attempt repair</button>{{/if}}
+                {{#if destroyed}}<button type="button" data-ui-operation="recoveryWork" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Contribute Recovery Work</button>{{else}}<button type="button" data-ui-operation="repair" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Attempt repair</button>{{/if}}
               </form>
             {{else}}<div class="ship-card ship-empty"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><strong>No active faults or hazards</strong></div>{{/each}}
           </section>

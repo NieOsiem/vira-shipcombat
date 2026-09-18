@@ -1,5 +1,6 @@
 import { MODULE_ID, OPERATOR_TYPES } from "../constants.js";
 import {
+  CREW_FEATURE_IMG,
   ensureActorCrewFeature,
   getActorCrewData,
   normalizeRatings,
@@ -61,7 +62,7 @@ export class CrewRatingSheet extends BaseClass {
       actor,
       actorName: actor?.name ?? item?.name ?? "Crew Member",
       label: actor?.name ?? item?.name ?? "Crew Member",
-      img: item?.img ?? actor?.img ?? "icons/tools/navigation/compass-brass-vintage.svg",
+      img: item?.img ?? actor?.img ?? CREW_FEATURE_IMG,
       ratings: crewData.ratings,
       typeOptions,
       capabilities: crewData.capabilities,
@@ -119,6 +120,9 @@ export class CrewRatingSheet extends BaseClass {
  * @param {object} profileUpdates
  */
 export async function syncAssignedShips(actorId, profileUpdates) {
+  // Authority writes are GM-only: players hold OBSERVER ownership of ships, so a
+  // player-side sync is denied by the server and rejects without a handler.
+  if (!globalThis.game?.user?.isGM) return;
   if (!globalThis.game?.actors) return;
   const ships = globalThis.game.actors.filter((a) => a.type === "vira-shipcombat.ship");
   for (const ship of ships) {
