@@ -1165,6 +1165,18 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   static PARTS = {
     console: { template: `modules/${MODULE_ID}/templates/ship-console.hbs` },
   };
+  /**
+   * Core's read-only pass (`DocumentSheetV2._onRender` → `_toggleDisabled(true)` when the
+   * viewer sits below the OWNER editPermission) disables every button and input in the sheet.
+   * Rules 17.1 deliberately seats player operators at OBSERVER and they operate the console
+   * through module-submitted operations rather than by editing the Actor, so that pass is both
+   * redundant and harmful here: it also disables the tab buttons, which no module code ever
+   * re-enables, leaving a player locked on whichever tab was selected. The module gates every
+   * control itself (canOperate/canAct plus per-control reasons) and the GM-run engine remains
+   * the authority on the wire, so the blanket pass is suppressed.
+   */
+  _toggleDisabled() {}
+
   #hullDraft = null;
   #aimedComponents = new Map();
   #aimContexts = new WeakMap();
