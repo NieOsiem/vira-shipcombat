@@ -786,6 +786,46 @@ function applyImmediateConsequences(ship) {
   return { shedding, shields, evasion, sensors };
 }
 
+/**
+ * Rules 8.8 / 8.11: passive detection is event-driven, so a ship that moves is re-detected by every
+ * observer (and re-detects everyone itself) instead of waiting for its next Start. Only pairs that
+ * involve a ship which actually moved can change, and a live track lost to range survives until the
+ * observer's next Start, so a target beyond Passive Range is dropped after a single distance
+ * comparison. That gate is what keeps a move cheap: no line-of-sight raycast, no observation clone,
+ * and — unless a track really changed — no observer write and so no console rebuild on any client.
+ */
+function refreshMovementDetection(drafts, moved, request, context, changed, events) {
+  if (!moved.size) return;
+  for (const observer of drafts.values()) {
+    const stats = getSensorStats(observer.config, observer.state);
+    if (!stats.online) continue;
+    const before = JSON.stringify(observer.state.tracks ?? {});
+    const targets = [];
+    for (const other of drafts.values()) {
+      if (other.uuid === observer.uuid) continue;
+      if (!moved.has(other.uuid) && !moved.has(observer.uuid)) continue;
+      if (distanceBetween(observer, other, context) > stats.passiveRange) continue;
+      targets.push(targetObservation(observer, other, request, context));
+    }
+    if (!targets.length) continue;
+    const result = refreshObserverTracks({
+      observerConfig: observer.config,
+      observerState: observer.state,
+      targets,
+    });
+    if (JSON.stringify(observer.state.tracks ?? {}) === before) continue;
+    changed.add(observer.uuid);
+    if (result.acquired.length || result.lost.length) {
+      events.gmEvents.push({
+        type: "movement.detection",
+        sourceUuid: observer.uuid,
+        targetUuids: [...result.acquired, ...result.lost],
+        detail: { acquired: result.acquired, lost: result.lost, moved: [...moved] },
+      });
+    }
+  }
+}
+
 function operationMetadata(operation) {
   return { id: operation.type };
 }
@@ -1465,6 +1505,7 @@ export function executeShipOperation(operation, context) {
   }
 
   changed.add(source.uuid);
+  refreshMovementDetection(drafts, tokenChanged, request, context, changed, events);
   for (const uuid of changed) applyImmediateConsequences(drafts.get(uuid));
   for (const ship of drafts.values()) {
     ship.state.revision = recordState(ship.source).revision;

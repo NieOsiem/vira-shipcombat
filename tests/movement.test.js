@@ -569,7 +569,10 @@ describe("arcs, sectors, and impact consequences", () => {
       physicalUntilTurnKey: true,
       lastKnown: { facing: 0, stale: false },
     });
-    expectVectorNear(result.shipStates.target.tracks.source.lastKnown.position, { x: 3, y: 0 }, 2e-8);
+    // The collision marker is refreshed by the movement-driven detection pass (rules 8.8): the target
+    // detects the source again after it coasts past, so the marker tracks the live position, while the
+    // physical-contact lifetime that survives sensor loss is unchanged.
+    expectVectorNear(result.shipStates.target.tracks.source.lastKnown.position, { x: 6.5, y: 0 }, 2e-8);
   });
 
   test("overspeed uses vector magnitude for damage and preview warnings", () => {

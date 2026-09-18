@@ -18,7 +18,7 @@ import {
   repairHull,
   standardRepair,
 } from "../scripts/rules/repairs.js";
-import { trackKey } from "../scripts/rules/sensors.js";
+import { getSensorStats, trackKey } from "../scripts/rules/sensors.js";
 import { publishOperationEvents } from "../scripts/foundry/chat.js";
 
 const SOURCE = "Scene.test.Token.source";
@@ -942,6 +942,8 @@ describe("administrative reposition", () => {
     for (const resetVelocity of [false, true]) {
       const source = ship(SOURCE);
       const unrelated = ship(TARGET_A);
+      // Outside every sensor envelope, so the move cannot touch it: this case is about write scope.
+      unrelated.state.position = { x: 5000, y: 5000 };
       source.state.velocity = { x: 7, y: -3 };
       unrelated.state.velocity = { x: 99, y: 99 };
       const result = executeShipOperation(
@@ -1022,6 +1024,141 @@ describe("administrative reposition", () => {
       });
       expect(created).toHaveLength(1);
     });
+  });
+});
+
+describe("movement-driven passive detection", () => {
+  const passiveRange = () => {
+    const { config, state } = ship(SOURCE);
+    return Number(getSensorStats(config, state).passiveRange);
+  };
+
+  // Seed a live Contact the way a sensor reading would, then move the contact and report the result.
+  function seedContact(range, distance) {
+    const observer = ship(SOURCE);
+    const mover = ship(TARGET_A);
+    observer.state.position = { x: 0, y: 0 };
+    mover.state.position = { x: distance, y: 0 };
+    const result = executeShipOperation(
+      request("reposition", TARGET_A, [SOURCE], {
+        position: { x: distance, y: 0 },
+        facing: 0,
+        resetVelocity: true,
+      }),
+      context([[SOURCE, observer], [TARGET_A, mover]]),
+    );
+    expect(result.shipStates[SOURCE].tracks[trackKey(TARGET_A)]?.state).toBe("contact");
+    return {
+      observer: {
+        config: observer.config,
+        state: result.shipStates[SOURCE],
+        token: observer.token,
+      },
+      mover: {
+        config: mover.config,
+        state: result.shipStates[TARGET_A],
+        token: mover.token,
+      },
+    };
+  }
+
+  function moveContact(range, from, to) {
+    const { observer, mover } = seedContact(range, from);
+    const result = executeShipOperation(
+      request("reposition", TARGET_A, [SOURCE], {
+        position: { x: to, y: 0 },
+        facing: 0,
+        resetVelocity: true,
+      }),
+      context([[SOURCE, observer], [TARGET_A, mover]]),
+    );
+    return {
+      result,
+      track: result.shipStates[SOURCE].tracks[trackKey(TARGET_A)] ?? null,
+    };
+  }
+
+  test("a move into passive range creates the Contact at the ship's new position", () => {
+    const range = passiveRange();
+    const observer = ship(SOURCE);
+    const mover = ship(TARGET_A);
+    observer.state.position = { x: 0, y: 0 };
+    mover.state.position = { x: range * 3, y: 0 };
+
+    const result = executeShipOperation(
+      request("reposition", TARGET_A, [SOURCE], {
+        position: { x: range * 0.2, y: 0 },
+        facing: 0,
+        resetVelocity: true,
+      }),
+      context([[SOURCE, observer], [TARGET_A, mover]]),
+    );
+
+    expect(result.shipStates[SOURCE].tracks[trackKey(TARGET_A)]).toMatchObject({
+      state: "contact",
+      lastKnown: { position: { x: range * 0.2, y: 0 }, stale: false },
+    });
+    expect(result.changedUuids).toEqual([SOURCE, TARGET_A].sort());
+    // Both ships are within each other's passive range, so each gains the other as a Contact.
+    expect(result.gmEvents.filter((event) => event.type === "movement.detection"))
+      .toHaveLength(2);
+  });
+
+  test("a live Contact follows the ship that moves", () => {
+    const range = passiveRange();
+    const { track } = moveContact(range, range * 0.2, range * 0.7);
+
+    expect(track).toMatchObject({
+      state: "contact",
+      lastKnown: { position: { x: range * 0.7, y: 0 }, stale: false },
+    });
+  });
+
+  test("losing passive detection by moving turns the Contact into a stale marker", () => {
+    const range = passiveRange();
+    const { track } = moveContact(range, range * 0.2, range * 0.99);
+
+    expect(track.state).toBe("undetected");
+    expect(track.lastKnown).toMatchObject({
+      position: { x: range * 0.2, y: 0 },
+      stale: true,
+    });
+  });
+
+  test("a move beyond passive range leaves the observer's track as it was", () => {
+    const range = passiveRange();
+    const { result, track } = moveContact(range, range * 0.2, range * 3);
+
+    expect(result.changedUuids).toEqual([TARGET_A]);
+    expect(track).toMatchObject({
+      state: "contact",
+      lastKnown: { position: { x: range * 0.2, y: 0 } },
+    });
+  });
+
+  test("a move no observer can reach writes nothing and reports nothing", () => {
+    const range = passiveRange();
+    const observer = ship(SOURCE);
+    const other = ship(TARGET_A);
+    const mover = ship(TARGET_B);
+    observer.state.position = { x: 0, y: 0 };
+    other.state.position = { x: range * 20, y: 0 };
+    mover.state.position = { x: range * 10, y: 0 };
+
+    const result = executeShipOperation(
+      request("reposition", TARGET_B, [SOURCE, TARGET_A], {
+        position: { x: range * 10, y: range * 0.5 },
+        facing: 0,
+        resetVelocity: true,
+      }),
+      context([[SOURCE, observer], [TARGET_A, other], [TARGET_B, mover]]),
+    );
+
+    expect(result.changedUuids).toEqual([TARGET_B]);
+    expect(result.gmEvents.filter((event) => event.type === "movement.detection"))
+      .toEqual([]);
+    expect(result.shipStates[SOURCE].tracks ?? {}).toEqual({});
+    expect(result.shipStates[TARGET_A].tracks ?? {}).toEqual({});
   });
 });
 
