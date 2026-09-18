@@ -1334,9 +1334,46 @@
   border-color: var(--ship-red);
 }
 
-.vira-shipcombat.ship-console .ship-power-priorities {
-  margin-top: 0.4rem;
+.vira-shipcombat.ship-console .ship-power-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
 }
+
+.vira-shipcombat.ship-console .ship-power-priorities {
+  margin: 0;
+  flex: 0 1 auto;
+}
+
+.vira-shipcombat.ship-console .ship-power-priorities > summary {
+  white-space: nowrap;
+}
+
+.vira-shipcombat.ship-console .ship-power-priorities[open] {
+  flex-basis: 100%;
+}
+
+.vira-shipcombat.ship-console .ship-power-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.vira-shipcombat.ship-console .ship-power-actions > button {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 1.65rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.69rem;
+  white-space: nowrap;
+}
+
 
 .ship-helm-layout,
 .ship-systems-layout,

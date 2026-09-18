@@ -1057,7 +1057,7 @@ const { HandlebarsApplicationMixin } = foundry.applications.api;
 class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   static DEFAULT_OPTIONS = {
     classes: [MODULE_ID, "ship-console"],
-    position: { width: 880, height: 840 },
+    position: { width: 735, height: 840 },
     window: { resizable: true },
     actions: {},
   };
