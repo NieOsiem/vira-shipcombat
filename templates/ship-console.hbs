@@ -449,12 +449,16 @@
                   <div class="ship-shield-control-divider" aria-hidden="true"></div>
                   <div class="ship-shield-control ship-shield-control--regen">
                     <div class="ship-shield-row ship-shield-row--regen">
-                      <span class="ship-shield-row-label">Regen</span>
                       <button type="button" data-shield-regen="{{id}}" data-delta="-1" aria-label="Decrease {{label}} regen weight" {{#unless ../canAct}}disabled{{/unless}}>−</button>
-                      <div class="ship-shield-pips" data-shield-regen-pips="{{id}}" role="group" aria-label="{{label}} regeneration weight, one pip per 5 percent"></div>
+                      <div class="ship-shield-regen-middle">
+                        <div class="ship-shield-regen-topline">
+                          <span class="ship-shield-row-label">Regen</span>
+                          <span class="ship-shield-regen-readout"><output data-regen-value="{{id}}">{{weight}}%</output><span aria-hidden="true">·</span><output data-regen-rate="{{id}}">{{rate}} / round</output></span>
+                        </div>
+                        <div class="ship-shield-pips" data-shield-regen-pips="{{id}}" role="group" aria-label="{{label}} regeneration weight, one pip per 5 percent"></div>
+                      </div>
                       <button type="button" data-shield-regen="{{id}}" data-delta="+1" aria-label="Increase {{label}} regen weight" {{#unless ../canAct}}disabled{{/unless}}>+</button>
                     </div>
-                    <span class="ship-shield-regen-readout"><output data-regen-value="{{id}}">{{weight}}%</output><span aria-hidden="true">·</span><output data-regen-rate="{{id}}">{{rate}} / round</output></span>
                   </div>
                 </div>
                 <input type="hidden" name="regen-{{id}}" value="{{weight}}">
@@ -474,17 +478,15 @@
             <aside class="ship-shield-pool" data-pool="charge" aria-label="Unassigned charge" {{#unless view.shields.directional}}hidden{{/unless}}>
               <i class="fa-solid fa-draw-polygon" aria-hidden="true"></i>
               <div class="ship-shield-pool-body">
-                <span class="ship-shield-pool-kicker">Unassigned Charge</span>
+                <span class="ship-shield-pool-kicker">Unassigned</span>
                 <output class="ship-shield-pool-value" data-shield-unassigned>0</output>
-                <p class="ship-shield-pool-note">Charge held in reserve; commit it to a sector.</p>
               </div>
             </aside>
             <aside class="ship-shield-pool" data-pool="regen" aria-label="Unassigned regen" {{#unless view.shields.directional}}hidden{{/unless}}>
               <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
               <div class="ship-shield-pool-body">
-                <span class="ship-shield-pool-kicker">Unassigned Regen</span>
+                <span class="ship-shield-pool-kicker">Unassigned</span>
                 <output class="ship-shield-pool-value" data-shield-unassigned-regen>0</output>
-                <p class="ship-shield-pool-note">Regen weight held in reserve; commit it to a sector.</p>
               </div>
             </aside>
           </div>

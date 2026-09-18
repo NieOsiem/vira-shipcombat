@@ -1374,119 +1374,76 @@
 
 .ship-shield-hud-grid {
   display: grid;
-  /* Mid-range default: FORE / AFT full-width bands, compass centred between
-     the PORT and STARBOARD cards, pools side by side underneath. No overlaps. */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: auto auto auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr);
+  grid-template-rows: auto minmax(13rem, auto) auto;
   gap: 0.4rem 0.5rem;
   min-width: 0;
 }
 
+/* FORE / AFT: centre cards in the middle column, overlapping the compass ring */
 .ship-shield-hud-grid > [data-position="fore"],
 .ship-shield-hud-grid > [data-position="aft"] {
-  grid-column: 1 / -1;
+  grid-column: 2;
   justify-self: stretch;
+  z-index: 2;
+  margin-inline: -2rem;
 }
-.ship-shield-hud-grid > [data-position="fore"] { grid-row: 1; }
-.ship-shield-hud-grid > [data-position="aft"] { grid-row: 3; }
+.ship-shield-hud-grid > [data-position="fore"] {
+  grid-row: 1;
+  margin-bottom: -1.1rem;
+}
+.ship-shield-hud-grid > [data-position="aft"] {
+  grid-row: 3;
+  align-self: stretch;
+}
 
+/* PORT / STARBOARD: side cards pinned to the outer edges, inner edge reaching toward the compass ring */
 .ship-shield-hud-grid > [data-position="port"],
 .ship-shield-hud-grid > [data-position="starboard"] {
   grid-row: 2;
   align-self: center;
-  width: auto;
-  min-width: 0;
+  z-index: 2;
 }
-.ship-shield-hud-grid > [data-position="port"] { grid-column: 1 / 3; }
-.ship-shield-hud-grid > [data-position="starboard"] { grid-column: 4 / -1; }
+.ship-shield-hud-grid > [data-position="port"] {
+  grid-column: 1;
+  justify-self: start;
+  width: min(28rem, calc(100% + 2.5rem));
+  margin-inline-end: -2.5rem;
+}
+.ship-shield-hud-grid > [data-position="starboard"] {
+  grid-column: 3;
+  justify-self: end;
+  width: min(28rem, calc(100% + 2.5rem));
+  margin-inline-start: -2.5rem;
+}
 .ship-shield-hud-grid > [data-position="bubble"] { grid-column: 1; grid-row: 2; }
 
 .ship-shield-center {
-  grid-column: 3;
+  grid-column: 2;
   grid-row: 2;
   z-index: 1;
 }
 
+/* Pools: compact corner cards in the outer columns on row 3 */
 .ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"],
 .ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] {
-  grid-row: 4;
+  grid-row: 3;
+  align-self: stretch;
+  z-index: 2;
 }
-.ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"] { grid-column: 1 / 3; }
-.ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] { grid-column: 4 / -1; }
+.ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"] {
+  grid-column: 1;
+  justify-self: start;
+}
+.ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] {
+  grid-column: 3;
+  justify-self: end;
+}
 
 /* side cards keep a comfortable gutter so bars and control rows never run to the edge */
 .ship-shield-sector-card[data-position="port"],
 .ship-shield-sector-card[data-position="starboard"] {
-  padding: 0.55rem 0.75rem;
-}
-
-/* Composed layout: three columns, cards overlapping the compass ring, pools in
-   the outer tracks. Only wide containers have room for the negative-margin
-   overlaps; keep this geometry untouched. */
-@container ship-console (min-width: 1250px) {
-  .ship-shield-hud-grid {
-    grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr) minmax(15rem, 19rem);
-    grid-template-rows: auto minmax(13.5rem, auto) auto;
-    gap: 0.4rem 0.5rem;
-  }
-
-  /* FORE / AFT: slim centre cards in the middle column, overlapping the compass ring */
-  .ship-shield-hud-grid > [data-position="fore"],
-  .ship-shield-hud-grid > [data-position="aft"] {
-    grid-column: 2;
-    justify-self: stretch;
-    z-index: 2;
-  }
-  .ship-shield-hud-grid > [data-position="fore"] {
-    grid-row: 1;
-    /* row 1 is empty beside the ring, so FORE may run a little wider than the band */
-    margin-inline: -1.4rem;
-    margin-bottom: -1.1rem;
-  }
-  .ship-shield-hud-grid > [data-position="aft"] {
-    grid-row: 3;
-    align-self: end;
-    /* -0.4rem stays inside the 0.5rem column gap: the pools own the outer tracks,
-       so AFT never extends beneath them */
-    margin-inline: -0.4rem;
-  }
-
-  /* PORT / STARBOARD: narrow side cards pinned to the outer edges, inner edge
-     reaching toward the compass ring while the ring paints behind them */
-  .ship-shield-hud-grid > [data-position="port"],
-  .ship-shield-hud-grid > [data-position="starboard"] {
-    grid-row: 2;
-    align-self: center;
-    width: min(29rem, calc(100% + 12rem));
-    z-index: 2;
-  }
-  .ship-shield-hud-grid > [data-position="port"] {
-    grid-column: 1;
-    justify-self: start;
-    margin-inline-end: -3rem;
-  }
-  .ship-shield-hud-grid > [data-position="starboard"] {
-    grid-column: 3;
-    justify-self: end;
-    margin-inline-start: -3rem;
-  }
-  .ship-shield-hud-grid > [data-position="bubble"] { grid-column: 1; grid-row: 2; }
-
-  .ship-shield-center {
-    grid-column: 2;
-    grid-row: 2;
-    z-index: 1;
-  }
-
-  /* Pools: corner cards in the outer columns, tops rising above the AFT card's top edge */
-  .ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"],
-  .ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] {
-    grid-row: 3;
-    margin-top: -2.3rem;
-    z-index: 2;
-  }
-  .ship-shield-hud-grid > .ship-shield-pool[data-pool="charge"] { grid-column: 1; }
-  .ship-shield-hud-grid > .ship-shield-pool[data-pool="regen"] { grid-column: 3; }
+  padding: 0.45rem 0.6rem;
 }
 
 .ship-shield-hud--bubble .ship-shield-hud-grid {
@@ -1647,9 +1604,14 @@
   align-items: stretch;
   gap: 0;
 }
-.ship-shield-sector-card[data-position="fore"] .ship-shield-control,
-.ship-shield-sector-card[data-position="aft"] .ship-shield-control {
-  flex: 1 1 0;
+.ship-shield-sector-card[data-position="fore"] .ship-shield-control--charge,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-control--charge {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.ship-shield-sector-card[data-position="fore"] .ship-shield-control--regen,
+.ship-shield-sector-card[data-position="aft"] .ship-shield-control--regen {
+  flex: 1 1 auto;
   min-width: 0;
 }
 .ship-shield-sector-card[data-position="fore"] .ship-shield-control-divider,
@@ -1664,9 +1626,9 @@
 .ship-shield-sector-card[data-position="aft"] .ship-shield-row {
   gap: 0.3rem;
 }
-.ship-shield-sector-card[data-position="fore"] .ship-shield-row > button,
-.ship-shield-sector-card[data-position="aft"] .ship-shield-row > button {
-  min-width: 1.35rem;
+.ship-shield-sector-card .ship-shield-row > button {
+  min-width: 1.05rem;
+  width: 1.05rem;
 }
 
 .ship-shield-row {
@@ -1724,15 +1686,36 @@
   cursor: not-allowed;
 }
 
-.ship-shield-row--regen { flex-wrap: wrap; row-gap: 0.2rem; }
+.ship-shield-row--regen {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.ship-shield-regen-middle {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.ship-shield-regen-topline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
 
 .ship-shield-pips {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: repeat(auto-fit, minmax(0.5rem, 0.78rem));
-  grid-auto-rows: 1rem;
+  grid-template-columns: repeat(20, minmax(6px, 1fr));
+  grid-auto-rows: 0.55rem;
   align-content: start;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -1740,13 +1723,14 @@
 .ship-shield-sector-card[data-position="fore"] .ship-shield-pips,
 .ship-shield-sector-card[data-position="aft"] .ship-shield-pips {
   flex: 1 1 auto;
-  grid-template-columns: repeat(20, minmax(0, 1fr));
+  grid-template-columns: repeat(20, minmax(6px, 1fr));
 }
 
 .ship-shield-row .ship-shield-pip {
   width: 100%;
   height: 100%;
-  min-width: 0;
+  min-width: 6px;
+  min-height: 0;
   padding: 0;
   border: 1px solid rgb(62 232 208 / 26%);
   border-radius: 3px;
@@ -1782,6 +1766,7 @@
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
 .ship-shield-status {
@@ -1868,8 +1853,8 @@
 .ship-shield-pool {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.7rem 0.75rem;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
 }
 
 .ship-shield-pool[hidden] { display: none; }
@@ -1902,12 +1887,6 @@
   font-size: 2rem;
   font-weight: 800;
   line-height: 1;
-}
-
-.ship-shield-pool-note {
-  margin: 0;
-  color: var(--ship-muted);
-  font-size: 0.55rem;
 }
 
 .ship-shield-actions .ship-primary { margin-inline-start: auto; }
