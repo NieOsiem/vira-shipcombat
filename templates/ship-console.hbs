@@ -7,8 +7,8 @@
     </div>
     <section class="ship-status-strip" aria-label="Ship resources">
       <article class="ship-status-meter"><div><span>Hull</span><strong>{{view.status.hull.value}} / {{view.status.hull.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.hull.tone}}" style="{{view.status.hull.style}}"><span></span></div></article>
-      <article class="ship-status-meter"><div><span>Heat</span><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.heat.tone}}" style="{{view.status.heat.style}}"><span></span></div></article>
       <article class="ship-status-meter"><div><span>Shields</span><strong>{{view.shields.total}} / {{view.shields.budget}}</strong></div><div class="ship-meter ship-meter--shield" style="{{view.shields.meter.style}}"><span></span></div></article>
+      <article class="ship-status-meter"><div><span>Heat</span><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.heat.tone}}" style="{{view.status.heat.style}}"><span></span></div></article>
       <article class="ship-status-meter"><div><span>Reactor</span><strong>{{view.power.committed}} / {{view.power.nominalOutput}}</strong></div><div class="ship-meter ship-meter--{{view.power.meter.tone}}" style="{{view.power.meter.style}}"><span></span></div></article>
     </section>
   </header>
