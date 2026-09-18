@@ -15,6 +15,7 @@ import {
   finiteNumber,
   formatRange,
   isAutoScale,
+  presetLadder,
   radarPercentStyle,
   ringValues,
 } from "./radar-geometry.js";
@@ -67,14 +68,17 @@ const VECTOR_HEAD = 6;
 const OWN_SHIP_LENGTH = 7;
 const OWN_SHIP_HALF = 5;
 
-const HOIST_LENGTH = 8;
-const HOIST_HALF = 5;
+const HOIST_LENGTH = 11;
+const HOIST_HALF = 7;
+const HOIST_WIDTH = 3;
 
 const TICK_STEP = 30;
 const TICK_COUNT = 12;
 const TICK_INNER = 6;
 const TICK_INSET = 15;
 const RING_LABEL_INSET = 5;
+/** Gap a ring label's glyphs keep from the stroke of the ring they sit inside. */
+const RING_LABEL_CLEARANCE = 10;
 /** A ring or marker this close to the rim puts its label beside the cardinal row. */
 const RIM_LABEL_GAP = 14;
 /** Clearance the shifted label baseline keeps from the dial edge. */
@@ -171,7 +175,7 @@ export class SensorRadar {
   #contacts = EMPTY_CONTACTS;
   #plots = [];
   #plotByUuid = new Map();
-  #presets = RADAR_LIMITS.presets;
+  #presets = presetLadder(RADAR_LIMITS.maximum, { minimum: RADAR_LIMITS.minimum });
   #requestedScale = null;
   #scale = RADAR_LIMITS.minimum;
   #rings = [];
@@ -602,12 +606,15 @@ export class SensorRadar {
       ctx.beginPath();
       ctx.arc(cx, cy, ringRadius, 0, TAU);
       ctx.stroke();
-      if (ringRadius <= radius - RIM_LABEL_GAP) {
-        ctx.fillText(ring.label, cx + 4, rimLabelY(cy - ringRadius + RING_LABEL_INSET, cy, radius));
-        continue;
-      }
-      ctx.textAlign = "right";
-      ctx.fillText(ring.label, cx - 4, rimLabelY(cy + ringRadius - RING_LABEL_INSET, cy, radius));
+      // The rim-adjacent ring's value is already in the zoom readout, and its
+      // label would sit on the cardinal row.
+      if (ringRadius > radius - RIM_LABEL_GAP) continue;
+      ctx.textAlign = "center";
+      ctx.fillText(
+        ring.label,
+        cx,
+        rimLabelY(cy - ringRadius + RING_LABEL_INSET + RING_LABEL_CLEARANCE, cy, radius),
+      );
       ctx.textAlign = "left";
     }
   }
@@ -653,7 +660,13 @@ export class SensorRadar {
     ctx.textBaseline = "middle";
     ctx.fillStyle = color;
     if (ringRadius <= radius - RIM_LABEL_GAP) {
-      ctx.fillText(label, cx + 4, rimLabelY(cy + ringRadius - RING_LABEL_INSET, cy, radius));
+      ctx.textAlign = "center";
+      ctx.fillText(
+        label,
+        cx,
+        rimLabelY(cy + ringRadius - RING_LABEL_INSET - RING_LABEL_CLEARANCE, cy, radius),
+      );
+      ctx.textAlign = "left";
       return;
     }
     ctx.textAlign = "right";
@@ -725,6 +738,7 @@ export class SensorRadar {
       const y = cy + plot.v * radius;
       const targeted = contact.targeted === true;
       const stale = contact.stale === true && !targeted;
+      const hoisted = plot.hoisted === true;
       const color = targeted ? theme.red : contact.live === true ? theme.amber : theme.muted;
       const blipRadius = targeted ? BLIP_RADIUS_TARGETED : BLIP_RADIUS;
       const punch = targeted ? 1 : stale ? STALE_ALPHA : 1;
@@ -741,7 +755,9 @@ export class SensorRadar {
 
       ctx.globalAlpha = baseAlpha * punch;
       ctx.setLineDash(NO_DASH);
-      if (stale) {
+      // A hoisted contact sits on the rim, where the disc, stale outline, lock
+      // ring and jam arc would all stack under the arrow: draw the arrow alone.
+      if (stale && !hoisted) {
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = color;
         ctx.setLineDash(DASH_STALE);
@@ -749,7 +765,7 @@ export class SensorRadar {
         ctx.arc(x, y, blipRadius, 0, TAU);
         ctx.stroke();
         ctx.setLineDash(NO_DASH);
-      } else {
+      } else if (!hoisted) {
         ctx.fillStyle = color;
         if (blur > 0) {
           ctx.shadowColor = color;
@@ -787,7 +803,7 @@ export class SensorRadar {
         }
       }
 
-      if (plot.hoisted === true) {
+      if (hoisted) {
         const length = Math.hypot(plot.u, plot.v) || 1;
         const nx = plot.u / length;
         const ny = plot.v / length;
@@ -796,12 +812,28 @@ export class SensorRadar {
         const perpX = -ny * HOIST_HALF;
         const perpY = nx * HOIST_HALF;
         ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = HOIST_WIDTH;
+        if (blur > 0) {
+          ctx.shadowColor = color;
+          ctx.shadowBlur = blur;
+        }
         ctx.beginPath();
         ctx.moveTo(baseX + perpX, baseY + perpY);
         ctx.lineTo(x, y);
         ctx.lineTo(baseX - perpX, baseY - perpY);
         ctx.stroke();
+        ctx.shadowBlur = 0;
+        if (glow > 0) {
+          // Same white overdraw as the disc, so the arrow pulses with the sweep.
+          ctx.globalAlpha = baseAlpha * punch * glow;
+          ctx.strokeStyle = theme.text;
+          ctx.beginPath();
+          ctx.moveTo(baseX + perpX, baseY + perpY);
+          ctx.lineTo(x, y);
+          ctx.lineTo(baseX - perpX, baseY - perpY);
+          ctx.stroke();
+          ctx.globalAlpha = baseAlpha * punch;
+        }
       }
 
       if (highlighted && String(contact.targetUuid ?? "") === highlighted) {
@@ -1021,12 +1053,16 @@ export class SensorRadar {
 
 function presetValues(radar) {
   const presets = radar?.presets;
-  if (!Array.isArray(presets) || !presets.length) return RADAR_LIMITS.presets;
+  const derived = presetLadder(
+    finiteNumber(radar?.maximum, RADAR_LIMITS.maximum),
+    { minimum: finiteNumber(radar?.minimum, RADAR_LIMITS.minimum) },
+  );
+  if (!Array.isArray(presets) || !presets.length) return derived;
   const values = [];
   for (const preset of presets) {
     const value = Number(preset?.value);
     if (Number.isFinite(value) && value > 0 && !values.includes(value)) values.push(value);
   }
-  if (!values.length) return RADAR_LIMITS.presets;
+  if (!values.length) return derived;
   return values.sort((left, right) => left - right);
 }

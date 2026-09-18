@@ -43,7 +43,6 @@ export const GREEK_DESIGNATORS = Object.freeze([
 export const RADAR_LIMITS = Object.freeze({
   minimum: 5,
   maximum: 150,
-  presets: Object.freeze([5, 10, 25, 50, 100, 150]),
   fitPadding: 1.15,
   divisions: 5,
 });
@@ -178,6 +177,28 @@ export function autoScale(distances, limits = {}) {
   }
   if (furthest <= 0) return minimum;
   return clampScale(furthest * padding, { minimum, maximum });
+}
+
+/**
+ * Zoom ladder for one ship's sensor envelope. The envelope is power-tier and
+ * fault scaled, so a fixed ladder would misrepresent how far the operator can
+ * actually see: derive 1/2/5 x 10^n stops below the exact maximum instead.
+ */
+export function presetLadder(maximum, options = {}) {
+  const minimum = Math.max(1, finiteNumber(options.minimum, RADAR_LIMITS.minimum));
+  const span = Math.max(minimum, finiteNumber(maximum, minimum));
+  const chips = Math.max(2, Math.trunc(finiteNumber(options.chips, 6)));
+  const nice = [];
+  for (let decade = 1; decade <= span; decade *= 10) {
+    for (const step of [1, 2, 5]) {
+      const value = step * decade;
+      if (value <= span) nice.push(value);
+    }
+  }
+  const below = nice
+    .filter((value) => value >= minimum && value < span)
+    .slice(-(chips - 1));
+  return [...new Set([...below, span])].sort((left, right) => left - right);
 }
 
 export function ringValues(scale, divisions = RADAR_LIMITS.divisions) {

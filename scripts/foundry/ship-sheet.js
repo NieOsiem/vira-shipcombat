@@ -107,6 +107,17 @@ const HELP = {
   cooling: '{"operatorId":"…"}',
   vent: '{"operatorId":"…"}',
 };
+const SENSOR_HELP = Object.freeze({
+  acquire: "Lock a live contact: makes it a targeted track you can shoot at",
+  firingSolution: "Spend an action now to add +4 to one attack against this target later",
+  breakLock: "Break a hostile targeted track locked onto your ship",
+  ping: "Active sweep against every contact in range; leaves you easier to detect (−6 signature)",
+  analyze: "Reveal this target's shields, armor, hull state and defensive protocols",
+  deepScan: "Reveal this target's systems, weapons, arcs, heat and faults",
+  jam: "Give this contact −4 on its checks against you until its next turn starts",
+  burnThrough: "Contest and remove a jam this contact is projecting onto you",
+  fade: "Try to slip passive detection and break tracks held on your ship",
+});
 const TARGETED = new Set([
   "acquire",
   "analyze",
@@ -2552,10 +2563,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       return "";
     };
     form.querySelectorAll("button[data-ui-operation]").forEach((button) => {
-      const reason = reasonFor(button.dataset.uiOperation);
+      const type = button.dataset.uiOperation;
+      const reason = reasonFor(type);
       button.disabled = Boolean(reason);
       button.dataset.reason = reason;
-      button.title = reason;
+      button.title = reason || SENSOR_HELP[type] || "";
     });
   }
 

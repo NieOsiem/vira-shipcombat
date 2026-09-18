@@ -11,6 +11,7 @@ import {
   dialPoint,
   formatRange,
   projectContact,
+  presetLadder,
   radarPercentStyle,
   relativeVector,
   ringValues,
@@ -133,6 +134,35 @@ describe("radar dial scaling", () => {
 
     expect(dialPercent(point.u, point.v)).toEqual({ x: 50, y: 25 });
     expect(radarPercentStyle(point.u, point.v)).toBe("--contact-x:50.00%;--contact-y:25.00%");
+  });
+});
+
+describe("radar zoom ladder", () => {
+  test("derives a ladder ending at the ship's own sensor range", () => {
+    expect(presetLadder(150, { minimum: 5 })).toEqual([5, 10, 20, 50, 100, 150]);
+    expect(presetLadder(300, { minimum: 5 })).toEqual([10, 20, 50, 100, 200, 300]);
+    expect(presetLadder(100, { minimum: 5 })).toEqual([5, 10, 20, 50, 100]);
+    expect(presetLadder(75, { minimum: 5 })).toEqual([5, 10, 20, 50, 75]);
+    expect(presetLadder(60, { minimum: 5 })).toEqual([5, 10, 20, 50, 60]);
+    expect(presetLadder(37.5, { minimum: 5 })).toEqual([5, 10, 20, 37.5]);
+    expect(presetLadder(12, { minimum: 5 })).toEqual([5, 10, 12]);
+    expect(presetLadder(5, { minimum: 5 })).toEqual([5]);
+  });
+
+  test("ascends strictly to the exact range for every envelope", () => {
+    for (const maximum of [300, 187.5, 150, 75, 60, 37.5, 12, 5, 1]) {
+      const ladder = presetLadder(maximum, { minimum: 5 });
+
+      expect(ladder.at(-1)).toBe(Math.max(5, maximum));
+      for (let index = 1; index < ladder.length; index++) {
+        expect(ladder[index]).toBeGreaterThan(ladder[index - 1]);
+      }
+    }
+  });
+
+  test("stays usable when the range is below the dial minimum", () => {
+    expect(presetLadder(3, { minimum: 5 })).toEqual([5]);
+    expect(presetLadder(0, { minimum: 5 })).toEqual([5]);
   });
 });
 

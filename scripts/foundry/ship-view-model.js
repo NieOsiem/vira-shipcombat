@@ -19,6 +19,7 @@ import {
   dialPoint,
   formatRange,
   isAutoScale,
+  presetLadder,
   RADAR_LIMITS,
   radarPercentStyle,
   relativeVector,
@@ -924,8 +925,7 @@ function contactViews(state, token, sensorStats, labels = {}, requestedScale = n
     left.label.localeCompare(right.label)
   );
 
-  const presets = RADAR_LIMITS.presets.filter((value) => value <= maximum);
-  if (presets.at(-1) !== maximum) presets.push(maximum);
+  const presets = presetLadder(maximum, { minimum: RADAR_LIMITS.minimum });
   return {
     contacts,
     radar: {
