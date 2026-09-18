@@ -29,6 +29,20 @@ function finite(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+const WEAPON_FAULT_LABELS = Object.freeze({
+  minor: "Minor",
+  major: "Major",
+  critical: "Critical",
+  destroyed: "Destroyed",
+});
+
+/** A modifier group stays unknown when any of its terms is unknown. */
+function modifierGroupValue(items) {
+  return items.every((item) => Number.isFinite(item.value))
+    ? items.reduce((total, item) => total + item.value, 0)
+    : null;
+}
+
 function vector(value) {
   return { x: finite(value?.x), y: finite(value?.y) };
 }
@@ -1150,23 +1164,115 @@ function makePreview(context) {
     track,
     declaration,
   );
-  const categories = {
-    gunnery: finite(
-      declaration.gunneryModifier,
-      gunneryRating(assigned.configured),
-    ),
-    weapon: finite(profile.accuracy) + finite(weaponFault.accuracyModifier) +
-      finite(declaration.weaponModifier),
-    range: range.modifier,
-    relativeMotion: relativeMotion.modifier,
-    sensors: (solutionReady ? 4 : 0) +
-      jamModifier +
-      finite(declaration.jammingModifier) +
-      finite(sensorFault.activeModifier, finite(sensorFault.ewModifier)) +
-      finite(declaration.sensorModifier),
-    special: selectedBarrage.penalty + (declaration.aimedComponentId ? -4 : 0) +
-      finite(declaration.specialModifier),
-  };
+  const sensorFaultModifier = finite(
+    sensorFault.activeModifier,
+    finite(sensorFault.ewModifier),
+  );
+  // Itemized beside the group totals so the console can show where each point
+  // comes from instead of re-deriving the arithmetic from the totals.
+  const weaponItems = [
+    { id: "weaponAccuracy", label: "Weapon accuracy", value: finite(profile.accuracy) },
+  ];
+  if (finite(weaponFault.accuracyModifier)) {
+    weaponItems.push({
+      id: "weaponMalfunction",
+      label: `${WEAPON_FAULT_LABELS[weaponFault.severity] ?? "Weapon malfunction"} malfunction`,
+      value: finite(weaponFault.accuracyModifier),
+    });
+  }
+  if (finite(declaration.weaponModifier)) {
+    weaponItems.push({
+      id: "weaponDeclared",
+      label: "Declared weapon modifier",
+      value: finite(declaration.weaponModifier),
+    });
+  }
+  const sensorItems = [];
+  if (solutionReady) {
+    sensorItems.push({ id: "firingSolution", label: "Firing solution", value: 4 });
+  }
+  if (finite(jamModifier)) {
+    sensorItems.push({ id: "jamming", label: "Jamming", value: finite(jamModifier) });
+  }
+  if (finite(declaration.jammingModifier)) {
+    sensorItems.push({
+      id: "jammingDeclared",
+      label: "Declared jamming",
+      value: finite(declaration.jammingModifier),
+    });
+  }
+  if (sensorFaultModifier) {
+    sensorItems.push({
+      id: "sensorFault",
+      label: "Sensor fault",
+      value: sensorFaultModifier,
+    });
+  }
+  if (finite(declaration.sensorModifier)) {
+    sensorItems.push({
+      id: "sensorDeclared",
+      label: "Declared sensor modifier",
+      value: finite(declaration.sensorModifier),
+    });
+  }
+  const specialItems = [];
+  if (selectedBarrage.rounds > 1) {
+    specialItems.push({
+      id: "barrage",
+      label: `Barrage ×${selectedBarrage.rounds}`,
+      value: selectedBarrage.penalty,
+    });
+  }
+  if (declaration.aimedComponentId) {
+    specialItems.push({ id: "aimedShot", label: "Aimed shot", value: -4 });
+  }
+  if (finite(declaration.specialModifier)) {
+    specialItems.push({
+      id: "specialDeclared",
+      label: "Declared special modifier",
+      value: finite(declaration.specialModifier),
+    });
+  }
+  const modifierGroups = [
+    {
+      id: "gunnery",
+      label: "Gunnery",
+      items: [{
+        id: "gunneryRating",
+        label: "Gunnery rating",
+        value: finite(
+          declaration.gunneryModifier,
+          gunneryRating(assigned.configured),
+        ),
+      }],
+    },
+    { id: "weapon", label: "Weapon", items: weaponItems },
+    {
+      id: "range",
+      label: "Range",
+      items: [{
+        id: "rangeBand",
+        label: "Range band",
+        detail: range.band,
+        value: range.modifier,
+      }],
+    },
+    {
+      id: "relativeMotion",
+      label: "Motion",
+      items: [{
+        id: "motionBand",
+        label: "Relative motion",
+        detail: relativeMotion.band,
+        value: relativeMotion.modifier,
+      }],
+    },
+    { id: "sensors", label: "Sensors", items: sensorItems },
+    { id: "special", label: "Special", items: specialItems },
+  ];
+  const categories = Object.fromEntries(
+    modifierGroups.map((group) => [group.id, modifierGroupValue(group.items)]),
+  );
   const knownModifierTotal = Object.values(categories).every(Number.isFinite)
     ? Object.values(categories).reduce((sum, value) => sum + value, 0)
     : null;
@@ -1247,11 +1353,16 @@ function makePreview(context) {
   const publicPreview = {
     finalAc: knownTargetAC(track, targetAc),
     categories,
+    modifiers: modifierGroups,
     knownModifierTotal,
     arcValid,
     rangeValid: range.valid,
     lineOfSightValid,
     struckSector: sector,
+    distance,
+    relativeBearing: (normalizeDegrees(
+      bearingDegrees(shooterPosition, targetPosition) - arcInput.facing,
+    ) + 360) % 360,
     range,
     relativeMotion,
     costs,

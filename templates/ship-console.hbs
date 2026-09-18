@@ -536,28 +536,48 @@
         <label class="ship-page-operator">Gunner<select data-page-operator="weapons" data-default="{{view.defaults.gunnery}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Gunnery {{ratings.gunnery}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
         <span class="ship-readout">{{view.power.weaponReserved}} / {{view.power.allocation.weapons}} POWER</span>
       </div>
-      <p data-target-lamp role="status" aria-live="polite">No Foundry target selected</p>
-      <div class="ship-weapon-list">
-        {{#each view.weapons}}
-          <form class="ship-card ship-weapon-card" data-ui-operation="attack" data-live-preview="attack" tabindex="0" aria-label="{{label}} firing envelope">
-            <input type="hidden" name="weaponId" value="{{id}}"><input type="hidden" name="targetUuid" value="">
-            <div class="ship-weapon-row">
-              <span data-weapon-validity role="status" aria-label="Shot validity not evaluated">—</span>
-              <div><h3 title="{{hardpoint}}">{{label}}</h3><span class="ship-status-chip ship-status-chip--{{status}}">{{statusLabel}}</span><small>{{readiness}}/{{capacity}} ready · {{range}} / {{arc}}° · {{damage}} · AP {{armorPiercing}}</small></div>
-              <select name="weaponSetting" data-default="{{setting}}" aria-label="{{label}} power setting" {{#unless ../canAct}}disabled{{/unless}}><option value="off">Off</option><option value="nominal">Nominal</option>{{#if overclockAvailable}}<option value="overclock">Overclock</option>{{/if}}</select>
-              <button class="ship-primary ship-fire-button" type="submit" {{#unless ../canAttack}}disabled{{/unless}} aria-label="Fire {{label}}"><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> Fire</button>
-            </div>
-            <p class="ship-preview-line" data-weapon-blocker role="status" aria-live="polite">Checking shot</p>
-            <details class="ship-weapon-secondary">
-              <summary aria-label="{{label}} firing options and shot details">Firing options</summary>
-              <div class="ship-action-row"><label>Barrage<select name="barrageRounds" aria-label="{{label}} barrage rounds">{{#each barrageProfiles}}<option value="{{rounds}}" {{#if selected}}selected{{/if}}>×{{rounds}} · {{penalty}} attack · {{hits}} hit cap</option>{{/each}}</select></label><label class="ship-checkbox"><input type="checkbox" data-aim-enabled> Aim component</label><span data-aim-slot></span></div>
-              <p class="ship-muted" data-aim-guidance></p>
-              <p class="ship-muted">{{hardpoint}} · Accuracy {{accuracy}} · Heat {{heat}}{{#if heatPerRound}} / round{{/if}}</p>
-              <p class="ship-preview-line" data-preview aria-live="polite"></p>
-              {{#if manualReload}}<div class="ship-action-row">{{#if reloadWork}}<span>Reload {{reloadLabel}}</span><button type="button" data-ui-operation="reload" {{#unless ../canAct}}disabled{{/unless}}>Contribute reload Work</button><button type="button" data-ui-operation="cancelReload" {{#unless ../canAct}}disabled{{/unless}}>Cancel reload</button>{{else}}<span class="ship-muted">Manual reload: 1 Work</span><button type="button" data-ui-operation="beginReload" title="Manual reload: 1 Work" {{#unless ../canAct}}disabled{{/unless}}>Begin reload</button>{{/if}}</div>{{/if}}
-            </details>
-          </form>
-        {{else}}<p class="ship-empty">No weapons installed. Open Refit from the maintenance menu to inspect hardpoints.</p>{{/each}}
+      <div class="ship-weapon-layout">
+        <div class="ship-weapon-list">
+          {{#each view.weapons}}
+            <form class="ship-card ship-weapon-card" data-ui-operation="attack" data-live-preview="attack" data-weapon-id="{{id}}" data-status="{{status}}" data-mode="{{mode}}" data-severity="{{fault.severity}}" tabindex="0" aria-label="{{label}} firing envelope">
+              <input type="hidden" name="weaponId" value="{{id}}"><input type="hidden" name="targetUuid" value="">
+              <div class="ship-weapon-row">
+                <span data-weapon-validity role="status" aria-label="Shot validity not evaluated">—</span>
+                <span class="ship-dial{{#if dial.ratio}} ship-dial--optimal{{/if}}" style="{{dial.style}}" data-dial data-dial-max="{{dial.maximumRange}}" title="{{dial.title}}" aria-hidden="true"><span class="ship-dial-marker" data-dial-marker hidden></span></span>
+                <div class="ship-weapon-title"><h3 title="{{hardpoint}}">{{label}}</h3><small>{{hardpoint}} · Reserves {{reservation}} Power</small></div>
+                {{#if fault.visible}}<span class="ship-fault-chip ship-fault-chip--{{fault.severity}}" title="{{fault.detail}}">{{fault.label}}</span>{{/if}}
+                <span class="ship-ammo" title="Ammunition {{readiness}} of {{capacity}}"><span class="ship-ammo-label">Ammo</span><strong>{{readiness}}/{{capacity}}</strong><span class="ship-meter ship-meter--{{readinessMeter.tone}}" style="{{readinessMeter.style}}"><span></span></span></span>
+                <div class="ship-switch" role="group" aria-label="{{label}} power state">
+                  <button type="button" class="ship-switch-seg ship-switch-seg--off" data-weapon-setting="off" data-current="{{switch.off.current}}" data-reachable="{{switch.off.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Power Off{{#if switch.off.current}} — current state{{/if}}" title="{{#if switch.off.reason}}{{switch.off.reason}}{{else}}Shut this weapon down{{/if}}">Off</button>
+                  <button type="button" class="ship-switch-seg ship-switch-seg--on" data-weapon-setting="nominal" data-current="{{switch.nominal.current}}" data-reachable="{{switch.nominal.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Power On{{#if switch.nominal.current}} — current state{{/if}}" title="{{#if switch.nominal.reason}}{{switch.nominal.reason}}{{else}}Online in Nominal mode{{/if}}">On{{#if booting}}<span class="ship-switch-count" aria-hidden="true">{{bootCounter}}</span>{{/if}}</button>
+                  {{#if switch.overclock}}<button type="button" class="ship-switch-seg ship-switch-seg--oc" data-weapon-setting="overclock" data-current="{{switch.overclock.current}}" data-reachable="{{switch.overclock.reachable}}" {{#unless ../canAct}}disabled{{/unless}} aria-label="Overclock{{#if switch.overclock.current}} — current state{{/if}}" title="{{#if switch.overclock.reason}}{{switch.overclock.reason}}{{else}}Online in Overclock mode{{/if}}">OC</button>{{/if}}
+                </div>
+                <button class="ship-fire" type="submit" {{#unless ../canAttack}}disabled{{/unless}} aria-label="Fire {{label}}"><i class="fa-solid fa-crosshairs" aria-hidden="true"></i><span class="ship-fire-text">Fire</span></button>
+              </div>
+              <div class="ship-weapon-meta">
+                <span class="ship-weapon-stats">ACC {{accuracy}} · AP {{armorPiercing}} · {{damage}}</span>
+                {{#if barrage}}<label class="ship-weapon-toggle" title="Engage a barrage profile"><input type="checkbox" data-barrage-enabled> Barrage</label>{{/if}}
+                <label class="ship-weapon-toggle" title="Aim at a revealed component in the struck region"><input type="checkbox" data-aim-enabled> Aim</label>
+              </div>
+              {{#if barrage}}<div class="ship-weapon-options" data-barrage-options><span class="ship-options-label">Barrage</span>{{#each barrageProfiles}}<label class="ship-barrage-chip{{#unless feasible}} ship-barrage-chip--infeasible{{/unless}}" title="{{#if feasible}}×{{rounds}} · {{penalty}} attack · up to {{hits}} hits{{else}}Needs {{rounds}} rounds loaded{{/if}}"><input type="radio" name="barrageRounds" value="{{rounds}}" {{#if selected}}checked{{/if}}><span>×{{rounds}}</span><small>{{penaltyLabel}} · {{hits}} cap</small></label>{{/each}}</div>{{/if}}
+              <div class="ship-weapon-options" data-aim-options><span data-aim-slot></span><span class="ship-options-guidance" data-aim-guidance></span></div>
+              <details class="ship-weapon-secondary">
+                <summary aria-label="{{label}} mount details and reload">Mount &amp; reload</summary>
+                <p class="ship-muted">{{hardpoint}} · Accuracy {{accuracy}} · Heat {{heat}}{{#if heatPerRound}} / round{{/if}}</p>
+                {{#if manualReload}}<div class="ship-action-row">{{#if reloadWork}}<span>Reload {{reloadLabel}}</span><button type="button" data-ui-operation="reload" {{#unless ../canAct}}disabled{{/unless}}>Contribute reload Work</button><button type="button" data-ui-operation="cancelReload" {{#unless ../canAct}}disabled{{/unless}}>Cancel reload</button>{{else}}<span class="ship-muted">Manual reload: 1 Work</span><button type="button" data-ui-operation="beginReload" title="Manual reload: 1 Work" {{#unless ../canAct}}disabled{{/unless}}>Begin reload</button>{{/if}}</div>{{/if}}
+              </details>
+            </form>
+          {{else}}<p class="ship-empty">No weapons installed. Open Refit from the maintenance menu to inspect hardpoints.</p>{{/each}}
+        </div>
+        <aside class="ship-fire-panel" data-fire-panel aria-label="Firing calculation">
+          <div class="ship-fire-panel-head">
+            <span class="ship-kicker">Fire control</span>
+            <p data-target-lamp role="status" aria-live="polite">No Foundry target selected</p>
+          </div>
+          <div class="ship-fire-panel-body" data-fire-body role="status" aria-live="polite">
+            <p class="ship-muted">Hover or click a weapon to see its firing calculation.</p>
+          </div>
+        </aside>
       </div>
     </section>
 

@@ -585,6 +585,55 @@ describe("attack previews, commitment, and damage", () => {
     expect(outOfArc.violations.map(({ code }) => code)).toContain("TARGET_OUT_OF_ARC");
   });
 
+  test("preview itemizes every term behind the group totals the console renders", () => {
+    const { attacker, target, declaration } = prepareAttack({
+      weaponId: CANADENSIS_IDS.portMacrocannon,
+      targetPosition: { x: -30, y: 0 },
+      firingSolution: true,
+    });
+    target.state.velocity = { x: 0, y: 4 };
+    const preview = previewAttack({
+      attackerConfig: attacker.config,
+      attackerState: clone(attacker.state),
+      targetConfig: target.config,
+      targetState: clone(target.state),
+      declaration: { ...clone(declaration), barrageRounds: 6 },
+    });
+
+    expect(preview.legal).toBe(true);
+    const groups = preview.public.modifiers;
+    expect(groups.map((group) => group.id)).toEqual([
+      "gunnery",
+      "weapon",
+      "range",
+      "relativeMotion",
+      "sensors",
+      "special",
+    ]);
+    for (const group of groups) {
+      expect(group.items.map((item) => item.value)).not.toHaveLength(0);
+      expect(group.items.reduce((sum, item) => sum + item.value, 0))
+        .toBe(preview.public.categories[group.id]);
+    }
+    const items = groups.flatMap((group) => group.items);
+    expect(items.reduce((sum, item) => sum + item.value, 0))
+      .toBe(preview.public.knownModifierTotal);
+    // The two terms players ask about most must be named, not folded into a group.
+    expect(items).toContainEqual({
+      id: "firingSolution",
+      label: "Firing solution",
+      value: 4,
+    });
+    expect(items).toContainEqual({
+      id: "barrage",
+      label: "Barrage ×6",
+      value: -3,
+    });
+    expect(groups.find((group) => group.id === "gunnery").items).toEqual([
+      expect.objectContaining({ id: "gunneryRating", value: 5 }),
+    ]);
+  });
+
   test.each([
     ["main", 0, "aft", "driveFailure"],
     ["reverse", 180, "fore", "driveFailure"],

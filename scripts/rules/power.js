@@ -143,7 +143,7 @@ function weaponConfig(config, weaponId) {
   return weapon;
 }
 
-function weaponPowerRating(weapon, mode) {
+export function weaponPowerRating(weapon, mode) {
   if (mode === "overclock") {
     const rating = weapon.modes?.overclock?.overrides?.powerRating;
     if (rating == null) {

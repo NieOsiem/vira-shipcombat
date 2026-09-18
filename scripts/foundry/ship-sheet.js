@@ -412,33 +412,19 @@ function signed(value, digits = 2) {
   return `${clean >= 0 ? "+" : ""}${clean}`;
 }
 
-function attackPreviewText(result) {
-  const preview = result.public ?? {};
-  const categories = preview.categories ?? {};
-  const motion = preview.relativeMotion ?? {};
-  const costs = preview.costs;
+function rangeBandLabel(band) {
+  if (band === "optimal") return "optimal";
+  if (band === "beyondMaximum") return "beyond max";
+  const quarter = /^extended(\d)$/.exec(String(band ?? ""));
+  return quarter ? `extended ${quarter[1]}/4` : "unknown";
+}
 
-  const hitSummary = `Hit: ${signed(preview.knownModifierTotal)} vs AC ${preview.finalAc ?? "—"}`;
-  const impactSummary = `Strikes ${preview.struckSector ?? "target"} · Range: ${preview.range?.band ?? "—"}`;
-  const motionSummary = motion.band ? `Motion: ${motion.band} (${signed(categories.relativeMotion)})` : "";
-  const costSummary = costs
-    ? `Cost: ${costs.readiness.amount} Ammo, +${costs.firingHeat.amount} Heat`
-    : "";
-  const solutionSummary = costs?.firingSolution?.consumed ? "Consumes Solution" : "";
-
-  const breakdown = [
-    hitSummary,
-    impactSummary,
-    motionSummary,
-    costSummary,
-    solutionSummary,
-  ].filter(Boolean).join(" | ");
-
-  const violations = result.violations?.length
-    ? ` · ${result.violations.map((e) => e.message).join(" · ")}`
-    : "";
-
-  return `${result.legal ? "READY TO FIRE" : "BLOCKED"} — ${breakdown}${violations}`;
+/** Range bands need translating; motion bands already read as ">2-4". */
+function modifierDetail(band) {
+  const text = String(band ?? "");
+  return /^(extended\d|optimal|beyondMaximum)$/.test(text)
+    ? rangeBandLabel(text)
+    : text;
 }
 
 function actorToken(actor) {
@@ -1095,6 +1081,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   #movementInput = null;
   #canAct = false;
   #pending = new Set();
+  #weaponIntents = new Map();
+  #shots = new Map();
+  #panelWeapon = "";
+  #peekWeapon = "";
+  #tokenRefresh = null;
   #dragItem = null;
   #dragListeners = null;
 
@@ -1282,6 +1273,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#hullDraft = null;
     this.#epoch++;
     this.#root = null;
+    if (this.#tokenRefresh) {
+      clearTimeout(this.#tokenRefresh);
+      this.#tokenRefresh = null;
+    }
     for (const [event, id] of this.#hooks) Hooks.off(event, id);
     this.#hooks = [];
     if (this.#dragListeners) {
@@ -1360,6 +1355,13 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           }),
         ]);
       }
+      for (const event of ["updateToken", "createToken", "deleteToken"]) {
+        this.#hooks.push([
+          event,
+          Hooks.on(event, (token, changes) =>
+            this.#queueGeometryRefresh(event, changes)),
+        ]);
+      }
     }
     this.#attachNavigation(html);
     html.querySelectorAll("select[data-default]").forEach((select) => {
@@ -1370,6 +1372,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       ) select.value = preferred;
     });
     this.#restoreControls(html);
+    this.#applyWeaponIntents(html);
+    this.#renderFirePanel(html);
     this.#attachHelm(html);
     this.#attachPower(html);
     this.#attachDefense(html);
@@ -1404,18 +1408,30 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     }
     html.querySelectorAll("form[data-ui-operation='attack']").forEach(
       (form) => {
-        const envelope = () => this.#previewWeaponEnvelope(form);
+        const weaponId = form.dataset.weaponId;
+        const envelope = () => {
+          this.#previewWeaponEnvelope(form);
+          this.#peekWeapon = weaponId;
+          this.#renderFirePanel();
+        };
         const clearEnvelope = (event) => {
           if (event.type === "focusout" && form.contains(event.relatedTarget)) {
             return;
           }
           const token = actorToken(this.actor);
           if (token) clearMovementPreview(token.uuid);
+          this.#peekWeapon = "";
+          this.#renderFirePanel();
         };
         form.addEventListener("pointerenter", envelope);
         form.addEventListener("focusin", envelope);
         form.addEventListener("pointerleave", clearEnvelope);
         form.addEventListener("focusout", clearEnvelope);
+        // Clicking anywhere on the card pins it as the panel's subject.
+        form.addEventListener("pointerdown", () => {
+          this.#panelWeapon = weaponId;
+          this.#renderFirePanel();
+        });
         form.querySelector("details")?.addEventListener("toggle", () => {
           const token = actorToken(this.actor);
           if (token) clearMovementPreview(token.uuid);
@@ -1427,10 +1443,16 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             form.dispatchEvent(new Event("input", { bubbles: true }));
           },
         );
-        const setting = form.elements.namedItem("weaponSetting");
-        setting?.addEventListener("change", (event) => {
-          event.stopPropagation();
-          void this.#submitUi(event, setting, "toggleWeapon");
+        this.#syncBarrage(form);
+        form.querySelector("[data-barrage-enabled]")?.addEventListener(
+          "change",
+          (event) => this.#toggleBarrage(form, event.currentTarget.checked),
+        );
+        form.querySelectorAll("[data-weapon-setting]").forEach((segment) => {
+          segment.addEventListener("click", (event) => {
+            event.stopPropagation();
+            void this.#submitWeaponSetting(event, segment);
+          });
         });
       },
     );
@@ -1807,11 +1829,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         if (reload) {
           reload.hidden = !weapon?.manualReload ||
             weapon.readiness >= weapon.capacity || weapon.reloadWork != null;
-        }
-        const overclock = form.elements.namedItem("weaponSetting")
-          ?.querySelector("option[value='overclock']");
-        if (overclock) {
-          overclock.disabled = !weapon?.online;
         }
         const contribute = form.querySelector("[data-ui-operation='reload']");
         const operatorSelect = form.closest("[data-tab-panel]")?.querySelector(
@@ -2843,11 +2860,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         ? "Valid shot — Fire blocked until Active Phase"
         : "Valid shot — operator permission required.";
     }
-    const blocker = form.querySelector("[data-weapon-blocker]");
-    if (blocker) {
-      blocker.textContent = message;
-      blocker.dataset.error = String(legal === false || !this.#canAct);
-    }
+    form.dataset.shot = legal === null
+      ? "pending"
+      : legal
+      ? this.#canAct ? "valid" : "ready"
+      : "blocked";
     const indicator = form.querySelector("[data-weapon-validity]");
     if (indicator) {
       indicator.dataset.state = legal === null
@@ -2861,6 +2878,312 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     }
     const fire = form.querySelector("button[type='submit']");
     if (fire) fire.disabled = legal !== true || !this.#canAct;
+  }
+
+  #activeWeaponId() {
+    const weapons = this.#view?.weapons ?? [];
+    if (this.#peekWeapon) return this.#peekWeapon;
+    if (this.#panelWeapon) return this.#panelWeapon;
+    return (weapons.find((weapon) => !weapon.off) ?? weapons[0])?.id ?? "";
+  }
+
+  /** Cache one weapon's last preview so hover, focus and the panel share it. */
+  #storeShot(form, entry) {
+    const weaponId = form.dataset.weaponId ??
+      form.elements.namedItem("weaponId")?.value;
+    if (!weaponId) return;
+    this.#shots.set(weaponId, {
+      revision: this.actor.system.shipCombat.state.revision,
+      targetUuid: form.elements.namedItem("targetUuid")?.value ?? "",
+      ...entry,
+    });
+    this.#renderFirePanel();
+    this.#applyShotMarkers();
+  }
+
+  #shotFor(weaponId) {
+    const shot = this.#shots.get(weaponId);
+    if (!shot) return null;
+    return shot.revision === this.actor.system.shipCombat.state.revision
+      ? shot
+      : null;
+  }
+
+  /** Plot the selected target on every dial: bearing, distance, and why it misses. */
+  #applyShotMarkers(root = this.#root) {
+    if (!root) return;
+    root.querySelectorAll("form[data-ui-operation='attack']").forEach((form) => {
+      const dial = form.querySelector("[data-dial]");
+      const marker = dial?.querySelector("[data-dial-marker]");
+      if (!dial || !marker) return;
+      const shot = this.#shotFor(form.dataset.weaponId);
+      const preview = shot?.result?.public;
+      if (!preview || !Number.isFinite(preview.relativeBearing)) {
+        marker.hidden = true;
+        delete marker.dataset.out;
+        delete marker.dataset.far;
+        return;
+      }
+      const maximum = Number(dial.dataset.dialMax);
+      const distance = Number(preview.distance);
+      const ratio = maximum > 0 && Number.isFinite(distance)
+        ? Math.min(1, Math.max(0, distance / maximum))
+        : 1;
+      const radians = preview.relativeBearing * Math.PI / 180;
+      marker.style.setProperty("--marker-x", (Math.sin(radians) * ratio).toFixed(3));
+      marker.style.setProperty("--marker-y", (-Math.cos(radians) * ratio).toFixed(3));
+      marker.hidden = false;
+      marker.dataset.out = String(
+        preview.arcValid !== true || preview.lineOfSightValid === false,
+      );
+      marker.dataset.far = String(preview.rangeValid !== true);
+    });
+  }
+
+  #renderFirePanel(root = this.#root) {
+    const body = root?.querySelector("[data-fire-body]");
+    if (!body) return;
+    const weaponId = this.#activeWeaponId();
+    const weapon = (this.#view?.weapons ?? []).find((entry) =>
+      entry.id === weaponId
+    );
+    const nodes = [];
+    const line = (label, value, className = "ship-fire-line") => {
+      const row = document.createElement("p");
+      row.className = className;
+      const name = document.createElement("span");
+      name.textContent = label;
+      const amount = document.createElement("strong");
+      amount.textContent = value;
+      row.append(name, amount);
+      return row;
+    };
+    if (!weapon) {
+      const empty = document.createElement("p");
+      empty.className = "ship-muted";
+      empty.textContent = "No weapons installed.";
+      body.replaceChildren(empty);
+      return;
+    }
+    const heading = document.createElement("p");
+    heading.className = "ship-fire-line";
+    const name = document.createElement("strong");
+    name.textContent = weapon.label;
+    const state = document.createElement("span");
+    state.textContent = `${weapon.statusLabel} · ${weapon.hardpoint} · ${
+      weapon.reservation
+    } Power`;
+    heading.append(name, state);
+    nodes.push(heading);
+
+    const shot = this.#shotFor(weaponId);
+    if (!shot) {
+      const waiting = document.createElement("p");
+      waiting.className = "ship-fire-muted";
+      waiting.textContent = "Checking shot…";
+      nodes.push(waiting);
+      body.replaceChildren(...nodes);
+      return;
+    }
+    if (shot.error) {
+      nodes.push(this.#violationNode(shot.error));
+      body.replaceChildren(...nodes);
+      return;
+    }
+    const preview = shot.result.public ?? {};
+    const groups = Array.isArray(preview.modifiers) ? preview.modifiers : [];
+    for (const group of groups) {
+      const items = Array.isArray(group.items) ? group.items : [];
+      const total = items.every((item) => Number.isFinite(item.value))
+        ? items.reduce((sum, item) => sum + item.value, 0)
+        : null;
+      const value = Number.isFinite(total) ? signed(total, 0) : "—";
+      const block = document.createElement("div");
+      block.className = "ship-fire-group";
+      const [only] = items;
+      // A single undetailed term is more useful named than grouped, so the
+      // panel never shows a bare "+4" without saying what produced it.
+      if (only && !only.detail) {
+        block.append(line(only.label, signed(only.value, 0)));
+      } else {
+        block.append(line(group.label, value));
+        for (const item of items) {
+          const detail = item.detail ? ` · ${modifierDetail(item.detail)}` : "";
+          block.append(
+            line(
+              `${item.label}${detail}`,
+              signed(item.value, 0),
+              "ship-fire-line ship-fire-item",
+            ),
+          );
+        }
+      }
+      nodes.push(block);
+    }
+    const total = preview.knownModifierTotal;
+    const threshold = Number.isFinite(preview.finalAc) &&
+      Number.isFinite(total)
+      ? preview.finalAc - total
+      : null;
+    const totalRow = document.createElement("p");
+    totalRow.className = "ship-fire-total";
+    totalRow.dataset.legal = String(Boolean(shot.result.legal));
+    const totalLabel = document.createElement("span");
+    totalLabel.textContent = shot.result.legal ? "To hit" : "Blocked";
+    const totalValue = document.createElement("strong");
+    totalValue.textContent = `${
+      Number.isFinite(total) ? signed(total, 0) : "—"
+    } vs AC ${
+      Number.isFinite(preview.finalAc) ? preview.finalAc : "unknown"
+    }${threshold == null ? "" : ` · d20 ${Math.max(2, Math.min(20, threshold))}+`}`;
+    totalRow.append(totalLabel, totalValue);
+    nodes.push(totalRow);
+
+    const geometry = document.createElement("p");
+    geometry.className = "ship-fire-geometry";
+    const flag = (label, ok) => {
+      const span = document.createElement("span");
+      span.dataset.ok = ok === true ? "true" : ok === false ? "false" : "neutral";
+      span.textContent = label;
+      return span;
+    };
+    geometry.append(
+      flag("Arc", preview.arcValid),
+      flag(`Band ${rangeBandLabel(preview.range?.band)}`, preview.rangeValid),
+      flag("LOS", preview.lineOfSightValid === undefined ? null : preview.lineOfSightValid),
+      flag(`Strikes ${preview.struckSector ?? "—"}`, null),
+    );
+    nodes.push(geometry);
+
+    const costs = document.createElement("div");
+    costs.className = "ship-fire-costs";
+    const ammo = preview.costs?.readiness;
+    if (ammo) {
+      costs.append(line("Ammo", `${ammo.before} → ${ammo.after}`));
+    }
+    const heat = preview.costs?.firingHeat;
+    if (heat) costs.append(line("Heat", `${heat.before} → ${heat.after}`));
+    if (preview.costs?.firingSolution?.consumed) {
+      costs.append(line("Firing solution", "consumed"));
+    }
+    const action = preview.costs?.operation;
+    if (action) {
+      const operator = (this.#view.operators ?? []).find((entry) =>
+        entry.id === action.operatorId
+      );
+      costs.append(
+        line(
+          operator?.label ?? "Action",
+          `${action.before} → ${action.after} ${action.pool ?? ""}`.trim(),
+        ),
+      );
+    }
+    if (preview.damageProfile) {
+      costs.append(
+        line(
+          "Damage",
+          `${preview.damageProfile.shield} shield · ${preview.damageProfile.hull} hull${
+            preview.damageProfile.heat ? ` · ${preview.damageProfile.heat} heat` : ""
+          } · AP ${preview.armorPiercing}`,
+        ),
+      );
+    }
+    nodes.push(costs);
+
+    for (const violation of shot.result.violations ?? []) {
+      nodes.push(this.#violationNode(violation.message));
+    }
+    if (!this.#canAct) {
+      const blocked = this.actor.system.shipCombat.state.phase !== "active"
+        ? "Fire blocked until the Active Phase."
+        : "Fire blocked: operator permission required.";
+      nodes.push(this.#violationNode(blocked));
+    }
+    body.replaceChildren(...nodes);
+  }
+
+  #violationNode(message) {
+    const row = document.createElement("p");
+    row.className = "ship-fire-violation";
+    const text = document.createElement("span");
+    text.textContent = message;
+    row.append(text);
+    return row;
+  }
+
+  #syncBarrage(form) {
+    const toggle = form.querySelector("[data-barrage-enabled]");
+    if (!toggle) return;
+    toggle.checked = Number(
+      form.elements.namedItem("barrageRounds")?.value ?? 1,
+    ) > 1;
+  }
+
+  #toggleBarrage(form, engaged) {
+    const rounds = form.elements.namedItem("barrageRounds");
+    if (!rounds) return;
+    if (!engaged) {
+      rounds.value = "1";
+    } else if (Number(rounds.value) <= 1) {
+      const weapon = this.#view.weapons.find((entry) =>
+        entry.id === form.dataset.weaponId
+      );
+      const feasible = (weapon?.barrageProfiles ?? []).find((profile) =>
+        profile.rounds > 1 && profile.feasible
+      ) ?? (weapon?.barrageProfiles ?? []).find((profile) => profile.rounds > 1);
+      rounds.value = String(feasible?.rounds ?? 1);
+    }
+    form.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  async #submitWeaponSetting(event, segment) {
+    const form = segment.closest("form[data-ui-operation='attack']");
+    const weaponId = form?.dataset.weaponId;
+    if (!weaponId) return;
+    if (segment.dataset.current === "true") return;
+    if (segment.dataset.reachable !== "true") {
+      ui.notifications.warn(
+        segment.title || "That power state is not available.",
+      );
+      return;
+    }
+    const setting = segment.dataset.weaponSetting;
+    this.#weaponIntents.set(weaponId, setting);
+    this.#applyWeaponIntents();
+    try {
+      await this.#submitUi(event, segment, "toggleWeapon");
+    } finally {
+      this.#weaponIntents.delete(weaponId);
+      this.#applyWeaponIntents();
+    }
+  }
+
+  #applyWeaponIntents(root = this.#root) {
+    if (!root) return;
+    root.querySelectorAll("form[data-ui-operation='attack']").forEach((form) => {
+      const intent = this.#weaponIntents.get(form.dataset.weaponId);
+      form.querySelectorAll("[data-weapon-setting]").forEach((segment) => {
+        const pending = intent === segment.dataset.weaponSetting &&
+          segment.dataset.current !== "true";
+        if (pending) segment.dataset.intent = "true";
+        else delete segment.dataset.intent;
+      });
+    });
+  }
+
+  #queueGeometryRefresh(event, changes) {
+    const moved = event !== "updateToken" ||
+      ["x", "y", "rotation", "elevation", "width", "height", "hidden"].some(
+        (key) => changes && key in changes,
+      );
+    if (!moved || this.#tokenRefresh) return;
+    this.#tokenRefresh = setTimeout(() => {
+      this.#tokenRefresh = null;
+      const panel = this.#root?.querySelector("[data-tab-panel='weapons']");
+      if (!panel || panel.hidden) return;
+      panel.querySelectorAll("form[data-live-preview='attack']")
+        .forEach((form) => void this.#previewUi(form));
+    }, 120);
   }
 
   async #dragComponent(event, drop) {
@@ -3267,11 +3590,12 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   }
 
   async #previewUi(form) {
+    const type = form.dataset.livePreview;
     const output = form.querySelector("[data-preview]");
-    if (!output) return;
+    // Attack cards own no output line: their detail renders in the shared panel.
+    if (!output && type !== "attack") return;
     const actor = this.actor;
     const state = clone(actor.system.shipCombat.state);
-    const type = form.dataset.livePreview;
     const epoch = this.#epoch;
     const serial = (this.#previewSerial.get(form) ?? 0) + 1;
     this.#previewSerial.set(form, serial);
@@ -3562,7 +3886,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             gunneryModifier: Number(operator?.ratings?.gunnery ?? 0),
           },
         });
-        output.textContent = attackPreviewText(result);
+        this.#storeShot(form, { result });
         const codes = new Set(result.violations.map((entry) => entry.code));
         const blocker = codes.has("WEAPON_OFFLINE")
           ? "Weapon offline/booting."
@@ -3576,19 +3900,20 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       if (type !== "attack") {
         const submit = form.querySelector("button[type='submit']");
         if (submit) submit.disabled = !this.#canAct;
+        output.dataset.error = "false";
       }
-      output.dataset.error = "false";
     } catch (error) {
       if (!current()) return;
       if (type === "attack") {
+        this.#storeShot(form, { error: errorText(error) });
         this.#weaponValidity(form, false, errorText(error));
       }
       if (type !== "attack") {
         const submit = form.querySelector("button[type='submit']");
         if (submit) submit.disabled = true;
+        output.textContent = errorText(error);
+        output.dataset.error = "true";
       }
-      output.textContent = errorText(error);
-      output.dataset.error = "true";
       if (type === "maneuver" || type === "rotate") {
         const token = actorToken(actor);
         if (token) clearMovementPreview(token.uuid);

@@ -1,6 +1,10 @@
 import { BARRAGE_PROFILES, mergeProfile } from "../rules/combat.js";
-import { getPowerState } from "../rules/power.js";
-import { FAULT_CHANNELS, HAZARD_CHANNELS } from "../rules/conditions.js";
+import { getPowerState, weaponPowerRating } from "../rules/power.js";
+import {
+  FAULT_CHANNELS,
+  getFaultEffects,
+  HAZARD_CHANNELS,
+} from "../rules/conditions.js";
 import {
   getCurrentSignature,
   getSensorStats,
@@ -411,6 +415,7 @@ function powerView(config, state) {
     overdriveTotal,
     overdriveUsed,
     overdriveAvailable,
+    weaponFree: Math.max(0, whole(powerState.allocation?.weapons) - whole(powerState.weaponReserved)),
     nominalOutput: nominal,
     redlineOutput: maximum,
     reservingWeapons,
@@ -607,10 +612,103 @@ function damageSummary(damage = {}) {
   return parts.join(" · ") || "No damage";
 }
 
+const FAULT_SEVERITY_LABELS = Object.freeze({
+  healthy: "Healthy",
+  minor: "Minor",
+  major: "Major",
+  critical: "Critical",
+  destroyed: "Destroyed",
+});
+
+function faultDetail(fault) {
+  if (!fault || fault.severity === "healthy") return "";
+  const parts = [];
+  const accuracy = finite(fault.accuracyModifier);
+  if (accuracy) parts.push(`${signed(accuracy, 0)} accuracy`);
+  if (fault.canOverclock === false) parts.push("cannot Overclock");
+  if (fault.canFire === false) parts.push("cannot fire");
+  const recovery = finite(fault.recoveryTimeMultiplier, 1);
+  if (recovery !== 1) parts.push(`${recovery}× recovery time`);
+  return parts.join(" · ");
+}
+
+/**
+ * Reachability mirrors the authority: Weapons Power reservations gate turning a
+ * weapon on, and Overclock additionally needs an Online weapon whose
+ * malfunction severity permits it.
+ */
+function weaponSwitchView({
+  status,
+  mode,
+  overclockAvailable,
+  fault,
+  nominalPower,
+  overclockPower,
+  shortfall,
+  powerReason,
+}) {
+  const online = status === "online";
+  const off = status === "off";
+  const segments = {
+    off: { label: "Off", current: off, reachable: !off, reason: "", power: 0 },
+    nominal: {
+      label: "On",
+      current: !off && mode === "nominal",
+      reachable: !shortfall(nominalPower),
+      reason: shortfall(nominalPower) ? powerReason(nominalPower) : "",
+      power: nominalPower,
+    },
+  };
+  if (overclockAvailable) {
+    const blocked = !online
+      ? "Requires Online"
+      : fault.canOverclock === false
+      ? `${FAULT_SEVERITY_LABELS[fault.severity] ?? "Weapon"} malfunction blocks Overclock`
+      : shortfall(overclockPower)
+      ? powerReason(overclockPower)
+      : "";
+    segments.overclock = {
+      label: "OC",
+      current: online && mode === "overclock",
+      reachable: !blocked,
+      reason: blocked,
+      power: overclockPower,
+    };
+  }
+  return segments;
+}
+
+/** Ship-relative dial: nose is up, bearings run clockwise, arc is ship-relative. */
+function weaponDialView({ arc, orientation, optimalRange, maximumRange, hardpoint }) {
+  const width = Math.max(0, Math.min(360, finite(arc)));
+  const maximum = finite(maximumRange);
+  const optimal = finite(optimalRange);
+  const ratio = maximum > 0 && optimal > 0 && optimal < maximum
+    ? Math.max(0.08, optimal / maximum)
+    : null;
+  return {
+    arc: width,
+    orientation: finite(orientation),
+    maximumRange: maximum,
+    ratio,
+    style: `--dial-center:${finite(orientation)}deg; --dial-width:${width}deg;${
+      ratio == null ? "" : ` --dial-optimal:${ratio.toFixed(3)};`
+    }`,
+    title: `${hardpoint} · facing ${
+      Math.round(finite(orientation))
+    }° · ${whole(width)}° arc · ${whole(optimalRange)}/${
+      whole(maximumRange)
+    } range`,
+  };
+}
+
 function weaponViews(config, state, powerState) {
   const hardpoints = new Map(
     (config?.hardpoints ?? []).map((hardpoint) => [hardpoint.id, hardpoint]),
   );
+  const allocation = whole(powerState?.allocation?.weapons);
+  const reserved = whole(powerState?.weaponReserved);
+  const free = Math.max(0, allocation - reserved);
   return (config?.components?.weapons ?? []).map((weapon) => {
     const current = state?.weapons?.[weapon.id] ?? {};
     const hardpoint = hardpoints.get(weapon.hardpointId);
@@ -624,6 +722,20 @@ function weaponViews(config, state, powerState) {
     const capacity = whole(profile?.readiness?.capacity);
     const readiness = whole(current.readiness);
     const status = current.status ?? "off";
+    const fault = getFaultEffects(config, state, {
+      componentId: weapon.id,
+      channel: "weaponMalfunction",
+    });
+    const reservation = whole(powerState?.weaponReservations?.[weapon.id]);
+    const overclockAvailable = Boolean(weapon?.modes?.overclock);
+    const nominalPower = whole(weaponPowerRating(weapon, "nominal"));
+    const overclockPower = overclockAvailable
+      ? whole(weaponPowerRating(weapon, "overclock"))
+      : null;
+    const shortfall = (rating) => rating - reservation > free;
+    const powerReason = (rating) =>
+      `Needs ${rating} Power · ${free} free of ${allocation}`;
+    const online = status === "online";
     return {
       id: weapon.id,
       label: weapon.label ?? weapon.id,
@@ -633,14 +745,30 @@ function weaponViews(config, state, powerState) {
       statusLabel: status === "booting"
         ? `Booting · ${availabilityLabel(current.bootCounter)}`
         : status,
-      online: status === "online",
+      online,
       off: status === "off",
       powered: status !== "off",
       booting: status === "booting",
-      nominalMode: (current.mode ?? "nominal") === "nominal",
-      overclockMode: current.mode === "overclock",
+      bootCounter: whole(current.bootCounter),
       mode: current.mode ?? "nominal",
-      overclockAvailable: Boolean(weapon?.modes?.overclock),
+      fault: {
+        severity: fault.severity,
+        label: FAULT_SEVERITY_LABELS[fault.severity] ?? fault.severity,
+        detail: faultDetail(fault),
+        visible: fault.severity !== "healthy",
+        destroyed: fault.severity === "destroyed",
+      },
+      switch: weaponSwitchView({
+        status,
+        mode: current.mode ?? "nominal",
+        overclockAvailable,
+        fault,
+        nominalPower,
+        overclockPower,
+        reservation,
+        shortfall,
+        powerReason,
+      }),
       readiness,
       capacity,
       readinessMeter: meter(
@@ -658,15 +786,26 @@ function weaponViews(config, state, powerState) {
       maximumRange: finite(profile?.range?.maximum),
       arc: finite(profile.arc),
       orientation: finite(hardpoint?.orientation),
+      dial: weaponDialView({
+        arc: finite(profile.arc),
+        orientation: finite(hardpoint?.orientation),
+        optimalRange: finite(profile?.range?.optimal),
+        maximumRange: finite(profile?.range?.maximum),
+        hardpoint: hardpoint?.label ?? weapon.regions?.join(" / ") ?? "Hardpoint",
+      }),
       heat: whole(profile?.firingHeat?.amount ?? profile.firingHeat),
       heatPerRound: profile?.firingHeat?.per === "physicalRound",
-      reservation: whole(powerState?.weaponReservations?.[weapon.id]),
+      reservation,
+      power: { nominal: nominalPower, overclock: overclockPower, free },
       barrageProfiles: barrageProfiles.map((profile, index) => ({
         rounds: whole(profile.rounds, 1),
         penalty: finite(profile.penalty),
+        penaltyLabel: signed(profile.penalty, 0),
         hits: whole(profile.maximumEffectiveHits, 1),
         selected: index === 0,
+        feasible: whole(profile.rounds, 1) <= readiness,
       })),
+      barrage,
       manualReload: weapon?.readiness?.recovery === "manualWork",
       reloadWork: current.reloadWork,
       reloadLabel: current.reloadWork
