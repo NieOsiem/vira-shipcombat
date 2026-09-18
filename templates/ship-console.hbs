@@ -44,10 +44,57 @@
     </section>
 
     <section id="panel-crew" class="ship-console-panel" role="tabpanel" aria-label="Crew" data-tab-panel="crew" {{#unless tabState.crew.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Crew &amp; Stations</h2><span class="ship-readout">Ship-wide Orders {{view.crewOrders.shipWideOrders}} · Command slots {{view.stationSlots.command.length}} · Crew slots {{view.stationSlots.crew.length}}</span></div>
-      <p class="ship-flow-hint">1 Assign a character · 2 Take a console · 3 Spend Actions/Orders</p>
+      <div class="ship-panel-heading">
+        <h2>Crew</h2>
+        <span class="ship-readout">{{view.crewOrders.shipWideOrders}} Orders · {{view.crewOrders.pendingCount}} tasks · {{view.stationSlots.occupied.command}}/{{view.stationSlots.capacity.command}} command · {{view.stationSlots.occupied.crew}}/{{view.stationSlots.capacity.crew}} crew seated</span>
+      </div>
+      <p class="ship-flow-hint">Orders are spent by the seated crew. Everything they can be ordered to do right now is listed first; who is seated is at the bottom of the tab.</p>
 
       {{#if rosterConflicts.length}}<section class="ship-card ship-roster-conflicts" role="alert" aria-label="Roster conflicts"><header><h3><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Station conflicts</h3></header><ul>{{#each rosterConflicts}}<li><strong>{{tokens}}</strong><span>{{slots}}</span></li>{{/each}}</ul><p class="ship-muted">An identity bound to more than one station of this ship is reported here; the engine does not block combat on it.</p></section>{{/if}}
+
+      <section class="ship-card ship-crew-orders-board" aria-label="Support Crew Orders">
+        <header>
+          <div>
+            <span class="ship-kicker">Support Operations</span>
+            <h3>Support Crew Orders</h3>
+          </div>
+          <span class="ship-status-chip {{#if view.crewOrders.shipWideOrders}}ship-status-chip--nominal{{else}}ship-status-chip--off{{/if}}" title="Orders remaining across every operator of this ship, not only your own.">
+            {{view.crewOrders.shipWideOrders}} ship-wide Orders
+          </span>
+        </header>
+        <p class="ship-muted">Each task spends one Order, and the list reads top-down by what the fight usually needs first: a hull about to breach, a wrecked system, a degraded one, ordnance, then heat.</p>
+
+        {{#if view.crewOrders.jobs.length}}
+          <div class="ship-crew-jobs-list">
+            {{#each view.crewOrders.jobs}}
+              <div class="ship-crew-job-row ship-crew-job-row--{{tone}}">
+                <span class="ship-crew-job-kind">{{kindLabel}}</span>
+                <div class="ship-crew-job-info">
+                  <strong>{{label}}</strong>
+                  <small class="ship-muted">{{detail}}{{#if ../view.crewOrders.hasActingOperator}} · {{costDetail}}{{else}} · no operator can spend this Order{{/if}}</small>
+                </div>
+                <form data-ui-operation="{{type}}" class="ship-crew-job-form">
+                  <input type="hidden" name="operatorId" value="{{../view.crewOrders.defaultOperatorId}}">
+                  {{#if conditionId}}<input type="hidden" name="conditionId" value="{{conditionId}}"><input type="hidden" name="rating" value="engineering">{{/if}}
+                  {{#if weaponId}}<input type="hidden" name="weaponId" value="{{weaponId}}">{{/if}}
+                  <button type="submit" class="ship-crew-job-btn" title="{{#unless ../view.crewOrders.hasActingOperator}}No acting operator — assign a character to a Crew station first.{{else}}{{#unless ../canAct}}{{../actReason}}{{else}}{{actionLabel}} — {{costDetail}}{{/unless}}{{/unless}}" {{#unless ../view.crewOrders.hasActingOperator}}disabled{{else}}{{#unless ../canAct}}disabled{{/unless}}{{/unless}}>
+                    <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> {{actionLabel}}
+                  </button>
+                </form>
+              </div>
+            {{/each}}
+          </div>
+        {{else}}
+          <p class="ship-empty" style="margin-top: 0.35rem;"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> All systems nominal. No pending support crew tasks.</p>
+        {{/if}}
+      </section>
+
+      <details class="ship-card ship-stations">
+        <summary>
+          <span class="ship-kicker">Stations</span>
+          <strong>{{view.stationSlots.occupied.command}}/{{view.stationSlots.capacity.command}} command · {{view.stationSlots.occupied.crew}}/{{view.stationSlots.capacity.crew}} crew</strong>
+          <span class="ship-stations-roster">{{#each view.stationSlots.seats}}<span class="ship-station-seat{{#unless occupied}} ship-station-seat--empty{{/unless}}{{#if mine}} ship-station-seat--mine{{/if}}" title="{{label}}{{#if occupied}} · {{operatorLabel}} · {{remaining}} {{resource}} remaining{{/if}}"><b>{{key}}</b>{{#if occupied}}{{operatorLabel}} <i>{{remaining}}</i>{{else}}vacant{{/if}}</span>{{/each}}</span>
+        </summary>
 
       <div class="ship-crew-section-heading">
         <h3>Command Stations (3 Actions)</h3>
@@ -196,43 +243,7 @@
         {{/each}}
       </div>
 
-      <!-- Support Crew Orders Console -->
-      <section class="ship-card ship-crew-orders-board" aria-label="Support Crew Orders">
-        <header>
-          <div>
-            <span class="ship-kicker">Support Operations</span>
-            <h3>Support Crew Orders</h3>
-          </div>
-          <span class="ship-status-chip {{#if view.crewOrders.shipWideOrders}}ship-status-chip--nominal{{else}}ship-status-chip--off{{/if}}" title="Orders remaining across every operator of this ship, not only your own.">
-            {{view.crewOrders.shipWideOrders}} ship-wide Orders
-          </span>
-        </header>
-        <p class="ship-muted">Step 3: each task spends one Order. Delegate routine maintenance, manual reloads, field patching, and coolant flushes to assigned support crew.</p>
-
-        {{#if view.crewOrders.jobs.length}}
-          <div class="ship-crew-jobs-list">
-            {{#each view.crewOrders.jobs}}
-              <div class="ship-crew-job-row">
-                <div class="ship-crew-job-info">
-                  <strong>{{label}}</strong>
-                  <small class="ship-muted">{{detail}}</small>
-                  <small class="ship-crew-job-actor ship-muted">{{#if ../view.crewOrders.hasActingOperator}}{{costDetail}}{{else}}No operator can spend this Order yet.{{/if}}</small>
-                </div>
-                <form data-ui-operation="{{type}}" class="ship-crew-job-form">
-                  <input type="hidden" name="operatorId" value="{{../view.crewOrders.defaultOperatorId}}">
-                  {{#if conditionId}}<input type="hidden" name="conditionId" value="{{conditionId}}"><input type="hidden" name="rating" value="engineering">{{/if}}
-                  {{#if weaponId}}<input type="hidden" name="weaponId" value="{{weaponId}}">{{/if}}
-                  <button type="submit" class="ship-crew-job-btn" title="{{#unless ../view.crewOrders.hasActingOperator}}No acting operator — assign a character to a Crew station first.{{else}}{{#unless ../canAct}}{{../actReason}}{{else}}{{costDetail}}{{/unless}}{{/unless}}" {{#unless ../view.crewOrders.hasActingOperator}}disabled{{else}}{{#unless ../canAct}}disabled{{/unless}}{{/unless}}>
-                    <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> {{actionLabel}} ({{costLabel}})
-                  </button>
-                </form>
-              </div>
-            {{/each}}
-          </div>
-        {{else}}
-          <p class="ship-empty" style="margin-top: 0.35rem;"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> All systems nominal. No pending support crew tasks.</p>
-        {{/if}}
-      </section>
+      </details>
     </section>
 
     <section id="panel-helm" class="ship-console-panel" role="tabpanel" aria-label="Helm" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>

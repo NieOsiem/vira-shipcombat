@@ -3644,19 +3644,12 @@
   color: var(--ship-text-primary, #e2e8f0);
 }
 
+/* Explanatory, not a status banner: the board below it is the loud element on this tab. */
 .ship-flow-hint {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
   margin: 0.15rem 0 0.5rem;
-  padding: 0.2rem 0.45rem;
-  border-left: 2px solid var(--ship-cyan);
-  color: var(--ship-cyan);
-  background: rgb(62 232 208 / 6%);
-  font-family: var(--font-monospace, monospace);
+  color: var(--ship-muted);
   font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  line-height: 1.35;
 }
 
 .ship-operator-header {
@@ -4044,15 +4037,36 @@
 }
 
 .ship-crew-job-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
   padding: 0.3rem 0.45rem;
   border: 1px solid rgb(142 165 173 / 15%);
+  border-left-width: 2px;
   border-radius: 2px;
   background: rgb(0 0 0 / 25%);
 }
+
+/* Ranking is the point of the list: how urgent a task is decides its accent. */
+.ship-crew-job-row--critical { border-left-color: var(--ship-red); }
+.ship-crew-job-row--important { border-left-color: var(--ship-amber); }
+.ship-crew-job-row--routine { border-left-color: var(--ship-cyan); }
+.ship-crew-job-row--housekeeping { border-left-color: var(--ship-border-bright); }
+
+.ship-crew-job-kind {
+  min-width: 3.8rem;
+  color: var(--ship-muted);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.ship-crew-job-row--critical .ship-crew-job-kind { color: var(--ship-red); }
+.ship-crew-job-row--important .ship-crew-job-kind { color: var(--ship-amber); }
+.ship-crew-job-row--routine .ship-crew-job-kind { color: var(--ship-cyan); }
 
 .ship-crew-job-info {
   display: flex;
@@ -4070,12 +4084,47 @@
 
 .ship-crew-job-info small {
   font-size: 0.6rem;
+  line-height: 1.3;
 }
 
-.ship-crew-job-info .ship-crew-job-actor {
-  color: var(--ship-cyan);
-  opacity: 0.8;
+/* Stations: secondary surface, so a single summary line carries the roster while collapsed. */
+.ship-stations > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.6rem;
+  list-style: none;
 }
+
+.ship-stations > summary::-webkit-details-marker { display: none; }
+.ship-stations > summary::marker { content: ""; }
+.ship-stations > summary > strong { color: var(--ship-text); font-size: 0.72rem; }
+.ship-stations > summary:hover > strong { color: #fff; }
+
+.ship-stations-roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.3rem;
+  margin-left: auto;
+  font-size: 0.6rem;
+}
+
+.ship-station-seat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--ship-border);
+  border-radius: 2px;
+  color: var(--ship-muted);
+  background: rgb(0 0 0 / 22%);
+  font-family: var(--font-monospace, monospace);
+}
+
+.ship-station-seat b { color: var(--ship-cyan); font-weight: 800; }
+.ship-station-seat i { color: var(--ship-text); font-style: normal; }
+.ship-station-seat--empty { opacity: 0.6; }
+.ship-station-seat--mine { border-color: rgb(62 232 208 / 45%); background: var(--ship-cyan-soft); }
 
 .ship-crew-job-form {
   margin: 0;

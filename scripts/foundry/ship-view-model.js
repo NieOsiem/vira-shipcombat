@@ -359,6 +359,32 @@ function stationSlots(config, state, allOperators, viewerUserId) {
   };
 }
 
+/**
+ * The stations block is secondary on this tab, so it carries a one-line roster summary that
+ * answers "who is seated, and do they still have resources?" without expanding it.
+ */
+function stationSummary(slots) {
+  const entries = [...slots.command, ...slots.crew];
+  return {
+    seats: entries.map((entry) => ({
+      key: `${entry.kind === "command" ? "C" : "S"}${entry.slotNumber}`,
+      label: entry.label,
+      occupied: entry.occupied,
+      operatorLabel: entry.operator?.label ?? "",
+      remaining: entry.operator?.remaining ?? 0,
+      resource: entry.operator?.resource ??
+        (entry.kind === "command" ? "Actions" : "Orders"),
+      controlsLabel: entry.operator?.controlsLabel ?? "None",
+      mine: entry.mine,
+    })),
+    occupied: {
+      command: slots.command.filter((entry) => entry.occupied).length,
+      crew: slots.crew.filter((entry) => entry.occupied).length,
+    },
+    capacity: { command: slots.command.length, crew: slots.crew.length },
+  };
+}
+
 function componentForSystem(config, system) {
   if (system === "engines") return config?.powerSystems?.engines;
   if (system === "shields") return config?.components?.shield;
@@ -1340,6 +1366,71 @@ export function buildShipConsoleView(
       costDetail: `${costLabel} · ${defaultOperatorLabel}`,
     }
     : { operatorLabel: "", costDetail: costLabel };
+  // Order support tasks the way a crew spends Orders in a fight: a hull about to breach,
+  // then a wrecked system, then degraded ones, then ordnance, then heat housekeeping.
+  const severityPriority = (severity) =>
+    ({ catastrophic: 6, critical: 8, major: 11, minor: 14 })[severity] ?? 16;
+  const jobs = [
+    ...(hull.value < hull.maximum ? [{
+      id: "hullRepair",
+      type: "hullRepair",
+      label: "Field-Patch Hull",
+      detail: `${hull.value} / ${hull.maximum} Hull · Engineering repair roll`,
+      actionLabel: "Patch Hull",
+      costLabel: "1 Order",
+      kindLabel: "Damage",
+      priority: hull.tone === "danger" ? 4 : 20,
+      ...jobCost("1 Order"),
+    }] : []),
+    ...conditions.map((condition) => ({
+      id: `condition-${condition.id}`,
+      type: condition.destroyed ? "recoveryWork" : "repair",
+      conditionId: condition.id,
+      label: condition.destroyed ? `Rebuild ${condition.label}` : `Repair ${condition.label}`,
+      detail: `${condition.severity} ${condition.kind}${condition.sector ? ` · ${condition.sector}` : ""}`,
+      actionLabel: condition.destroyed ? "Contribute Work" : "Attempt Repair",
+      costLabel: "1 Order",
+      kindLabel: condition.destroyed ? "Recovery" : "Damage",
+      priority: condition.destroyed ? 5 : severityPriority(condition.severity),
+      ...jobCost(condition.destroyed ? recoveryCostLabel : "1 Order"),
+    })),
+    ...weaponsList.filter((w) => w.manualReload).map((w) => ({
+      id: `reload-${w.id}`,
+      type: w.reloadWork ? "reload" : "beginReload",
+      weaponId: w.id,
+      label: `Reload ${w.label}`,
+      detail: `${w.readiness}/${w.capacity} ready${w.reloadLabel ? ` · ${w.reloadLabel}` : ""}`,
+      actionLabel: w.reloadWork ? "Contribute Reload Work" : "Begin Reload",
+      costLabel: "1 Order",
+      kindLabel: "Ordnance",
+      priority: w.reloadWork ? 25 : 30,
+      ...jobCost("1 Order"),
+    })),
+    ...(finite(state?.heat) > 0 ? [{
+      id: "cooling",
+      type: "cooling",
+      label: "Assist Coolant Flush",
+      detail: `${state.heat} / ${config?.heatCapacity ?? 20} Heat`,
+      actionLabel: "Flush Coolant",
+      costLabel: "1 Order",
+      kindLabel: "Heat",
+      priority: 40,
+      ...jobCost("1 Order"),
+    }] : []),
+  ]
+    .sort((left, right) =>
+      left.priority - right.priority || left.label.localeCompare(right.label)
+    )
+    .map((job) => ({
+      ...job,
+      tone: job.priority <= 5
+        ? "critical"
+        : job.priority <= 14
+        ? "important"
+        : job.priority <= 30
+        ? "routine"
+        : "housekeeping",
+    }));
   const crewOrders = {
     availableOrders: availableCrewOrders,
     shipWideOrders,
@@ -1347,46 +1438,10 @@ export function buildShipConsoleView(
     defaultOperatorId: bestCrewOperator,
     hasActingOperator: Boolean(defaultOperatorLabel),
     defaultOperatorLabel,
-    jobs: [
-      ...(hull.value < hull.maximum ? [{
-        id: "hullRepair",
-        type: "hullRepair",
-        label: "Field-Patch Hull",
-        detail: `${hull.value} / ${hull.maximum} Hull · Engineering repair roll`,
-        actionLabel: "Patch Hull",
-        costLabel: "1 Order",
-        ...jobCost("1 Order"),
-      }] : []),
-      ...conditions.map((condition) => ({
-        id: `condition-${condition.id}`,
-        type: condition.destroyed ? "recoveryWork" : "repair",
-        conditionId: condition.id,
-        label: condition.destroyed ? `Rebuild ${condition.label}` : `Repair ${condition.label}`,
-        detail: `${condition.severity} ${condition.kind}${condition.sector ? ` · ${condition.sector}` : ""}`,
-        actionLabel: condition.destroyed ? "Contribute Work" : "Attempt Repair",
-        costLabel: "1 Order",
-        ...jobCost(condition.destroyed ? recoveryCostLabel : "1 Order"),
-      })),
-      ...weaponsList.filter((w) => w.manualReload).map((w) => ({
-        id: `reload-${w.id}`,
-        type: w.reloadWork ? "reload" : "beginReload",
-        weaponId: w.id,
-        label: `Reload ${w.label}`,
-        detail: `${w.readiness}/${w.capacity} ready${w.reloadLabel ? ` · ${w.reloadLabel}` : ""}`,
-        actionLabel: w.reloadWork ? "Contribute Reload Work" : "Begin Reload",
-        costLabel: "1 Order",
-        ...jobCost("1 Order"),
-      })),
-      ...(finite(state?.heat) > 0 ? [{
-        id: "cooling",
-        type: "cooling",
-        label: "Assist Coolant Flush",
-        detail: `${state.heat} / ${config?.heatCapacity ?? 20} Heat`,
-        actionLabel: "Flush Coolant",
-        costLabel: "1 Order",
-        ...jobCost("1 Order"),
-      }] : []),
-    ],
+    jobs,
+    pendingCount: jobs.length,
+    // "Urgent" is what the board leads with: hull at risk, a wrecked or degraded system.
+    urgentCount: jobs.filter((job) => job.priority <= 20).length,
   };
 
   return {
@@ -1434,7 +1489,7 @@ export function buildShipConsoleView(
     commandOperators,
     crewOperators,
     crewOrders,
-    stationSlots: stationSlotsView,
+    stationSlots: { ...stationSlotsView, ...stationSummary(stationSlotsView) },
     defaults,
     helmHeld,
     helmHolder,
