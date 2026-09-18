@@ -745,6 +745,14 @@ function weaponViews(config, state, powerState) {
       statusLabel: status === "booting"
         ? `Booting · ${availabilityLabel(current.bootCounter)}`
         : status,
+      stateLabel: status === "booting"
+        ? "Booting"
+        : status === "online"
+        ? current.mode === "overclock" ? "Online · Overclock" : "Online"
+        : "Off",
+      bootLabel: status === "booting"
+        ? availabilityLabel(current.bootCounter)
+        : "",
       online,
       off: status === "off",
       powered: status !== "off",

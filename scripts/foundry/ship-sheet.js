@@ -2962,16 +2962,23 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       body.replaceChildren(empty);
       return;
     }
-    const heading = document.createElement("p");
-    heading.className = "ship-fire-line";
-    const name = document.createElement("strong");
-    name.textContent = weapon.label;
-    const state = document.createElement("span");
-    state.textContent = `${weapon.statusLabel} · ${weapon.hardpoint} · ${
+    // Name gets its own line: gun names outgrow the column long before the
+    // panel runs out of vertical room.
+    const subject = document.createElement("p");
+    subject.className = "ship-fire-subject";
+    subject.textContent = weapon.label;
+    const state = document.createElement("p");
+    state.className = "ship-fire-state";
+    state.textContent = `${weapon.stateLabel} · ${weapon.hardpoint} · ${
       weapon.reservation
     } Power`;
-    heading.append(name, state);
-    nodes.push(heading);
+    nodes.push(subject, state);
+    if (weapon.booting && weapon.bootLabel) {
+      const boot = document.createElement("p");
+      boot.className = "ship-fire-state ship-fire-state--boot";
+      boot.textContent = weapon.bootLabel;
+      nodes.push(boot);
+    }
 
     const shot = this.#shotFor(weaponId);
     if (!shot) {
