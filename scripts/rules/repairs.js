@@ -2,7 +2,9 @@ import { RuleViolation } from "../constants.js";
 
 const FAULT_TIERS = Object.freeze(["minor", "major", "critical", "destroyed"]);
 const HAZARD_TIERS = Object.freeze(["minor", "major", "critical", "catastrophic"]);
-const REPAIR_DCS = Object.freeze({ minor: 10, major: 15, critical: 20, catastrophic: 20 });
+export const REPAIR_DCS = Object.freeze({ minor: 10, major: 15, critical: 20, catastrophic: 20 });
+export const HULL_REPAIR = Object.freeze({ dc: 16, offset: 15 });
+export const VENT_SIGNATURE_PENALTY = 5;
 const COOLING_MULTIPLIER = Object.freeze({ healthy: 1, minor: 0.75, major: 0.5, critical: 0.25, destroyed: 0 });
 
 function values(value) {
@@ -193,7 +195,7 @@ function effectiveCooling(config, draft) {
 
 function addVentEffect(draft, componentId) {
   const id = `emergencyVent:${componentId}`;
-  const effect = { id, sourceId: componentId, type: "signature", scModifier: -5, expires: "nextStart" };
+  const effect = { id, sourceId: componentId, type: "signature", scModifier: -VENT_SIGNATURE_PENALTY, expires: "nextStart" };
   if (Array.isArray(draft.effects)) {
     const index = draft.effects.findIndex((entry) => entry?.id === id && entry?.sourceId === componentId);
     if (index >= 0) draft.effects[index] = effect;
@@ -293,13 +295,13 @@ export function contributeRecoveryWork(config, draft, { operatorId, conditionId,
     throw new RuleViolation("INVALID_RECHARGE_DELAY", "The Shield component requires a nonnegative integer Recharge Delay.", { rechargeDelay });
   }
   const released = commitResource(draft, assigned, resource);
-  draft.work ??= {};
-  draft.work[jobId] = { ...(existing ?? {}), id: jobId, targetId: target.key, current, required };
   const events = [];
   if (complete) {
+    // A finished job leaves no durable entry: a zeroed one would surface as a stale
+    // "0 / N" progress line. The returned result still reports the completion.
+    if (draft.work) delete draft.work[jobId];
     target.condition.severity = "critical";
     target.condition.clock = null;
-    draft.work[jobId].current = 0;
     if (recoveryChannel === "shieldEmitterDamage") {
       draft.shields ??= {};
       draft.shields.hp ??= {};
@@ -309,6 +311,9 @@ export function contributeRecoveryWork(config, draft, { operatorId, conditionId,
       events.push({ type: "shieldEmitterRecovered", conditionId: target.key, sector: recoverySector, hp: 0, collapse: rechargeDelay });
     }
     events.push({ type: "faultRecovered", conditionId: target.key, severity: "critical" });
+  } else {
+    draft.work ??= {};
+    draft.work[jobId] = { ...(existing ?? {}), id: jobId, targetId: target.key, current, required };
   }
   return {
     operation: "recoveryWork",
@@ -353,8 +358,8 @@ export function repairHull(config, draft, {
 
   const released = commitResource(draft, assigned, resource);
   if (assigned.slot === "command") draft.repairAttemptUsed = true;
-  const success = check.total >= 16;
-  const requested = success ? check.total - 15 : 0;
+  const success = check.total >= HULL_REPAIR.dc;
+  const requested = success ? check.total - HULL_REPAIR.offset : 0;
   const repaired = Math.min(maxHull - hull, requested);
   draft.hull = hull + repaired;
   return {
@@ -365,7 +370,7 @@ export function repairHull(config, draft, {
     spent: 1,
     remaining: resource.remaining - 1,
     released,
-    check: { ...check, dc: 16, success },
+    check: { ...check, dc: HULL_REPAIR.dc, success },
     requested,
     repaired,
     hull: draft.hull,

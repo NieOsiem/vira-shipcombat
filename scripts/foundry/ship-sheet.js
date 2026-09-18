@@ -645,6 +645,103 @@ function titleCase(value) {
     .replace(/^./, (letter) => letter.toUpperCase());
 }
 
+const CONTROL_LABELS = Object.freeze({
+  helm: "Helm",
+  power: "Power",
+  defense: "Defense",
+});
+/** Console operations whose type name reads badly as a sentence. */
+const OPERATION_LABELS = Object.freeze({
+  setRoster: "Station updated.",
+  spendResource: "Resource spent.",
+  contributeWork: "Work contributed.",
+  resolveFate: "Fate resolved.",
+});
+/** Engine event details name the rules function, not the console operation. */
+const DAMAGE_RESULT_TYPES = Object.freeze({
+  repair: "standardRepair",
+  recoveryWork: "recoveryWork",
+  hullRepair: "hullRepair",
+  cooling: "activeCooling",
+  vent: "emergencyVent",
+});
+const DAMAGE_LABELS = Object.freeze({
+  repair: "Repair",
+  recoveryWork: "Recovery Work",
+  hullRepair: "Hull patch",
+  cooling: "Active cooling",
+  vent: "Emergency vent",
+});
+
+/** The engine rolls the d20 on the GM side, so the number is only known from the event. */
+function damageResult(type, response) {
+  const operation = DAMAGE_RESULT_TYPES[type];
+  if (!operation) return null;
+  const events = [
+    ...(response?.result?.publicEvents ?? []),
+    ...(response?.result?.gmEvents ?? []),
+  ];
+  return events.find((event) => event?.detail?.operation === operation)?.detail ??
+    null;
+}
+
+function checkLine(check) {
+  if (!check || !Number.isFinite(Number(check.total))) return "";
+  const bonus = Number(check.rating) + Number(check.modifier ?? 0);
+  return `d20${bonus < 0 ? "" : "+"}${bonus} = ${check.total} vs DC ${
+    check.dc ?? "—"
+  }`;
+}
+
+function damageOutcome(type, detail, config) {
+  const check = detail?.check ?? null;
+  const capacity = Number(config?.heatCapacity);
+  const heatCapacity = Number.isFinite(capacity) ? capacity : "—";
+  switch (type) {
+    case "repair": {
+      const line = checkLine(check);
+      if (!line) return "";
+      const change = detail?.change;
+      if (!check.success || !change) return `${line} — no change`;
+      const before = titleCase(change.before);
+      if (change.removed) return `${line} — ${before} cleared`;
+      return `${line} — ${before} reduced to ${titleCase(change.after)}`;
+    }
+    case "hullRepair": {
+      const line = checkLine(check);
+      if (!line) return "";
+      if (!check.success || !detail.repaired) {
+        return `${line} — no Hull restored`;
+      }
+      return `${line} — +${detail.repaired} Hull (${detail.hull} / ${
+        config?.maxHull ?? "—"
+      })`;
+    }
+    case "cooling":
+      if (!Number.isFinite(Number(detail?.removed))) return "";
+      return `−${detail.removed} Heat (${detail.heat} / ${heatCapacity})`;
+    case "vent":
+      if (!Number.isFinite(Number(detail?.removed))) return "";
+      return `−${detail.removed} Heat (${detail.heat} / ${heatCapacity}) — signature penalty until next Start`;
+    case "recoveryWork":
+      if (!Number.isFinite(Number(detail?.contributed))) return "";
+      if (detail.complete) return "Recovery complete — fault reduced to Critical";
+      return `+${detail.contributed} Recovery Work (${detail.current} / ${detail.required})`;
+    default:
+      return "";
+  }
+}
+
+function commitMessage(type, payload, response, config) {
+  const detail = damageResult(type, response);
+  const outcome = detail ? damageOutcome(type, detail, config) : "";
+  if (outcome) return `${DAMAGE_LABELS[type] ?? titleCase(type)}: ${outcome}`;
+  const control = CONTROL_LABELS[payload?.control];
+  if (type === "takeControl") return `${control ?? "Control"} taken.`;
+  if (type === "releaseControl") return `${control ?? "Control"} released.`;
+  return OPERATION_LABELS[type] ?? `${titleCase(type)} committed.`;
+}
+
 function refitStatus(itemId, state) {
   if (!itemId) return "Empty · systems degraded";
   const weapon = state?.weapons?.[itemId] ?? {};
@@ -1574,6 +1671,18 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         () => void this.#editRosterActor(button.dataset.rosterEdit),
       );
     });
+    html.querySelectorAll("form[data-assign-picker]").forEach((form) => {
+      form.addEventListener(
+        "submit",
+        (event) => void this.#submitAssignPicker(event, form),
+      );
+    });
+    html.querySelectorAll("[data-release-control]").forEach((button) => {
+      button.addEventListener(
+        "click",
+        (event) => void this.#submitUi(event, button, "releaseControl"),
+      );
+    });
     html.querySelectorAll("[data-roster-actor]").forEach((element) => {
       element.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -1835,6 +1944,45 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         state.ventCooldown > 0,
     );
     hide("hullRepair", state.hull >= this.#config.maxHull);
+    // A destroyed Cooling component rejects cooling and vent outright, so keep the
+    // damage-panel buttons (and the crew board's coolant flush) visible but disabled
+    // with the reason instead of a silent engine rejection.
+    const cooling = this.#view?.cooling ?? {};
+    if (cooling.available === false) {
+      const reason = cooling.unavailableReason ||
+        "The destroyed Cooling component cannot cool or vent.";
+      html.querySelectorAll(
+        "button[data-ui-operation='cooling'], button[data-ui-operation='vent'], form[data-ui-operation='cooling'] button",
+      ).forEach((button) => {
+        button.disabled = true;
+        button.title = reason;
+      });
+    }
+    const actReason = state.phase === "active"
+      ? "Operational access required."
+      : "Active Phase required.";
+    html.querySelectorAll("[data-release-control]").forEach((button) => {
+      const holder = button.dataset.operatorId;
+      button.disabled = !holder || !this.#canAct;
+      button.title = !this.#canAct
+        ? actReason
+        : !holder
+        ? "No operator holds this console."
+        : `Release ${
+          CONTROL_LABELS[button.dataset.releaseControl] ?? "station"
+        } control.`;
+    });
+    // Without an operator the engine rejects every support order, so never offer one.
+    if (this.#view?.crewOrders?.hasActingOperator === false) {
+      const reason =
+        "No acting support operator — assign a character to a Crew station first.";
+      html.querySelectorAll(".ship-crew-orders-board button").forEach(
+        (button) => {
+          button.disabled = true;
+          button.title = reason;
+        },
+      );
+    }
     html.querySelectorAll("form[data-ui-operation='attack']").forEach(
       (form) => {
         const weapon = this.#view.weapons.find((entry) =>
@@ -3477,8 +3625,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     event.stopImmediatePropagation();
     slot.classList.remove("is-dragover");
     try {
-      if (!globalThis.game?.user?.isGM && !this.#canAct) {
-        throw new Error("Only the active GM or authorized operator can modify station assignments.");
+      if (!globalThis.game?.user?.isGM) {
+        throw new Error(
+          "Only the GM can change station assignments. Ask your GM to seat this character.",
+        );
       }
       const data = globalThis.TextEditor?.getDragEventData?.(event) ??
         JSON.parse(event.dataTransfer?.getData("text/plain") || "{}");
@@ -3503,6 +3653,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   }
 
   async #assignActorToSlot(droppedActor, kind, slotIndex) {
+    if (!globalThis.game?.user?.isGM) {
+      throw new Error("Only the GM can seat a character on a station slot.");
+    }
     await ensureActorCrewFeature(droppedActor);
     const profile = buildOperatorProfileFromActor(droppedActor);
 
@@ -3542,6 +3695,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     currentRoster[kind].push({ operatorId: profile.id, slot: slotIndex });
 
     // 3. Commit roster via operation or direct write
+    const message = `Assigned ${profile.label} to ${
+      kind === "command" ? "Command" : "Crew"
+    } ${slotIndex + 1}.`;
     const token = actorToken(ship);
     if (token) {
       await this.#commitOperation(
@@ -3549,12 +3705,13 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         { gmOverride: true, roster: currentRoster },
         [],
         state.revision,
+        { message },
       );
     } else {
       await ship.update({ "system.shipCombat.state.roster": currentRoster });
+      ui.notifications.info(message);
     }
 
-    ui.notifications.info(`Assigned ${profile.label} to ${kind === "command" ? "Command" : "Crew"} ${slotIndex + 1}.`);
     await this.render();
   }
 
@@ -3577,9 +3734,15 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           { gmOverride: true, roster: currentRoster },
           [],
           state.revision,
+          {
+            message: `Station cleared — ${
+              kind === "command" ? "Command" : "Crew"
+            } ${slotIndex + 1} is now vacant.`,
+          },
         );
       } else {
         await ship.update({ "system.shipCombat.state.roster": currentRoster });
+        ui.notifications.info("Station cleared.");
       }
 
       await this.render();
@@ -3588,11 +3751,75 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     }
   }
 
+  /** Seat a world character, seat a ship profile, or clear the slot. */
+  async #submitAssignPicker(event, form) {
+    event.preventDefault();
+    try {
+      if (!globalThis.game?.user?.isGM) {
+        throw new Error("Only the GM can change station assignments.");
+      }
+      const kind = form.dataset.kind;
+      const slotIndex = Number(form.dataset.slot);
+      if (!["command", "crew"].includes(kind) || !Number.isInteger(slotIndex)) {
+        throw new Error("This station slot is not a valid assignment target.");
+      }
+      const target = form.elements.namedItem("target")?.value ?? "";
+      if (!target) {
+        await this.#unassignRosterSlot(`${kind}-${slotIndex}`);
+        return;
+      }
+      if (target.startsWith("actor:")) {
+        const actor = globalThis.game.actors?.get(target.slice("actor:".length));
+        if (!actor) throw new Error("That character is no longer available.");
+        await this.#assignActorToSlot(actor, kind, slotIndex);
+        return;
+      }
+      if (target.startsWith("profile:")) {
+        const operatorId = target.slice("profile:".length);
+        const state = this.actor.system?.shipCombat?.state ?? {};
+        const roster = rosterPayload(
+          { [`${kind}-${slotIndex}`]: operatorId },
+          this.#config,
+          state,
+        );
+        const label = (this.#config.operators ?? []).find((operator) =>
+          operator.id === operatorId
+        )?.label ?? operatorId;
+        await this.#commitOperation(
+          "setRoster",
+          { gmOverride: true, roster },
+          [],
+          state.revision,
+          {
+            message: `Assigned ${label} to ${
+              kind === "command" ? "Command" : "Crew"
+            } ${slotIndex + 1}.`,
+          },
+        );
+        return;
+      }
+      throw new Error("That station assignment target is not supported.");
+    } catch (error) {
+      ui.notifications.error(errorText(error));
+    }
+  }
+
   async #editRosterActor(actorId) {
-    if (!actorId) return;
+    if (!actorId) {
+      ui.notifications.info(
+        "This station holds a preset NPC profile — drop a character Actor onto the slot to give it a sheet.",
+      );
+      return;
+    }
     const actor = globalThis.game?.actors?.get(actorId);
-    if (actor) {
+    if (!actor) {
+      ui.notifications.warn("That character is no longer available.");
+      return;
+    }
+    try {
       await openCrewRatingEditor(actor);
+    } catch (error) {
+      ui.notifications.error(errorText(error));
     }
   }
 
@@ -4065,6 +4292,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     event.preventDefault();
     const type = operationType ?? element.dataset.uiOperation;
     const data = elementFormData(element);
+    if (element.dataset?.releaseControl) {
+      data.control = element.dataset.releaseControl;
+    }
     const state = clone(this.actor.system.shipCombat.state);
     const pendingKey = type === "toggleWeapon"
       ? `${type}:${data.weaponId}`
@@ -4140,6 +4370,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     payload,
     targetUuids,
     sourceRevision = this.actor.system.shipCombat.state?.revision,
+    { message = "" } = {},
   ) {
     const token = actorToken(this.actor);
     if (!token) {
@@ -4183,7 +4414,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#movementInput = null;
     clearMovementPreview(token.uuid);
     ui.notifications.info(
-      `${type.replace(/([a-z])([A-Z])/g, "$1 $2")} committed.`,
+      message || commitMessage(type, payload, response, this.#config),
     );
     await this.render();
   }

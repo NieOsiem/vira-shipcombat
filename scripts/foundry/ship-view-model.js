@@ -4,7 +4,13 @@ import {
   FAULT_CHANNELS,
   getFaultEffects,
   HAZARD_CHANNELS,
+  SEVERITY_RANK,
 } from "../rules/conditions.js";
+import {
+  HULL_REPAIR,
+  REPAIR_DCS,
+  VENT_SIGNATURE_PENALTY,
+} from "../rules/repairs.js";
 import {
   getCurrentSignature,
   getSensorStats,
@@ -271,11 +277,52 @@ function rosterSlots(config, state) {
   };
 }
 
-function stationSlots(config, state, allOperators) {
+// Ships are not assignable crew, so the picker offers world characters and other NPCs only.
+const SHIP_ACTOR_TYPE = "vira-shipcombat.ship";
+
+function worldActorOptions() {
+  const actors = globalThis.game?.actors;
+  const values = Array.isArray(actors)
+    ? actors
+    : actors?.contents ?? Array.from(actors?.values?.() ?? []);
+  return values
+    .filter((actor) => actor?.id && actor.type !== SHIP_ACTOR_TYPE)
+    .map((actor) => ({
+      value: `actor:${actor.id}`,
+      label: actor.name ?? actor.id,
+      group: "Characters",
+    }));
+}
+
+/** Grouped view of the same options; Chromium renders an empty optgroup as a blank row. */
+function pickerGroups(options) {
+  const groups = [];
+  for (const option of options) {
+    let group = groups.find((entry) => entry.label === option.group);
+    if (!group) {
+      group = { label: option.group, options: [] };
+      groups.push(group);
+    }
+    group.options.push({ value: option.value, label: option.label });
+  }
+  return groups;
+}
+
+function stationSlots(config, state, allOperators, viewerUserId) {
   const operatorsBySlot = new Map(
     allOperators.map((op) => [`${op.kind}-${op.slot}`, op]),
   );
   const profiles = config?.operators ?? [];
+  const pickerOptions = [
+    ...worldActorOptions(),
+    ...profiles.map((profile) => ({
+      value: `profile:${profile.id}`,
+      label: profile.label ?? profile.id,
+      group: "Ship profiles",
+    })),
+  ];
+  const groups = pickerGroups(pickerOptions);
+  const canEdit = globalThis.game?.user?.isGM === true;
   const makeSlots = (kind, capacity) =>
     Array.from({ length: whole(capacity) }, (_, slot) => {
       const key = `${kind}-${slot}`;
@@ -292,6 +339,12 @@ function stationSlots(config, state, allOperators) {
         occupied: Boolean(operator),
         empty: !operator,
         operator,
+        mine: Boolean(
+          operator && viewerUserId != null && operator.userId === viewerUserId,
+        ),
+        canEdit,
+        pickerOptions,
+        pickerGroups: groups,
         options: profiles.map((profile) => ({
           id: profile.id,
           label: profile.label ?? profile.id,
@@ -825,9 +878,21 @@ function weaponViews(config, state, powerState) {
   });
 }
 
+/**
+ * Mirror of `recoveryRequirement` in scripts/rules/repairs.js: a condition may
+ * carry its own requirement, otherwise the owning component's applies. The view
+ * reports an undefined requirement as null where the engine throws.
+ */
+function recoveryWorkRequirement(componentById, componentId, condition) {
+  const own = condition?.recoveryWork;
+  if (Number.isInteger(own) && own > 0) return own;
+  const configured = componentById.get(componentId)?.recoveryWork;
+  return Number.isInteger(configured) && configured > 0 ? configured : null;
+}
+
 function conditionViews(config, state) {
   const components = config?.components ?? {};
-  const namedComponents = new Map(
+  const componentById = new Map(
     [
       components.reactor,
       components.shield,
@@ -835,7 +900,13 @@ function conditionViews(config, state) {
       components.cooling,
       ...Object.values(components.drives ?? {}),
       ...(components.weapons ?? []),
-    ].filter((component) => component?.id && component?.label).map((
+    ].filter((component) => component?.id).map((component) => [
+      component.id,
+      component,
+    ]),
+  );
+  const namedComponents = new Map(
+    [...componentById.values()].filter((component) => component.label).map((
       component,
     ) => [component.id, component.label]),
   );
@@ -881,10 +952,12 @@ function conditionViews(config, state) {
     }
     const destroyed = condition?.severity === "destroyed";
     const work = state?.work?.[`recovery:${key}`];
+    const severity = condition?.severity ?? "unknown";
+    const workRequired = recoveryWorkRequirement(componentById, componentId, condition);
     return {
       id: key,
       label,
-      severity: condition?.severity ?? "unknown",
+      severity,
       kind,
       sector: condition?.sector ?? condition?.region ?? "",
       componentId,
@@ -892,12 +965,75 @@ function conditionViews(config, state) {
       clock: condition?.clock,
       destroyed,
       work,
-      workLabel: work ? `${whole(work.current)} / ${whole(work.required)}` : "",
+      workLabel: work
+        ? `${whole(work.current)} / ${whole(work.required)}`
+        : destroyed && workRequired != null
+        ? `0 / ${workRequired}`
+        : "",
+      repairDc: Object.hasOwn(REPAIR_DCS, severity)
+        ? REPAIR_DCS[severity]
+        : null,
+      workRequired,
+      severityRank: Object.hasOwn(SEVERITY_RANK, severity)
+        ? SEVERITY_RANK[severity]
+        : SEVERITY_RANK.unknown,
+      severityLabel: severity.charAt(0).toUpperCase() + severity.slice(1),
+      isFault: kind === "fault",
     };
   }).sort((left, right) =>
-    left.severity.localeCompare(right.severity) ||
+    right.severityRank - left.severityRank ||
     left.label.localeCompare(right.label)
   );
+}
+
+/**
+ * Cooling numbers disclose what the Damage Control buttons will do before the
+ * click. They mirror `effectiveCooling` in scripts/rules/repairs.js: the
+ * committed tier's Cooling and the installed Vent Amount both scale by the
+ * Cooling Failure multiplier, and a Destroyed or absent component cools and
+ * vents nothing. Missing power tiers degrade to 0 rather than throwing.
+ */
+function coolingUnavailableReason(component, multiplier, severity) {
+  if (!component) return "No Cooling component is installed.";
+  if (multiplier > 0) return "";
+  return severity === "destroyed"
+    ? "The destroyed Cooling component cannot cool or vent."
+    : "The Cooling Failure severity is not recognised.";
+}
+
+function coolingView(config, state, heat) {
+  const component = config?.components?.cooling ?? null;
+  const effects = getFaultEffects(config, state, {
+    conditionId: "coolingFailure",
+    componentId: component?.id ?? null,
+  });
+  const coolingMultiplier = Number(effects.coolingMultiplier ?? 0);
+  const ventMultiplier = Number(effects.ventMultiplier ?? 0);
+  const power = whole(state?.power?.cooling);
+  const healthy = Number(
+    (component?.tiers ?? []).find((tier) => Number(tier?.power) === power)
+      ?.cooling ?? 0,
+  );
+  const baseVent = Number(component?.ventAmount ?? 0);
+  const scaled = (value, multiplier) =>
+    value > 0 && multiplier > 0 ? Math.max(1, Math.floor(value * multiplier)) : 0;
+  const unavailableReason = coolingUnavailableReason(
+    component,
+    coolingMultiplier,
+    effects.severity,
+  );
+  return {
+    heat,
+    output: scaled(healthy, coolingMultiplier),
+    baseVent,
+    ventAmount: scaled(baseVent, ventMultiplier),
+    ventCooldown: whole(component?.ventCooldown),
+    ventCooldownRemaining: whole(state?.ventCooldown),
+    ventCooldownLabel: availabilityLabel(state?.ventCooldown),
+    signaturePenalty: VENT_SIGNATURE_PENALTY,
+    available: unavailableReason === "",
+    unavailableReason,
+  };
 }
 
 function turnLabel(turnKey) {
@@ -1117,7 +1253,8 @@ export function buildShipConsoleView(
   const commandOperators = operators.filter((op) => op.kind === "command");
   const crewOperators = operators.filter((op) => op.kind === "crew");
   const commandPool = commandOperators.length > 0 ? commandOperators : operators;
-  const stationSlotsView = stationSlots(config, state, allOperators);
+  const viewerUserId = operatorUserId ?? globalThis.game?.user?.id ?? null;
+  const stationSlotsView = stationSlots(config, state, allOperators, viewerUserId);
   const controls = state?.controls ?? {};
   const defaults = {
     helm: bestOperator(commandPool, "piloting", holderId(controls.helm)),
@@ -1185,11 +1322,31 @@ export function buildShipConsoleView(
     (sum, op) => sum + (op.remaining ?? 0),
     0,
   );
+  // The pool the board reports is ship-wide: a viewer-filtered subset would show
+  // a player a different Orders total than the GM reads on the same ship.
+  const shipWideOrders = allOperators
+    .filter((op) => op.kind === "crew")
+    .reduce((sum, op) => sum + (op.remaining ?? 0), 0);
   const bestCrewOperator = bestOperator(crewOperators, "engineering") || bestOperator(operators, "engineering");
+  const actingOperator = allOperators.find((op) => op.id === bestCrewOperator) ?? null;
+  const defaultOperatorLabel = actingOperator?.label ?? "";
+  // A Command operator spends all 3 Actions on Recovery Work; every other job costs its 1 Order.
+  const recoveryCostLabel = actingOperator?.kind === "command"
+    ? "3 Actions"
+    : "1 Order";
+  const jobCost = (costLabel) => defaultOperatorLabel
+    ? {
+      operatorLabel: defaultOperatorLabel,
+      costDetail: `${costLabel} · ${defaultOperatorLabel}`,
+    }
+    : { operatorLabel: "", costDetail: costLabel };
   const crewOrders = {
     availableOrders: availableCrewOrders,
+    shipWideOrders,
     totalCrew: crewOperators.length,
     defaultOperatorId: bestCrewOperator,
+    hasActingOperator: Boolean(defaultOperatorLabel),
+    defaultOperatorLabel,
     jobs: [
       ...(hull.value < hull.maximum ? [{
         id: "hullRepair",
@@ -1198,6 +1355,7 @@ export function buildShipConsoleView(
         detail: `${hull.value} / ${hull.maximum} Hull · Engineering repair roll`,
         actionLabel: "Patch Hull",
         costLabel: "1 Order",
+        ...jobCost("1 Order"),
       }] : []),
       ...conditions.map((condition) => ({
         id: `condition-${condition.id}`,
@@ -1207,6 +1365,7 @@ export function buildShipConsoleView(
         detail: `${condition.severity} ${condition.kind}${condition.sector ? ` · ${condition.sector}` : ""}`,
         actionLabel: condition.destroyed ? "Contribute Work" : "Attempt Repair",
         costLabel: "1 Order",
+        ...jobCost(condition.destroyed ? recoveryCostLabel : "1 Order"),
       })),
       ...weaponsList.filter((w) => w.manualReload).map((w) => ({
         id: `reload-${w.id}`,
@@ -1216,6 +1375,7 @@ export function buildShipConsoleView(
         detail: `${w.readiness}/${w.capacity} ready${w.reloadLabel ? ` · ${w.reloadLabel}` : ""}`,
         actionLabel: w.reloadWork ? "Contribute Reload Work" : "Begin Reload",
         costLabel: "1 Order",
+        ...jobCost("1 Order"),
       })),
       ...(finite(state?.heat) > 0 ? [{
         id: "cooling",
@@ -1224,6 +1384,7 @@ export function buildShipConsoleView(
         detail: `${state.heat} / ${config?.heatCapacity ?? 20} Heat`,
         actionLabel: "Flush Coolant",
         costLabel: "1 Order",
+        ...jobCost("1 Order"),
       }] : []),
     ],
   };
@@ -1400,11 +1561,8 @@ export function buildShipConsoleView(
         0,
       ),
     },
-    cooling: {
-      heat,
-      ventCooldown: whole(state?.ventCooldown),
-      ventCooldownLabel: availabilityLabel(state?.ventCooldown),
-    },
+    cooling: coolingView(config, state, heat),
+    hullRepair: { dc: HULL_REPAIR.dc, offset: HULL_REPAIR.offset },
     specGroups: [
       {
         label: "Identity and limits",

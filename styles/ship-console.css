@@ -3644,6 +3644,21 @@
   color: var(--ship-text-primary, #e2e8f0);
 }
 
+.ship-flow-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.15rem 0 0.5rem;
+  padding: 0.2rem 0.45rem;
+  border-left: 2px solid var(--ship-cyan);
+  color: var(--ship-cyan);
+  background: rgb(62 232 208 / 6%);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .ship-operator-header {
   display: flex;
   align-items: center;
@@ -3742,6 +3757,13 @@
   font-size: 0.8rem;
 }
 
+.ship-slot-note {
+  margin: 0.35rem 0 0;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--ship-border, rgba(255, 255, 255, 0.08));
+  text-align: center;
+}
+
 .ship-slot-actions {
   display: flex;
   gap: 0.4rem;
@@ -3772,6 +3794,23 @@
   background: rgba(239, 68, 68, 0.2);
   border-color: #ef4444;
   color: #fca5a5;
+}
+
+.ship-slot-action-btn--preset {
+  cursor: help;
+  color: var(--ship-muted, #94a3b8);
+  background: transparent;
+  border-style: dashed;
+}
+
+.ship-slot-action-btn--preset:hover {
+  background: transparent;
+  border-color: var(--ship-border, rgba(255, 255, 255, 0.15));
+  color: var(--ship-muted, #94a3b8);
+}
+
+.ship-control-name {
+  text-transform: capitalize;
 }
 
 /* ==========================================================================
@@ -4033,6 +4072,11 @@
   font-size: 0.6rem;
 }
 
+.ship-crew-job-info .ship-crew-job-actor {
+  color: var(--ship-cyan);
+  opacity: 0.8;
+}
+
 .ship-crew-job-form {
   margin: 0;
   flex-shrink: 0;
@@ -4059,6 +4103,48 @@
 
 .ship-damage-control-card {
   margin-bottom: 0.45rem;
+}
+
+/* Thermal actions state cost, output and effect before the click. */
+.ship-button-grid > button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12rem;
+  height: auto;
+  padding: 0.3rem 0.45rem;
+  text-align: left;
+}
+
+.ship-button-grid > button small {
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.25;
+  opacity: 0.82;
+}
+
+/* Collapse the grid rather than leaving an empty framed box. */
+.ship-button-grid:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
+.ship-action-facts {
+  margin: 0.25rem 0 0;
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.6rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.ship-damage-legend {
+  margin: 0.15rem 0 0.35rem;
+  line-height: 1.35;
+}
+
+.ship-severity-chip {
+  text-transform: uppercase;
+  cursor: help;
 }
 
 /* ── Helm Panel Heading Actions ──────────────────────────────── */

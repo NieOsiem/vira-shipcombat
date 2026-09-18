@@ -5,11 +5,19 @@ import {
   createDefaultShipData,
   createInitialState,
 } from "../scripts/model/defaults.js";
+import { SEVERITY_RANK } from "../scripts/rules/conditions.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 import {
   assignedUserIds,
   rosterIdentityConflicts,
 } from "../scripts/rules/operators.js";
+import {
+  HULL_REPAIR,
+  REPAIR_DCS,
+  contributeRecoveryWork,
+  repairHull,
+  standardRepair,
+} from "../scripts/rules/repairs.js";
 import { trackKey } from "../scripts/rules/sensors.js";
 import { publishOperationEvents } from "../scripts/foundry/chat.js";
 
@@ -674,6 +682,149 @@ describe("authority invariants", () => {
         before,
       );
     }
+  });
+});
+
+describe("repair rule constants and thresholds", () => {
+  test("exports the frozen thresholds the sheet and view model quote", () => {
+    expect(HULL_REPAIR).toEqual({ dc: 16, offset: 15 });
+    expect(REPAIR_DCS).toEqual({
+      minor: 10,
+      major: 15,
+      critical: 20,
+      catastrophic: 20,
+    });
+    expect(SEVERITY_RANK).toEqual({
+      unknown: -1,
+      minor: 0,
+      major: 1,
+      critical: 2,
+      destroyed: 3,
+      catastrophic: 3,
+    });
+  });
+
+  test("hull repair holds at HULL_REPAIR.dc and restores total minus HULL_REPAIR.offset", () => {
+    const damaged = () => {
+      const record = ship(SOURCE);
+      record.state.phase = "active";
+      record.state.hull = 20;
+      record.state.resources.orders[DAMAGE_CONTROL] = 3;
+      return record;
+    };
+
+    const short = damaged();
+    const failure = repairHull(short.config, short.state, {
+      operatorId: DAMAGE_CONTROL,
+      total: HULL_REPAIR.dc - 1,
+    });
+    expect(failure.check).toMatchObject({
+      dc: HULL_REPAIR.dc,
+      success: false,
+    });
+    expect(failure).toMatchObject({ requested: 0, repaired: 0, hull: 20 });
+    expect(short.state.hull).toBe(20);
+
+    const exact = damaged();
+    const success = repairHull(exact.config, exact.state, {
+      operatorId: DAMAGE_CONTROL,
+      total: HULL_REPAIR.dc,
+    });
+    expect(success.check).toMatchObject({ dc: HULL_REPAIR.dc, success: true });
+    expect(success.repaired).toBe(HULL_REPAIR.dc - HULL_REPAIR.offset);
+    expect(exact.state.hull).toBe(20 + HULL_REPAIR.dc - HULL_REPAIR.offset);
+
+    const capped = damaged();
+    const overflow = repairHull(capped.config, capped.state, {
+      operatorId: DAMAGE_CONTROL,
+      total: HULL_REPAIR.dc + 40,
+    });
+    expect(overflow.requested).toBe(HULL_REPAIR.dc + 40 - HULL_REPAIR.offset);
+    expect(overflow.repaired).toBe(capped.config.maxHull - 20);
+    expect(capped.state.hull).toBe(capped.config.maxHull);
+  });
+
+  test("standard repair reduces a fault only at its REPAIR_DCS threshold", () => {
+    const damaged = () => {
+      const record = ship(SOURCE);
+      record.state.phase = "active";
+      record.state.resources.orders[DAMAGE_CONTROL] = 2;
+      record.state.conditions.sensor = {
+        kind: "fault",
+        conditionId: "sensorFault",
+        componentId: record.config.components.sensor.id,
+        severity: "major",
+      };
+      return record;
+    };
+
+    const short = damaged();
+    const failure = standardRepair(short.config, short.state, {
+      operatorId: DAMAGE_CONTROL,
+      conditionId: "sensor",
+      total: REPAIR_DCS.major - 1,
+    });
+    expect(failure.check).toMatchObject({
+      dc: REPAIR_DCS.major,
+      success: false,
+    });
+    expect(failure.change).toBeNull();
+    expect(short.state.conditions.sensor.severity).toBe("major");
+
+    const exact = damaged();
+    const success = standardRepair(exact.config, exact.state, {
+      operatorId: DAMAGE_CONTROL,
+      conditionId: "sensor",
+      total: REPAIR_DCS.major,
+    });
+    expect(success.check).toMatchObject({
+      dc: REPAIR_DCS.major,
+      success: true,
+    });
+    expect(success.change).toMatchObject({
+      before: "major",
+      after: "minor",
+      tiersReduced: 1,
+    });
+  });
+
+  test("a completing Recovery Work contribution still reports completion but leaves no job entry", () => {
+    const record = ship(SOURCE);
+    record.state.phase = "active";
+    record.state.resources.orders[DAMAGE_CONTROL] = 2;
+    record.state.conditions.port = {
+      kind: "fault",
+      conditionId: "maneuveringThrusterFailure",
+      channelId: "maneuveringThrusterFailure",
+      componentId: record.config.components.drives.portLateral.id,
+      severity: "destroyed",
+      recoveryWork: 2,
+    };
+
+    const first = contributeRecoveryWork(record.config, record.state, {
+      operatorId: DAMAGE_CONTROL,
+      conditionId: "port",
+    });
+    expect(first).toMatchObject({ complete: false, current: 1, required: 2 });
+    expect(record.state.work[first.jobId]).toMatchObject({
+      current: 1,
+      required: 2,
+      targetId: "port",
+    });
+
+    const second = contributeRecoveryWork(record.config, record.state, {
+      operatorId: DAMAGE_CONTROL,
+      conditionId: "port",
+    });
+    expect(second).toMatchObject({ complete: true, current: 0, required: 2 });
+    expect(second.events).toContainEqual({
+      type: "faultRecovered",
+      conditionId: "port",
+      severity: "critical",
+    });
+    expect(record.state.work[second.jobId]).toBeUndefined();
+    expect(Object.keys(record.state.work)).not.toContain(second.jobId);
+    expect(record.state.conditions.port.severity).toBe("critical");
   });
 });
 

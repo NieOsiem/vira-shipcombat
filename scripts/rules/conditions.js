@@ -19,7 +19,7 @@ export const HAZARD_CHANNELS = Object.freeze([
 
 const FAULT_SEVERITIES = Object.freeze(["minor", "major", "critical", "destroyed"]);
 const HAZARD_SEVERITIES = Object.freeze(["minor", "major", "critical", "catastrophic"]);
-const SEVERITY_INDEX = Object.freeze({ minor: 0, major: 1, critical: 2, destroyed: 3, catastrophic: 3 });
+export const SEVERITY_RANK = Object.freeze({ unknown: -1, minor: 0, major: 1, critical: 2, destroyed: 3, catastrophic: 3 });
 const SECTORS = Object.freeze(["fore", "port", "starboard", "aft"]);
 
 const FAULT_EFFECTS = Object.freeze({
@@ -75,10 +75,11 @@ const FAULT_EFFECTS = Object.freeze({
 });
 
 function severityIndex(severity) {
-  if (!(severity in SEVERITY_INDEX)) {
+  const rank = Object.hasOwn(SEVERITY_RANK, severity) ? SEVERITY_RANK[severity] : -1;
+  if (rank < 0) {
     throw new RuleViolation("INVALID_CONDITION_SEVERITY", "Condition severity must be a V1 tier.", { severity });
   }
-  return SEVERITY_INDEX[severity];
+  return rank;
 }
 
 function normalizePoolEntry(entry, region) {
