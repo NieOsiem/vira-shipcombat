@@ -623,21 +623,33 @@ export function seedOperatorResources(state, roster) {
 
 export function checkEligibility(config, draft, { operatorId, operation }) {
   const reasons = [];
+  const isOutside = draft?.phase === "outsideCombat";
   let assigned;
   try {
     assigned = assignmentFor(config, draft, operatorId);
   } catch (error) {
-    if (error instanceof RuleViolation) {
+    if (isOutside) {
+      const fallback = operatorProfiles(config).find((p) => p?.id === operatorId) ?? operatorProfiles(config)[0] ?? { id: operatorId ?? "crew", label: "Crew", type: "npc" };
+      assigned = { profile: fallback, assignment: { operatorId: fallback.id }, slot: "crew" };
+    } else if (error instanceof RuleViolation) {
       return {
         eligible: false,
         code: error.code,
         reasons: [{ code: error.code, details: error.details }],
       };
+    } else {
+      throw error;
     }
-    throw error;
   }
-  if (!assigned) reasons.push({ code: "OPERATOR_NOT_ASSIGNED", operatorId });
-  if (!assigned) return { eligible: false, code: reasons[0].code, reasons };
+  if (!assigned) {
+    if (isOutside) {
+      const fallback = operatorProfiles(config).find((p) => p?.id === operatorId) ?? operatorProfiles(config)[0] ?? { id: operatorId ?? "crew", label: "Crew", type: "npc" };
+      assigned = { profile: fallback, assignment: { operatorId: fallback.id }, slot: "crew" };
+    } else {
+      reasons.push({ code: "OPERATOR_NOT_ASSIGNED", operatorId });
+      return { eligible: false, code: reasons[0].code, reasons };
+    }
+  }
 
   const metadata = operationMetadata(operation);
   const profile = assigned.profile;
@@ -761,7 +773,7 @@ export function spendOperationResource(
       eligibility,
     );
   }
-  if (free || operationMetadata(operation).free === true) {
+  if (free || operationMetadata(operation).free === true || draft?.phase === "outsideCombat") {
     return {
       operatorId,
       slot: eligibility.slot,
@@ -851,7 +863,7 @@ export function takeControl(config, draft, { operatorId, control, operation }) {
     );
   }
   const remaining = eligibility.remaining;
-  if (!Number.isInteger(remaining) || remaining < 1) {
+  if (draft?.phase !== "outsideCombat" && (!Number.isInteger(remaining) || remaining < 1)) {
     throw new RuleViolation(
       "OPERATION_RESOURCE_EXHAUSTED",
       "The operator cannot pay for this Control Action.",
@@ -866,7 +878,9 @@ export function takeControl(config, draft, { operatorId, control, operation }) {
   const released = releaseOperatorControls(draft, operatorId).filter((
     releasedControl,
   ) => releasedControl !== control);
-  setResourceRemaining(draft, eligibility.slot, operatorId, remaining - 1);
+  if (draft?.phase !== "outsideCombat") {
+    setResourceRemaining(draft, eligibility.slot, operatorId, remaining - 1);
+  }
   draft.controls ??= {};
   draft.controls[control] = {
     operatorId,
@@ -877,8 +891,8 @@ export function takeControl(config, draft, { operatorId, control, operation }) {
     control,
     slot: eligibility.slot,
     resource: eligibility.resource,
-    spent: 1,
-    remaining: remaining - 1,
+    spent: draft?.phase === "outsideCombat" ? 0 : 1,
+    remaining: draft?.phase === "outsideCombat" ? remaining : remaining - 1,
     released,
   };
 }
@@ -945,29 +959,34 @@ export function contributeWork(
       { jobId, required },
     );
   }
-  const cost = eligibility.slot === "command" ? COMMAND_ACTIONS : CREW_ORDERS;
+  const isOutside = draft?.phase === "outsideCombat";
+  const cost = eligibility.slot === "command" && !isOutside ? COMMAND_ACTIONS : CREW_ORDERS;
   const remaining = eligibility.remaining;
-  if (
-    !Number.isInteger(remaining) ||
-    (eligibility.slot === "command"
-      ? remaining !== COMMAND_ACTIONS
-      : remaining < CREW_ORDERS)
-  ) {
-    throw new RuleViolation(
-      "WORK_RESOURCE_UNAVAILABLE",
-      "Command Work requires all 3 unspent Actions; Crew Work requires the unspent Crew Order.",
-      {
-        operatorId,
-        slot: eligibility.slot,
-        remaining,
-      },
-    );
+  if (!isOutside) {
+    if (
+      !Number.isInteger(remaining) ||
+      (eligibility.slot === "command"
+        ? remaining !== COMMAND_ACTIONS
+        : remaining < CREW_ORDERS)
+    ) {
+      throw new RuleViolation(
+        "WORK_RESOURCE_UNAVAILABLE",
+        "Command Work requires all 3 unspent Actions; Crew Work requires the unspent Crew Order.",
+        {
+          operatorId,
+          slot: eligibility.slot,
+          remaining,
+        },
+      );
+    }
   }
 
   const current = Math.max(0, Number(existing?.current ?? 0));
   const next = Math.min(required, current + 1);
   const released = releaseOperatorControls(draft, operatorId);
-  setResourceRemaining(draft, eligibility.slot, operatorId, remaining - cost);
+  if (!isOutside) {
+    setResourceRemaining(draft, eligibility.slot, operatorId, remaining - cost);
+  }
   draft.work ??= {};
   draft.work[jobId] = {
     ...(existing ?? {}),

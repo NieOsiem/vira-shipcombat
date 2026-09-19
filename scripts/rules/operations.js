@@ -14,6 +14,7 @@ import {
 import { resolveShipFate } from "./damage.js";
 import {
   assertActivePhase,
+  cycleOutsideCombatRound,
   enterCombat,
   leaveCombat,
   runEndActiveCoast,
@@ -106,6 +107,7 @@ export const OPERATION_TYPES = Object.freeze({
   VENT: "vent",
   REPOSITION: "reposition",
   RESOLVE_FATE: "resolveFate",
+  ADVANCE_TURN: "advanceTurn",
 });
 
 const TYPE_ALIASES = Object.freeze({
@@ -113,6 +115,12 @@ const TYPE_ALIASES = Object.freeze({
   "phase.start": OPERATION_TYPES.START_PHASE,
   "phase.coast": OPERATION_TYPES.COAST,
   "phase.end": OPERATION_TYPES.END_PHASE,
+  "phase.advance": OPERATION_TYPES.ADVANCE_TURN,
+  "turn.advance": OPERATION_TYPES.ADVANCE_TURN,
+  "advance-turn": OPERATION_TYPES.ADVANCE_TURN,
+  advanceTurn: OPERATION_TYPES.ADVANCE_TURN,
+  cycleRound: OPERATION_TYPES.ADVANCE_TURN,
+  "cycle-round": OPERATION_TYPES.ADVANCE_TURN,
   "combat.leave": OPERATION_TYPES.LEAVE_COMBAT,
   "admin.reposition": OPERATION_TYPES.REPOSITION,
   "fate.resolve": OPERATION_TYPES.RESOLVE_FATE,
@@ -198,6 +206,26 @@ const ACTIVE_TYPES = new Set([
   OPERATION_TYPES.HULL_REPAIR,
   OPERATION_TYPES.COOLING,
   OPERATION_TYPES.VENT,
+]);
+export const OUTSIDE_COMBAT_ALLOWED_TYPES = new Set([
+  OPERATION_TYPES.TAKE_CONTROL,
+  OPERATION_TYPES.RELEASE_CONTROL,
+  OPERATION_TYPES.ROUTE_POWER,
+  OPERATION_TYPES.ROUTE_DEFENSE,
+  OPERATION_TYPES.TOGGLE_WEAPON,
+  OPERATION_TYPES.MANEUVER,
+  OPERATION_TYPES.ROTATE,
+  OPERATION_TYPES.ARM_EVASION,
+  OPERATION_TYPES.DISARM_EVASION,
+  OPERATION_TYPES.REPAIR,
+  OPERATION_TYPES.HULL_REPAIR,
+  OPERATION_TYPES.RECOVERY_WORK,
+  OPERATION_TYPES.COOLING,
+  OPERATION_TYPES.VENT,
+  OPERATION_TYPES.BEGIN_RELOAD,
+  OPERATION_TYPES.RELOAD,
+  OPERATION_TYPES.CANCEL_RELOAD,
+  OPERATION_TYPES.ADVANCE_TURN,
 ]);
 const SENSOR_TYPES = new Set([
   OPERATION_TYPES.PING,
@@ -358,8 +386,9 @@ function assignmentId(entry) {
 
 function operatorFor(ship, operation, context) {
   const operatorId = operation.payload.operatorId;
-  const override = context?.isGM === true &&
-    operation.payload.gmOverride === true;
+  const isOutside = OUTSIDE_COMBAT_ALLOWED_TYPES.has(operation.type) && ship.state?.phase === "outsideCombat";
+  const override = (context?.isGM === true &&
+    operation.payload.gmOverride === true) || isOutside;
   if (typeof operatorId !== "string" || !operatorId) {
     if (override) return null;
     violation(
@@ -754,6 +783,7 @@ function assertShipCanAct(state) {
 }
 
 function requireControl(source, control, operatorId) {
+  if (source.state?.phase === "outsideCombat") return;
   const holder = source.state?.controls?.[control];
   const holderId = typeof holder === "string" ? holder : holder?.operatorId;
   if (holderId !== operatorId) {
@@ -765,6 +795,7 @@ function requireControl(source, control, operatorId) {
   }
 }
 function releaseControl(source, control, operatorId) {
+  if (source.state?.phase === "outsideCombat") return true;
   const holder = source.state?.controls?.[control];
   const holderId = typeof holder === "string" ? holder : holder?.operatorId;
   if (holderId !== operatorId) return false;
@@ -846,6 +877,9 @@ function operationMetadata(operation) {
 }
 
 function spend(source, operation) {
+  if (source.state?.phase === "outsideCombat") {
+    return { operatorId: operation.payload.operatorId, slot: "crew", resource: null, spent: 0, remaining: 1, released: [] };
+  }
   return spendOperationResource(source.config, source.state, {
     operatorId: operation.payload.operatorId,
     operation: operationMetadata(operation),
@@ -1025,7 +1059,20 @@ export function executeShipOperation(operation, context) {
     operator = operatorFor(source, request, context);
   }
   if (ACTIVE_TYPES.has(request.type)) {
-    assertActivePhase(source.state);
+    const allowedOutside = OUTSIDE_COMBAT_ALLOWED_TYPES.has(request.type) && source.state.phase === "outsideCombat";
+    if (!allowedOutside) {
+      assertActivePhase(source.state);
+    }
+    assertShipCanAct(source.state);
+  }
+  if (request.type === OPERATION_TYPES.ADVANCE_TURN) {
+    if (source.state.phase !== "outsideCombat") {
+      violation(
+        "SHIP_NOT_OUTSIDE_COMBAT",
+        "Advance Turn can only be performed outside combat.",
+        { phase: source.state.phase },
+      );
+    }
     assertShipCanAct(source.state);
   }
   validateExpectedRevisions(request, drafts, [
@@ -1150,6 +1197,9 @@ export function executeShipOperation(operation, context) {
       });
       break;
     case OPERATION_TYPES.MANEUVER: {
+      if (source.token?.x == null) {
+        violation("TOKEN_REQUIRED", "Maneuver requires a placed token on the canvas.");
+      }
       requireControl(source, "helm", request.payload.operatorId);
       result = applyManeuver(
         source.state,
@@ -1167,6 +1217,9 @@ export function executeShipOperation(operation, context) {
       break;
     }
     case OPERATION_TYPES.ROTATE: {
+      if (source.token?.x == null) {
+        violation("TOKEN_REQUIRED", "Rotation requires a placed token on the canvas.");
+      }
       requireControl(source, "helm", request.payload.operatorId);
       result = applyRotation(
         source.state,
@@ -1513,6 +1566,28 @@ export function executeShipOperation(operation, context) {
         outcome: request.payload.outcome,
       });
       break;
+    case OPERATION_TYPES.ADVANCE_TURN: {
+      result = cycleOutsideCombatRound(
+        source.config,
+        source.state,
+        {
+          input: movementInput(source, drafts, request, context),
+          random: randomSource(context),
+        },
+      );
+      if (result.coast && source.token?.x != null) {
+        const collisions = applyMovementResult(
+          source,
+          result.coast,
+          drafts,
+          context,
+          changed,
+          tokenChanged,
+        );
+        result = { ...result, collisions };
+      }
+      break;
+    }
     default:
       violation(
         "UNKNOWN_OPERATION",

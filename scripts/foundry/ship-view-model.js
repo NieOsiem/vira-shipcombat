@@ -1387,15 +1387,19 @@ export function buildShipConsoleView(
     0,
   );
   // The pool the board reports is ship-wide: a viewer-filtered subset would show
-  // a player a different Orders total than the GM reads on the same ship.
+  const isOutside = (state?.phase ?? "outsideCombat") === "outsideCombat";
   const shipWideOrders = allOperators
     .filter((op) => op.kind === "crew")
     .reduce((sum, op) => sum + (op.remaining ?? 0), 0);
   const bestCrewOperator = bestOperator(crewOperators, "engineering") || bestOperator(operators, "engineering");
   const actingOperator = allOperators.find((op) => op.id === bestCrewOperator) ?? null;
-  const defaultOperatorLabel = actingOperator?.label ?? "";
+  const defaultOperatorLabel = actingOperator?.label ?? (isOutside ? "Outside Combat" : "");
+  const defaultOperatorId = bestCrewOperator || (isOutside ? "outside-combat" : "");
+  const baseOrderCost = isOutside ? "Free" : "1 Order";
   // A Command operator spends all 3 Actions on Recovery Work; every other job costs its 1 Order.
-  const recoveryCostLabel = actingOperator?.kind === "command"
+  const recoveryCostLabel = isOutside
+    ? "Free"
+    : actingOperator?.kind === "command"
     ? "3 Actions"
     : "1 Order";
   const jobCost = (costLabel) => defaultOperatorLabel
@@ -1415,10 +1419,10 @@ export function buildShipConsoleView(
       label: "Field-Patch Hull",
       detail: `${hull.value} / ${hull.maximum} Hull · Engineering repair roll`,
       actionLabel: "Patch Hull",
-      costLabel: "1 Order",
+      costLabel: baseOrderCost,
       kindLabel: "Damage",
       priority: hull.tone === "danger" ? 4 : 20,
-      ...jobCost("1 Order"),
+      ...jobCost(baseOrderCost),
     }] : []),
     ...conditions.map((condition) => ({
       id: `condition-${condition.id}`,
@@ -1427,10 +1431,10 @@ export function buildShipConsoleView(
       label: condition.destroyed ? `Rebuild ${condition.label}` : `Repair ${condition.label}`,
       detail: `${condition.severity} ${condition.kind}${condition.sector ? ` · ${condition.sector}` : ""}`,
       actionLabel: condition.destroyed ? "Contribute Work" : "Attempt Repair",
-      costLabel: "1 Order",
+      costLabel: condition.destroyed ? recoveryCostLabel : baseOrderCost,
       kindLabel: condition.destroyed ? "Recovery" : "Damage",
       priority: condition.destroyed ? 5 : severityPriority(condition.severity),
-      ...jobCost(condition.destroyed ? recoveryCostLabel : "1 Order"),
+      ...jobCost(condition.destroyed ? recoveryCostLabel : baseOrderCost),
     })),
     ...weaponsList.filter((w) => w.manualReload).map((w) => ({
       id: `reload-${w.id}`,
@@ -1439,10 +1443,10 @@ export function buildShipConsoleView(
       label: `Reload ${w.label}`,
       detail: `${w.readiness}/${w.capacity} ready${w.reloadLabel ? ` · ${w.reloadLabel}` : ""}`,
       actionLabel: w.reloadWork ? "Contribute Reload Work" : "Begin Reload",
-      costLabel: "1 Order",
+      costLabel: baseOrderCost,
       kindLabel: "Ordnance",
       priority: w.reloadWork ? 25 : 30,
-      ...jobCost("1 Order"),
+      ...jobCost(baseOrderCost),
     })),
     ...(finite(state?.heat) > 0 ? [{
       id: "cooling",
@@ -1450,10 +1454,10 @@ export function buildShipConsoleView(
       label: "Assist Coolant Flush",
       detail: `${state.heat} / ${config?.heatCapacity ?? 20} Heat`,
       actionLabel: "Flush Coolant",
-      costLabel: "1 Order",
+      costLabel: baseOrderCost,
       kindLabel: "Heat",
       priority: 40,
-      ...jobCost("1 Order"),
+      ...jobCost(baseOrderCost),
     }] : []),
   ]
     .sort((left, right) =>
@@ -1470,11 +1474,11 @@ export function buildShipConsoleView(
         : "housekeeping",
     }));
   const crewOrders = {
-    availableOrders: availableCrewOrders,
-    shipWideOrders,
+    availableOrders: isOutside ? Math.max(availableCrewOrders, 99) : availableCrewOrders,
+    shipWideOrders: isOutside ? Math.max(shipWideOrders, 99) : shipWideOrders,
     totalCrew: crewOperators.length,
-    defaultOperatorId: bestCrewOperator,
-    hasActingOperator: Boolean(defaultOperatorLabel),
+    defaultOperatorId,
+    hasActingOperator: isOutside || Boolean(defaultOperatorLabel),
     defaultOperatorLabel,
     jobs,
     pendingCount: jobs.length,

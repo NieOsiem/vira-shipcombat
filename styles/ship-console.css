@@ -489,6 +489,40 @@
   min-width: 0;
 }
 
+.ship-panel-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.ship-advance-turn-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.45rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--ship-cyan);
+  border: 1px solid rgb(62 232 208 / 45%);
+  border-radius: var(--ship-radius-sm);
+  background: var(--ship-cyan-soft);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.ship-advance-turn-btn:hover:not(:disabled) {
+  background: rgb(62 232 208 / 25%);
+  color: #fff;
+  border-color: var(--ship-cyan);
+}
+
+.ship-advance-turn-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .ship-panel-heading h2 {
   overflow: hidden;
   color: #fff;

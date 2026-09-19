@@ -41,7 +41,7 @@ import {
   assignedUserIds,
   rosterIdentityConflicts,
 } from "../rules/operators.js";
-import { submitShipOperation } from "../state/action-queue.js";
+import { advanceCooldowns, submitShipOperation } from "../state/action-queue.js";
 import {
   clearMovementPreview,
   setMovementPreview,
@@ -61,7 +61,7 @@ const MAINTENANCE_TABS = [{ id: "refit", label: "Refit" }, {
   label: "Log / Config",
 }];
 const GROUPS = {
-  Overview: ["resolveFate"],
+  Overview: ["resolveFate", "advanceTurn"],
   Crew: ["setRoster", "spendResource", "takeControl", "releaseControl", "contributeWork"],
   Helm: ["maneuver", "rotate", "armEvasion", "disarmEvasion", "takeControl", "releaseControl"],
   "Power/Defense": ["routePower", "toggleWeapon", "routeDefense"],
@@ -81,6 +81,7 @@ const GROUPS = {
 };
 const HELP = {
   resolveFate: "GM fate resolution",
+  advanceTurn: "Cycle systems and advance outside combat",
   setRoster: '{"roster":{"command":[],"crew":[]}}',
   spendResource: '{"operatorId":"…","operation":{}}',
   takeControl: '{"operatorId":"…","control":"helm|power|defense"}',
@@ -212,6 +213,9 @@ function uiOperation(type, data, config, state) {
         payload: { gmOverride: true, roster: rosterPayload(data, config, state) },
         targetUuids: [],
       };
+    case "advanceTurn":
+    case "cycleRound":
+      return { payload, targetUuids: [] };
     case "takeControl":
     case "releaseControl":
       return {
@@ -668,6 +672,8 @@ const CONTROL_LABELS = Object.freeze({
 });
 /** Console operations whose type name reads badly as a sentence. */
 const OPERATION_LABELS = Object.freeze({
+  advanceTurn: "Turn advanced.",
+  cycleRound: "Turn advanced.",
   setRoster: "Station updated.",
   spendResource: "Resource spent.",
   contributeWork: "Work contributed.",
@@ -1288,16 +1294,17 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const observer = CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER;
     const canInspect = isGM || actor.testUserPermission(game.user, observer);
     const assigned = assignedUserIds(config, state).has(game.user.id);
-    const canOperate = Boolean(token && (isGM || (canInspect && assigned)));
-    const unavailableReason = !token
-      ? sourceUnavailableReason(actor)
-      : !canInspect
+    const isOutsideCombat = state.phase === "outsideCombat";
+    const canOperate = isOutsideCombat ? canInspect : Boolean(token && (isGM || (canInspect && assigned)));
+    const unavailableReason = !canInspect
       ? "Observer permission is required."
-      : !isGM && !assigned
+      : !isOutsideCombat && !token
+      ? sourceUnavailableReason(actor)
+      : !isOutsideCombat && !isGM && !assigned
       ? "No ship operator is assigned to your user."
       : "";
     const actReason = canOperate
-      ? state.phase === "active" ? "" : "Active Phase required."
+      ? (isOutsideCombat || state.phase === "active") ? "" : "Active Phase required."
       : unavailableReason || "Operational access required.";
     const rosterConflicts = rosterIdentityConflicts(config, state?.roster)
       .map((conflict) => ({
@@ -1353,7 +1360,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#view = view;
     this.#config = config;
     const tabIds = [...TABS, ...MAINTENANCE_TABS].map((tab) => tab.id);
-    this.#canAct = canOperate && state.phase === "active";
+    this.#canAct = Boolean(canOperate && (isOutsideCombat || state.phase === "active"));
     const preferredTab = selectedTabs.get(actor.uuid);
     const activeTab = tabIds.includes(preferredTab) ? preferredTab : tabIds[0];
     const rawActions = Object.keys(GROUPS).flatMap((tab) =>
@@ -1392,6 +1399,21 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         size: item.system?.size ?? "Unknown",
       }));
 
+    let advanceCooldownRemaining = 0;
+    if (!isGM) {
+      const lastAdvance = Math.max(
+        advanceCooldowns.get(actor.uuid) ?? 0,
+        token ? (advanceCooldowns.get(token.uuid) ?? 0) : 0,
+      );
+      const elapsed = Date.now() - lastAdvance;
+      if (elapsed < 12000) {
+        advanceCooldownRemaining = Math.ceil((12000 - elapsed) / 1000);
+        setTimeout(() => {
+          if (this.rendered) this.render();
+        }, 1000);
+      }
+    }
+
     return foundry.utils.mergeObject(context, {
       actor,
       token,
@@ -1411,9 +1433,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       refitHardpoints,
       refitUnreferencedItems,
       canAdmin: Boolean(isGM && canOperate),
-      canAct: Boolean(canOperate && state.phase === "active"),
-      canAttack: Boolean(canOperate && state.phase === "active"),
+      canAct: Boolean(canOperate && (isOutsideCombat || state.phase === "active")),
+      canAttack: Boolean(canOperate && !isOutsideCombat && state.phase === "active"),
       activePhase: state.phase === "active",
+      isOutsideCombat,
+      advanceCooldownRemaining,
       tabState: Object.fromEntries(
         tabIds.map((id) => [id, { active: id === activeTab }]),
       ),
@@ -1777,6 +1801,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       }
     }
     this.#attachNavigation(html);
+    this.#attachOverview(html);
     html.querySelectorAll("select[data-default]").forEach((select) => {
       const preferred = select.dataset.default;
       if (
@@ -2037,6 +2062,33 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     }
   }
 
+  #attachOverview(html) {
+    const advanceBtn = html.querySelector("[data-action='advanceTurn']");
+    if (advanceBtn) {
+      this.#on(advanceBtn, "click", async (event) => {
+        event.preventDefault();
+        try {
+          advanceBtn.disabled = true;
+          await this.#commitOperation("advanceTurn", {});
+          if (!game.user.isGM) {
+            advanceCooldowns.set(this.actor.uuid, Date.now());
+            if (this.token?.uuid) advanceCooldowns.set(this.token.uuid, Date.now());
+            if (this.rendered) await this.render();
+          }
+        } catch (error) {
+          ui.notifications.error(errorText(error));
+        } finally {
+          const lastAdvance = Math.max(
+            advanceCooldowns.get(this.actor.uuid) ?? 0,
+            this.token ? (advanceCooldowns.get(this.token.uuid) ?? 0) : 0,
+          );
+          const hasCooldown = !game.user.isGM && (Date.now() - lastAdvance < 12000);
+          if (advanceBtn.isConnected && !hasCooldown) advanceBtn.disabled = false;
+        }
+      });
+    }
+  }
+
   #attachNavigation(html) {
     const prefix = this.id;
     const prefixed = (id) => id.startsWith(`${prefix}-`) ? id : `${prefix}-${id}`;
@@ -2248,7 +2300,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         button.title = reason;
       });
     }
-    const actReason = state.phase === "active"
+    const actReason = (state.phase === "active" || state.phase === "outsideCombat")
       ? "Operational access required."
       : "Active Phase required.";
     html.querySelectorAll("[data-release-control]").forEach((button) => {
@@ -2301,6 +2353,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   }
 
   #attachHelm(html) {
+    const token = actorToken(this.actor);
     const state = this.actor.system.shipCombat.state;
     const capabilities = getDriveCapabilities(this.#config, state);
     const pivotMax = getPivotCapability(this.#config, state);
@@ -2316,7 +2369,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         : "No operational thruster capability";
     const form = html.querySelector("form[data-ui-operation='maneuver']");
     if (!form) return;
-    const denial = state.phase !== "active"
+    const denial = !token
+      ? "Place this ship on the active Scene to maneuver."
+      : (state.phase !== "active" && state.phase !== "outsideCombat")
       ? "Active Phase required."
       : "Operational access required.";
     for (const [name, [min, max]] of Object.entries(limits)) {
@@ -2330,8 +2385,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       if (draft) {
         input.value = String(numeric(draft.values[name]));
       }
-      input.disabled = max - min <= 0 || !this.#canAct;
-      input.title = !this.#canAct
+      input.disabled = !token || max - min <= 0 || !this.#canAct;
+      input.title = !token
+        ? "Place this ship on the active Scene to maneuver."
+        : !this.#canAct
         ? denial
         : max - min <= 0
         ? emptyReason(name)
@@ -2372,8 +2429,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         1 - numeric(state.timeline) - numeric(state.evasion?.reserved),
       );
       coast.max = String(remainingTimeline);
-      coast.disabled = !this.#canAct || remainingTimeline <= 0;
-      coast.title = !this.#canAct
+      coast.disabled = !token || !this.#canAct || remainingTimeline <= 0;
+      coast.title = !token
+        ? "Place this ship on the active Scene to maneuver."
+        : !this.#canAct
         ? denial
         : remainingTimeline <= 0
         ? "No timeline remaining to coast"
@@ -2432,7 +2491,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           form.querySelectorAll(`[data-slider-value='${name}']`).forEach(
             (o) => {
               o.textContent = name === "rotation" || name === "pivot"
-                ? "0°"
+                ? "+0°"
                 : "+0";
             },
           );
@@ -2448,9 +2507,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       void this.#previewUi(form);
     });
 
-    const operator = html.querySelector("[data-tab-panel='helm'] select[data-page-operator='helm'], [data-tab-panel='helm'] select[name='operatorId']") ??
-      form.elements.namedItem("operatorId");
-    const hiddenOperator = form.elements.namedItem("operatorId");
+    const operator = form.elements.namedItem("operatorId");
+    const hiddenOperator = form.querySelector("input[name='operatorId'][type='hidden']");
     const holder = typeof state.controls?.helm === "string"
       ? state.controls.helm
       : state.controls?.helm?.operatorId;
@@ -2464,14 +2522,20 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const held = Boolean(holder && holder === operator?.value);
       const take = html.querySelector("[data-tab-panel='helm'] [data-ui-operation='takeControl'][data-control='helm']");
       if (take) {
-        take.disabled = held || !this.#canAct;
-        take.title = !this.#canAct ? denial : `Current holder: ${holderLabel}`;
+        take.disabled = !token || held || !this.#canAct;
+        take.title = !token
+          ? "Place this ship on the active Scene to maneuver."
+          : !this.#canAct
+          ? denial
+          : `Current holder: ${holderLabel}`;
         if (operator?.value) take.dataset.operatorId = operator.value;
       }
       const release = html.querySelector("[data-tab-panel='helm'] [data-ui-operation='releaseControl'][data-control='helm']");
       if (release) {
-        release.disabled = !holder || !this.#canAct;
-        release.title = !this.#canAct
+        release.disabled = !token || !holder || !this.#canAct;
+        release.title = !token
+          ? "Place this ship on the active Scene to maneuver."
+          : !this.#canAct
           ? denial
           : !holder
           ? "No helm operator to release."
@@ -2497,8 +2561,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       }
       const hardReserve = numeric(this.#config.evasionHardReserve);
       const hardArm = form.querySelector("[data-ui-operation='armEvasion'][data-tier='hard']");
+      let hardReason = "";
       if (hardArm) {
-        let hardReason = "";
         try {
           armEvasion(clone(state), {
             phase: state.phase,
@@ -2513,21 +2577,37 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         } catch (error) {
           hardReason = errorText(error);
         }
+      }
+      if (!token) {
+        reason = "Place this ship on the active Scene to evade.";
+        hardReason = "Place this ship on the active Scene to evade.";
+      }
+      if (hardArm) {
         hardArm.hidden = Boolean(state.evasion?.armed || hardReason);
-        hardArm.disabled = !this.#canAct;
-        hardArm.title = !this.#canAct ? denial : "Hard protocol: larger reserve, higher AC ceiling.";
+        hardArm.disabled = !token || !this.#canAct;
+        hardArm.title = !token
+          ? "Place this ship on the active Scene to evade."
+          : !this.#canAct
+          ? denial
+          : "Hard protocol: larger reserve, higher AC ceiling.";
       }
       const arm = form.querySelector("[data-ui-operation='armEvasion']");
       if (arm) {
         arm.hidden = Boolean(state.evasion?.armed || reason);
-        arm.disabled = !this.#canAct;
-        arm.title = !this.#canAct ? denial : "Reserve timeline to evade.";
+        arm.disabled = !token || !this.#canAct;
+        arm.title = !token
+          ? "Place this ship on the active Scene to evade."
+          : !this.#canAct
+          ? denial
+          : "Reserve timeline to evade.";
       }
       const disarm = form.querySelector("[data-ui-operation='disarmEvasion']");
       if (disarm) {
         disarm.hidden = !state.evasion?.armed;
-        disarm.disabled = !held || !this.#canAct;
-        disarm.title = !this.#canAct
+        disarm.disabled = !token || !held || !this.#canAct;
+        disarm.title = !token
+          ? "Place this ship on the active Scene to evade."
+          : !this.#canAct
           ? denial
           : "Reserved timeline is not refunded.";
       }
@@ -2549,7 +2629,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const form = html.querySelector("form[data-ui-operation='routePower']");
     if (!form) return;
     const state = this.actor.system.shipCombat.state;
-    const denial = state.phase !== "active"
+    const denial = (state.phase !== "active" && state.phase !== "outsideCombat")
       ? "Active Phase required."
       : "Operational access required.";
     const operator = html.querySelector("[data-page-operator='power']");
@@ -2744,7 +2824,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     if (!form || !this.#view.shields.sectors.length) return;
     const shields = this.#view.shields;
     const state = this.actor.system.shipCombat.state;
-    const denial = state.phase !== "active"
+    const denial = (state.phase !== "active" && state.phase !== "outsideCombat")
       ? "Active Phase required."
       : "Operational access required.";
     const pool = shields.regenPipsTotal ?? 20;
@@ -4721,16 +4801,32 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 
   async #commitOperation(
     type,
-    payload,
-    targetUuids,
+    payload = {},
+    targetUuids = [],
     sourceRevision = this.actor.system.shipCombat.state?.revision,
     { message = "" } = {},
   ) {
     const token = actorToken(this.actor);
-    if (!token) {
+    const SPATIAL_OPERATIONS = new Set([
+      "maneuver",
+      "rotate",
+      "armEvasion",
+      "disarmEvasion",
+      "attack",
+      "ping",
+      "acquire",
+      "analyze",
+      "deepScan",
+      "firingSolution",
+      "jam",
+      "breakLock",
+      "burnThrough",
+    ]);
+    if (!token && SPATIAL_OPERATIONS.has(type)) {
       throw new Error("Place this ship on the active Scene to operate it.");
     }
-    const revisions = { [token.uuid]: Number(sourceRevision ?? 0) };
+    const sourceUuid = token ? token.uuid : this.actor.uuid;
+    const revisions = { [sourceUuid]: Number(sourceRevision ?? 0) };
     for (const uuid of targetUuids) {
       const document = await fromUuid(uuid);
       const revision = document?.actor?.system?.shipCombat?.state?.revision ??
@@ -4752,7 +4848,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const request = {
       id: foundry.utils.randomID(),
       type,
-      sourceUuid: token.uuid,
+      sourceUuid,
       targetUuids,
       expectedRevisions: revisions,
       payload,
@@ -4766,7 +4862,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#uiDrafts.delete(`${type}:${payload.weaponId ?? ""}`);
     this.#epoch++;
     this.#movementInput = null;
-    clearMovementPreview(token.uuid);
+    if (token) clearMovementPreview(token.uuid);
     ui.notifications.info(
       message || commitMessage(type, payload, response, this.#config),
     );

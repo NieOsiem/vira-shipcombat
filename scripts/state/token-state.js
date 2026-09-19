@@ -38,22 +38,33 @@ function setProperty(object, path, value) {
   cursor[keys.at(-1)] = value;
 }
 
-function isTokenDocument(document) {
+export function isTokenDocument(document) {
   return document?.documentName === "Token" || document?.constructor?.metadata?.name === "Token";
 }
 
-export async function resolveTokenDocument(uuid) {
+export function isActorDocument(document) {
+  return document?.documentName === "Actor" || document?.constructor?.metadata?.name === "Actor";
+}
+
+export async function resolveShipDocument(uuid) {
   if (typeof uuid !== "string" || !uuid) {
-    throw new RuleViolation("INVALID_TOKEN_UUID", "Ship operations require a TokenDocument UUID.", { uuid });
+    throw new RuleViolation("INVALID_TOKEN_UUID", "Ship operations require a TokenDocument or Actor UUID.", { uuid });
   }
   const document = await globalThis.fromUuid?.(uuid);
-  if (!isTokenDocument(document)) {
-    throw new RuleViolation("TOKEN_NOT_FOUND", "The ship TokenDocument could not be resolved.", { uuid });
+  if (isTokenDocument(document)) {
+    if (!document.actor) {
+      throw new RuleViolation("TOKEN_ACTOR_MISSING", "The ship token has no actor context.", { uuid });
+    }
+    return document;
   }
-  if (!document.actor) {
-    throw new RuleViolation("TOKEN_ACTOR_MISSING", "The ship token has no actor context.", { uuid });
+  if (isActorDocument(document)) {
+    return document;
   }
-  return document;
+  throw new RuleViolation("TOKEN_NOT_FOUND", "The ship Document could not be resolved.", { uuid });
+}
+
+export async function resolveTokenDocument(uuid) {
+  return resolveShipDocument(uuid);
 }
 
 function componentItems(actor) {
@@ -67,22 +78,24 @@ function componentItems(actor) {
   return items.filter((item) => item?.type === COMPONENT_ITEM_TYPE);
 }
 
-export function readShipRecord(tokenDocument) {
-  const actor = tokenDocument.actor;
+export function readShipRecord(document) {
+  const isToken = Boolean(document?.actor);
+  const actor = isToken ? document.actor : document;
   assertCurrentShipSchema(actor);
   const shipCombat = actor?.system?.shipCombat;
   if (!shipCombat?.config || !shipCombat?.state) {
-    throw new RuleViolation("SHIP_STATE_MISSING", "The token actor has no ship combat configuration or state.", {
-      uuid: tokenDocument.uuid,
+    throw new RuleViolation("SHIP_STATE_MISSING", "The ship actor has no ship combat configuration or state.", {
+      uuid: document.uuid,
     });
   }
   const config = materializeShipConfig(shipCombat.config, componentItems(actor));
   return {
-    uuid: tokenDocument.uuid,
-    tokenDocument,
+    uuid: document.uuid,
+    tokenDocument: isToken ? document : null,
+    actorDocument: isToken ? document.actor : document,
     config,
     state: cloneDocumentData(shipCombat.state),
-    token: snapshotTokenTransform(tokenDocument),
+    token: isToken ? snapshotTokenTransform(document) : {},
   };
 }
 
@@ -122,10 +135,11 @@ function removedStatePaths(stored, next, prefix = []) {
   return paths;
 }
 
-export async function writeShipState(tokenDocument, state) {
-  // Synthetic actors persist into TokenDocument delta data; linked actors persist into
-  // their world Actor. Both paths intentionally use the token's actor context.
-  const actor = tokenDocument.actor;
+export async function writeShipState(document, state) {
+  // Synthetic actors persist into TokenDocument delta data; linked actors and sidebar
+  // actors persist into their world Actor.
+  const isToken = Boolean(document?.actor);
+  const actor = isToken ? document.actor : document;
   const config = materializeShipConfig(actor.system.shipCombat.config, componentItems(actor));
   const replacement = globalThis.foundry.data.operators.ForcedReplacement.create(cloneDocumentData(state));
   await actor.update({
@@ -134,10 +148,10 @@ export async function writeShipState(tokenDocument, state) {
   }, { viraShipCombatInternal: true, diff: false });
   // A delta-backed token merges into its stored delta, which keeps every key the new state no longer
   // carries, so a finished Recovery Work entry, an expired jam or a dropped track would come back on the
-  // next load. Linked actors replace the path outright and need none of this.
-  if (tokenDocument.actorLink !== false) return tokenDocument;
+  // next load. Linked and sidebar actors replace the path outright and need none of this.
+  if (!isToken || document.actorLink !== false) return document;
   const removals = removedStatePaths(actor._source?.system?.shipCombat?.state, state);
-  if (!removals.length) return tokenDocument;
+  if (!removals.length) return document;
   const deletions = {};
   for (const path of removals) {
     // Track and condition keys are URL-encoded by the engine, so a key never contains a path dot.
@@ -147,23 +161,25 @@ export async function writeShipState(tokenDocument, state) {
   return actor.update(deletions, { viraShipCombatInternal: true });
 }
 
-export async function writeTokenTransform(tokenDocument, transform) {
+export async function writeTokenTransform(document, transform) {
+  if (!isTokenDocument(document)) return document;
   const update = {};
   for (const path of TRANSFORM_FIELDS) {
     const value = getProperty(transform, path);
     if (value !== undefined) setProperty(update, path, cloneDocumentData(value));
   }
-  if (!Object.keys(update).length) return tokenDocument;
-  return tokenDocument.update(update, { viraShipCombatInternal: true });
+  if (!Object.keys(update).length) return document;
+  return document.update(update, { viraShipCombatInternal: true });
 }
 
 export async function loadShipRecords(uuids) {
   const records = new Map();
   for (const uuid of uuids) {
     if (records.has(uuid)) continue;
-    const tokenDocument = await resolveTokenDocument(uuid);
-    await initializeShipActor(tokenDocument.actor);
-    records.set(uuid, readShipRecord(tokenDocument));
+    const document = await resolveShipDocument(uuid);
+    const actor = isTokenDocument(document) ? document.actor : document;
+    await initializeShipActor(actor);
+    records.set(uuid, readShipRecord(document));
   }
   return records;
 }

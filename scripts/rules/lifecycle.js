@@ -268,3 +268,122 @@ export function runEndPhase(config, state, { random = [], endKey = state?.turnKe
     return { events, fate };
   });
 }
+
+export function cycleOutsideCombatRound(config, state, {
+  input = {},
+  random = [],
+  targets = [],
+  nextStartKey = true,
+  expiringJamSourceUuid,
+} = {}) {
+  return transaction(state, (draft) => {
+    if (draft.phase !== "outsideCombat") {
+      throw new RuleViolation("SHIP_NOT_OUTSIDE_COMBAT", "Only ships outside combat may use cycleOutsideCombatRound.", {
+        phase: draft.phase,
+      });
+    }
+
+    const events = [];
+
+    // 1. Release lingering controls
+    draft.controls ??= {};
+    const released = [];
+    for (const [control, holder] of Object.entries(draft.controls)) {
+      if (holder != null) released.push({ control, holder: clone(holder) });
+      if (control === "byOperator" && holder && typeof holder === "object") draft.controls[control] = {};
+      else draft.controls[control] = null;
+    }
+    if (released.length) {
+      events.push(event("endActive", "controlsReleased", { released }));
+    }
+
+    // 2. Coasting (mandatory End-of-Active coast simulation)
+    let coast = null;
+    if (input.position != null) {
+      coast = resolveCoast(draft, { ...input, automatic: true });
+      events.push(event("endActive", "coastResolved", coast));
+    }
+
+    // 3. End Phase
+    const overspeed = getOverspeedDamage(draft.velocity ?? { x: 0, y: 0 }, Number(config?.safeVelocity ?? 0));
+    const overspeedBefore = Math.max(0, Number(draft.hull ?? 0));
+    draft.hull = Math.max(0, overspeedBefore - overspeed.hullDamage);
+    events.push(event(1, "overspeedDamage", { ...overspeed, beforeHull: overspeedBefore, hull: draft.hull }));
+
+    const hazards = processHazardEnd(config, draft, { random, endKey: null });
+    const heatEvents = hazards.events.filter((entry) => entry.type === "hazardHeat" || entry.type === "hazardEnded");
+    const damageEvents = hazards.events.filter((entry) => ["fireFault", "fireHullDamage", "breachReminder", "hazardEnd"].includes(entry.type));
+    const clockEvents = hazards.events.filter((entry) => ["hazardEscalation", "breachFireSuppression"].includes(entry.type));
+    const endShedding = applyPowerShedding(config, draft);
+    events.push(event(2, "hazardHeatPower", { events: heatEvents, shedding: endShedding }));
+    events.push(event(3, "hazardDamage", { events: damageEvents }));
+    events.push(event(4, "hazardClocks", { events: clockEvents }));
+
+    const capacity = Number(config?.heatCapacity ?? config?.ratedHeatCapacity ?? 0);
+    const overflow = Math.max(0, Number(draft.heat ?? 0) - capacity);
+    const overflowDamage = Math.ceil(overflow / 2);
+    const overflowBefore = Math.max(0, Number(draft.hull ?? 0));
+    draft.hull = Math.max(0, overflowBefore - overflowDamage);
+    events.push(event(5, "heatOverflow", { capacity, heat: draft.heat, overflow, hullDamage: overflowDamage, beforeHull: overflowBefore, hull: draft.hull }));
+
+    const harmful = effectsArray(draft).filter((effect) => effect?.timing === "end" && (effect.harmful === true || Number(effect.hullDamage) > 0 || Number(effect.heat) > 0));
+    const applied = [];
+    for (const effect of harmful.sort((left, right) => String(left.id ?? "").localeCompare(String(right.id ?? "")))) {
+      const hullDamage = Math.max(0, Number(effect.hullDamage ?? 0));
+      const heat = Math.max(0, Number(effect.heat ?? 0));
+      draft.hull = Math.max(0, Number(draft.hull ?? 0) - hullDamage);
+      draft.heat = Math.max(0, Number(draft.heat ?? 0) + heat);
+      applied.push({ id: effect.id ?? null, hullDamage, heat });
+    }
+    const expiredEnd = expireEffects(draft, "end", null);
+    events.push(event(6, "persistentEffects", { applied, expired: expiredEnd }));
+
+    draft.hull = Math.max(0, Number(draft.hull ?? 0));
+    const fate = resolveShipFate(config, draft);
+    if (fate.public) events.push(event("afterEnd", "shipFate", { public: fate.public, gm: fate.gm }));
+
+    // 4. Start Phase
+    const entryWeapons = Object.fromEntries(Object.entries(draft.weapons ?? {})
+      .filter(([, weapon]) => weapon?.status === "booting" && Number.isInteger(weapon.bootCounter) && weapon.bootCounter > 0)
+      .map(([weaponId]) => [weaponId, true]));
+    const entryCounters = { ventCooldown: Number.isInteger(draft.ventCooldown) ? draft.ventCooldown : null };
+
+    const expiredStart = expireEffects(draft, "nextStart", null);
+    resetEvasionAtStart(draft);
+    const startShedding = applyPowerShedding(config, draft);
+    events.push(event(0, "openingHousekeeping", { expired: expiredStart, shedding: startShedding }));
+
+    events.push(event(1, "passiveCooling", passiveCooling(config, draft)));
+    events.push(event(2, "maintainedOverclockHeat", applyMaintainedOverclockHeat(config, draft)));
+    events.push(event(3, "shieldRecharge", tickShieldRecharge(config, draft)));
+    const clamping = applyShieldCapacityClamping(config, draft);
+    events.push(event(4, "shieldRegeneration", { clamping, regeneration: applyShieldRegeneration(config, draft) }));
+    events.push(event(5, "weaponBoot", tickEntryWeaponBoot(config, draft, entryWeapons)));
+    events.push(event(6, "weaponReadiness", { events: automaticReadiness(config, draft) }));
+    events.push(event(7, "beneficialSystems", { counters: tickEntryCounters(draft, entryCounters) }));
+
+    draft.timeline = 0;
+    draft.rotationSpent = 0;
+    draft.pivotSpent = 0;
+    draft.repairAttemptUsed = false;
+    resetEvasionAtStart(draft);
+
+    const tracks = refreshObserverTracks({
+      observerConfig: config,
+      observerState: draft,
+      targets,
+      atStart: true,
+      startKey: null,
+      nextStartKey,
+      expiringJamSourceUuid,
+    });
+    events.push(event(9, "trackRefresh", { tracks }));
+
+    // 5. Conclude outside combat
+    draft.phase = "outsideCombat";
+    draft.turnKey = null;
+
+    return { events, coast, fate };
+  });
+}
+

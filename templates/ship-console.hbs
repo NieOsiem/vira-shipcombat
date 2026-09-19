@@ -31,7 +31,17 @@
 
   <div class="ship-console-panels">
     <section id="panel-overview" class="ship-console-panel" role="tabpanel" aria-label="Overview" data-tab-panel="overview" {{#unless tabState.overview.active}}hidden{{/unless}}>
-      <div class="ship-panel-heading"><h2>Overview</h2><span class="ship-readout">Signature {{view.status.signature.value}}</span></div>
+      <div class="ship-panel-heading">
+        <h2>Overview</h2>
+        <div class="ship-panel-heading-actions">
+          <span class="ship-readout">Signature {{view.status.signature.value}}</span>
+          {{#unless view.combat.inCombat}}
+          <button type="button" class="ship-advance-turn-btn" data-action="advanceTurn" {{#if advanceCooldownRemaining}}disabled title="Advance turn is on cooldown ({{advanceCooldownRemaining}}s remaining)"{{else}}title="Advance turn: cycle systems, resolve coasting, passive cooling, shield recharge, and cooldowns outside of combat."{{/if}}>
+            <i class="fa-solid fa-forward-step" aria-hidden="true"></i> Advance Turn{{#if advanceCooldownRemaining}} ({{advanceCooldownRemaining}}s){{/if}}
+          </button>
+          {{/unless}}
+        </div>
+      </div>
       {{#if view.hasConditions}}<section class="ship-alert-stack" aria-label="Active conditions">{{#each view.conditions}}<div class="ship-alert ship-alert--{{severity}}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><strong>{{label}}</strong><span>{{severity}}{{#if sector}} · {{sector}}{{/if}}</span></div>{{/each}}</section>{{/if}}
       {{#each view.importantDamage}}<p class="ship-warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{label}} · {{statusLabel}}{{#if componentLabel}} · {{componentLabel}}{{/if}}</p>{{/each}}
       <section class="ship-card ship-console-specifications" aria-label="Installed ship statistics">

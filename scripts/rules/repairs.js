@@ -21,7 +21,11 @@ function assignmentId(assignment) {
 }
 
 function assignedOperator(config, draft, operatorId) {
-  const profile = profiles(config).find((entry) => entry?.id === operatorId);
+  const isOutside = draft?.phase === "outsideCombat";
+  let profile = profiles(config).find((entry) => entry?.id === operatorId);
+  if (!profile && isOutside) {
+    profile = profiles(config)[0] ?? { id: "crew", label: "Crew", ratings: { engineering: 5 } };
+  }
   if (!profile) throw new RuleViolation("UNKNOWN_OPERATOR", "The repair operator is not defined by this ship.", { operatorId });
   for (const slot of ["command", "crew"]) {
     const assignment = (draft?.roster?.[slot] ?? []).find((entry) => assignmentId(entry) === operatorId);
@@ -30,6 +34,9 @@ function assignedOperator(config, draft, operatorId) {
       if (assignment.disconnected || profile.disconnected) throw new RuleViolation("OPERATOR_DISCONNECTED", "A disconnected operator cannot act.", { operatorId });
       return { profile, assignment, slot };
     }
+  }
+  if (isOutside) {
+    return { profile, assignment: { operatorId: profile.id }, slot: "crew" };
   }
   throw new RuleViolation("OPERATOR_NOT_ASSIGNED", "Only an assigned Command or Crew operator may perform this operation.", { operatorId });
 }
@@ -61,6 +68,9 @@ function validatePhysicalRepair(config, assigned, operation) {
 }
 
 function resourcePlan(draft, assigned, cost = 1) {
+  if (draft?.phase === "outsideCombat") {
+    return { cost: 0, remaining: 1, resource: "order" };
+  }
   const container = assigned.slot === "command" ? draft?.resources?.actions : draft?.resources?.orders;
   const remaining = Number(container?.[assigned.profile.id]);
   if (!Number.isInteger(remaining) || remaining < cost) {
@@ -86,6 +96,9 @@ function releaseControls(draft, operatorId) {
 }
 
 function commitResource(draft, assigned, plan) {
+  if (draft?.phase === "outsideCombat") {
+    return releaseControls(draft, assigned.profile.id);
+  }
   const container = assigned.slot === "command" ? draft.resources.actions : draft.resources.orders;
   container[assigned.profile.id] = plan.remaining - plan.cost;
   return releaseControls(draft, assigned.profile.id);
@@ -208,6 +221,7 @@ function addVentEffect(draft, componentId) {
 }
 
 function validateRepairAttempt(draft, assigned) {
+  if (draft?.phase === "outsideCombat") return;
   if (assigned.slot === "command" && draft.repairAttemptUsed) {
     throw new RuleViolation("COMMAND_REPAIR_ATTEMPT_USED", "The ship has already committed its one Command Standard/Hull Repair attempt this turn.");
   }
@@ -271,9 +285,10 @@ export function contributeRecoveryWork(config, draft, { operatorId, conditionId,
     }
   }
   const required = recoveryRequirement(config, target.condition);
-  const cost = assigned.slot === "command" ? 3 : 1;
+  const isOutside = draft?.phase === "outsideCombat";
+  const cost = assigned.slot === "command" && !isOutside ? 3 : 1;
   const resource = resourcePlan(draft, assigned, cost);
-  if (assigned.slot === "command" && resource.remaining !== 3) {
+  if (!isOutside && assigned.slot === "command" && resource.remaining !== 3) {
     throw new RuleViolation("WORK_RESOURCE_UNAVAILABLE", "Command Recovery Work requires all 3 current Ship Actions unspent.", { operatorId, remaining: resource.remaining });
   }
   const jobId = `recovery:${target.key}`;

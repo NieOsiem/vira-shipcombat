@@ -3,6 +3,7 @@ import { executeShipOperation } from "../rules/operations.js";
 import { sceneGridGeometry } from "../foundry/scene-geometry.js";
 import {
   cloneDocumentData,
+  isTokenDocument,
   loadShipRecords,
   operationUuids,
   resolveTokenDocument,
@@ -74,6 +75,7 @@ const SCENE_SNAPSHOT_TYPES = new Set(["maneuver", "setRoster", "refreshResources
 async function normalizeSceneParticipants(request) {
   if (!SCENE_SNAPSHOT_TYPES.has(request.type)) return;
   const source = await resolveTokenDocument(request.sourceUuid);
+  if (!isTokenDocument(source) || !source.parent?.tokens) return;
   const sceneTokens = collectionValues(source.parent?.tokens)
     .filter((token) => token?.actor?.type === SHIP_TYPE && typeof token.uuid === "string")
     .sort((left, right) => left.uuid.localeCompare(right.uuid));
@@ -114,10 +116,35 @@ function assignmentOperatorId(assignment) {
   return typeof assignment === "string" ? assignment : assignment?.operatorId ?? assignment?.id;
 }
 
-function assertPermission(user, request, source) {
+export const advanceCooldowns = new Map();
+
+export function assertPermission(user, request, source) {
   if (user.isGM) return;
   if (request.payload.gmOverride === true) {
     throw rule("FORGED_USER_CONTEXT", "Player operation payloads cannot claim GM authority.");
+  }
+  const isOutside = source.state?.phase === "outsideCombat";
+  if (isOutside) {
+    const actor = source.tokenDocument?.actor ?? source.actorDocument;
+    const observer = globalThis.CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OBSERVER ?? 2;
+    if (actor && typeof actor.testUserPermission === "function" && !actor.testUserPermission(user, observer)) {
+      throw rule("PERMISSION_DENIED", "Observer permission on the ship is required to operate it outside combat.");
+    }
+    if (request.type === "advanceTurn" || request.type === "cycleRound") {
+      const actorUuid = actor?.uuid;
+      const last = Math.max(
+        advanceCooldowns.get(source.uuid) ?? 0,
+        actorUuid ? (advanceCooldowns.get(actorUuid) ?? 0) : 0,
+      );
+      const nowMs = Date.now();
+      if (nowMs - last < 12000) {
+        const remaining = Math.ceil((12000 - (nowMs - last)) / 1000);
+        throw rule("ADVANCE_COOLDOWN", `Advance Turn is on cooldown. Please wait ${remaining}s before advancing again.`);
+      }
+      advanceCooldowns.set(source.uuid, nowMs);
+      if (actorUuid) advanceCooldowns.set(actorUuid, nowMs);
+    }
+    return;
   }
   const operatorId = request.payload.operatorId;
   if (typeof operatorId !== "string" || !operatorId) {
@@ -155,7 +182,8 @@ function validateExpectedRevisions(request, records) {
 function validateLiveRevisions(request, records) {
   for (const [uuid, record] of records) {
     const expected = request.expectedRevisions[uuid];
-    const actual = record.tokenDocument.actor?.system?.shipCombat?.state?.revision;
+    const actor = record.tokenDocument?.actor ?? record.actorDocument;
+    const actual = actor?.system?.shipCombat?.state?.revision;
     if (expected !== actual) {
       throw rule("STALE_REVISION", "Ship state changed while the operation was being resolved.", { uuid, expected, actual });
     }
@@ -380,12 +408,14 @@ async function restoreDocuments(records, before) {
   const errors = [];
   for (const [uuid, record] of [...records].reverse()) {
     try {
-      await writeShipState(record.tokenDocument, before.ships[uuid].state);
+      const doc = record.tokenDocument ?? record.actorDocument;
+      await writeShipState(doc, before.ships[uuid].state);
     } catch (error) {
       errors.push({ uuid, document: "actor", message: error.message });
     }
   }
   for (const [uuid, record] of [...records].reverse()) {
+    if (!record.tokenDocument) continue;
     try {
       await writeTokenTransform(record.tokenDocument, before.ships[uuid].tokenTransform);
     } catch (error) {
@@ -403,10 +433,15 @@ async function persistOperation(records, result, before) {
   // an unlinked ship persists its state into that same TokenDocument.
   try {
     for (const uuid of result.changedUuids) {
-      await writeShipState(records.get(uuid).tokenDocument, result.shipStates[uuid]);
+      const record = records.get(uuid);
+      const doc = record.tokenDocument ?? record.actorDocument;
+      await writeShipState(doc, result.shipStates[uuid]);
     }
     for (const [uuid, transform] of Object.entries(result.tokenUpdates)) {
-      await writeTokenTransform(records.get(uuid).tokenDocument, transform);
+      const record = records.get(uuid);
+      if (record?.tokenDocument) {
+        await writeTokenTransform(record.tokenDocument, transform);
+      }
     }
   } catch (cause) {
     const restoreErrors = await restoreDocuments(records, before);
@@ -552,8 +587,14 @@ export async function submitShipOperation(request) {
   }
   const canonical = cloneDocumentData(request);
   if (!initialized) await initializeShipAuthority();
-  if (isActiveGM()) return enqueue(() => processRequest(canonical, globalThis.game.user.id));
-  return requestRemoteShipOperation(canonical, globalThis.game?.user?.id);
+  const response = isActiveGM()
+    ? await enqueue(() => processRequest(canonical, globalThis.game.user.id))
+    : await requestRemoteShipOperation(canonical, globalThis.game?.user?.id);
+  if (response?.ok && (canonical.type === "advanceTurn" || canonical.type === "cycleRound") && !globalThis.game?.user?.isGM) {
+    const nowMs = Date.now();
+    advanceCooldowns.set(canonical.sourceUuid, nowMs);
+  }
+  return response;
 }
 
 /** Build a GM automation request at the queue head, against the latest document revisions. */
