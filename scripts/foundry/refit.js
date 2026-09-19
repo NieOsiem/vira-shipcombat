@@ -22,7 +22,7 @@ import {
 import { validateRoster } from "../rules/operators.js";
 import { applyPowerShedding } from "../rules/power.js";
 import { applyShieldCapacityClamping } from "../rules/shields.js";
-import { HAZARD_CHANNELS } from "../rules/conditions.js";
+import { HAZARD_CHANNELS, supportsHazards } from "../rules/conditions.js";
 import { isActiveGM } from "../socket.js";
 
 const actorQueues = new Map();
@@ -611,8 +611,6 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
     crew: validatedRoster.crew,
   };
 
-  const supportsHazards = config.capabilityProfile?.hazards !== false
-    && config.capabilityProfile?.supportsHazards !== false;
   const removedConditionIds = new Set();
   state.conditions = Object.fromEntries(
     Object.entries(state.conditions ?? {}).filter(([key, condition]) => {
@@ -620,7 +618,7 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
         || HAZARD_CHANNELS.includes(condition?.channelId ?? condition?.conditionId);
       const remove = stringReferences(key, removedIds) ||
         recordReferences(condition, removedIds) ||
-        (!supportsHazards && isHazard);
+        (!supportsHazards(config) && isHazard);
       if (remove) {
         removedConditionIds.add(key);
         if (typeof condition?.id === "string") {

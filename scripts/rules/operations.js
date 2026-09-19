@@ -215,8 +215,8 @@ export const OUTSIDE_COMBAT_ALLOWED_TYPES = new Set([
   OPERATION_TYPES.TOGGLE_WEAPON,
   OPERATION_TYPES.MANEUVER,
   OPERATION_TYPES.ROTATE,
-  OPERATION_TYPES.ARM_EVASION,
-  OPERATION_TYPES.DISARM_EVASION,
+  // Evasion belongs to the combat round: `cycleOutsideCombatRound` clears any reservation at every
+  // round start, so both evasion operations stay Active-phase only.
   OPERATION_TYPES.REPAIR,
   OPERATION_TYPES.HULL_REPAIR,
   OPERATION_TYPES.RECOVERY_WORK,
@@ -227,6 +227,33 @@ export const OUTSIDE_COMBAT_ALLOWED_TYPES = new Set([
   OPERATION_TYPES.CANCEL_RELOAD,
   OPERATION_TYPES.ADVANCE_TURN,
 ]);
+/**
+ * Operations that read canvas geometry: position, facing, line of sight, or collision bodies.
+ * A hull with no placed token has none of those, so its geometry would be projected onto the
+ * scene origin. The Sheet uses this list for its early "place the ship" refusal; the rules report
+ * the same policy as TOKEN_REQUIRED where a case needs it.
+ */
+export const SPATIAL_OPERATION_TYPES = new Set([
+  OPERATION_TYPES.COAST,
+  OPERATION_TYPES.MANEUVER,
+  OPERATION_TYPES.ROTATE,
+  OPERATION_TYPES.REPOSITION,
+  OPERATION_TYPES.ATTACK,
+  OPERATION_TYPES.PING,
+  OPERATION_TYPES.ACQUIRE,
+  OPERATION_TYPES.ANALYZE,
+  OPERATION_TYPES.DEEP_SCAN,
+  OPERATION_TYPES.FIRING_SOLUTION,
+  OPERATION_TYPES.FADE,
+  OPERATION_TYPES.JAM,
+  OPERATION_TYPES.BREAK_LOCK,
+  OPERATION_TYPES.BURN_THROUGH,
+]);
+
+/** @param {string} type canonical or aliased operation type */
+export function requiresPlacedToken(type) {
+  return SPATIAL_OPERATION_TYPES.has(TYPE_ALIASES[type] ?? type);
+}
 const SENSOR_TYPES = new Set([
   OPERATION_TYPES.PING,
   OPERATION_TYPES.ACQUIRE,
@@ -592,6 +619,9 @@ function obstacleSnapshots(source, drafts, context) {
   const obstacles = [];
   for (const ship of drafts.values()) {
     if (ship.uuid === source.uuid) continue;
+    // No canvas transform means no collision body: without this the ship would sit invisible at
+    // the scene's top-left cell and a placed ship moving through it would take phantom damage.
+    if (ship.token?.x == null) continue;
     obstacles.push({
       id: ship.uuid,
       position: positionOf(ship, context),
@@ -877,9 +907,6 @@ function operationMetadata(operation) {
 }
 
 function spend(source, operation) {
-  if (source.state?.phase === "outsideCombat") {
-    return { operatorId: operation.payload.operatorId, slot: "crew", resource: null, spent: 0, remaining: 1, released: [] };
-  }
   return spendOperationResource(source.config, source.state, {
     operatorId: operation.payload.operatorId,
     operation: operationMetadata(operation),
@@ -1567,11 +1594,14 @@ export function executeShipOperation(operation, context) {
       });
       break;
     case OPERATION_TYPES.ADVANCE_TURN: {
+      // A hull with no canvas transform has no position to coast from: the round resolves without
+      // the movement step instead of simulating the ship from the scene origin.
+      const placed = source.token?.x != null;
       result = cycleOutsideCombatRound(
         source.config,
         source.state,
         {
-          input: movementInput(source, drafts, request, context),
+          input: placed ? movementInput(source, drafts, request, context) : {},
           random: randomSource(context),
         },
       );

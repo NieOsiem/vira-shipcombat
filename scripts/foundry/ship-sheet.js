@@ -36,6 +36,7 @@ import {
   projectCoast,
 } from "../rules/movement.js";
 import { calculateStruckSector, previewAttack } from "../rules/combat.js";
+import { requiresPlacedToken } from "../rules/operations.js";
 import { getSensorStats, TRACK_STATUS } from "../rules/sensors.js";
 import {
   assignedUserIds,
@@ -1262,6 +1263,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   #freshAll = false;
   #renderSerial = 0;
   #setupParts = new Set();
+  /** Pending countdown re-render for the Advance Turn cooldown, replaced on every render. */
+  #advanceCooldownTimer = null;
 
   get title() {
     const state = this.actor?.system?.shipCombat?.state;
@@ -1400,6 +1403,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       }));
 
     let advanceCooldownRemaining = 0;
+    clearTimeout(this.#advanceCooldownTimer);
+    this.#advanceCooldownTimer = null;
     if (!isGM) {
       const lastAdvance = Math.max(
         advanceCooldowns.get(actor.uuid) ?? 0,
@@ -1408,7 +1413,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const elapsed = Date.now() - lastAdvance;
       if (elapsed < 12000) {
         advanceCooldownRemaining = Math.ceil((12000 - elapsed) / 1000);
-        setTimeout(() => {
+        // One pending tick per sheet: every render replaces the previous countdown timer.
+        this.#advanceCooldownTimer = setTimeout(() => {
+          this.#advanceCooldownTimer = null;
           if (this.rendered) this.render();
         }, 1000);
       }
@@ -1453,9 +1460,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       hullDraftStale: this.#hullDraft?.stale ?? false,
       referenceBuilds: referenceBuildChoices().map((choice) => ({
         ...choice,
-        selected: choice.id ===
-          (referenceBuild(hullConfig?.id)?.id ?? DEFAULT_REFERENCE_BUILD_ID),
+        selected: choice.id === referenceBuild(hullConfig?.id)?.id,
       })),
+      customHullBuild: !referenceBuild(hullConfig?.id),
     }, { inplace: false });
   }
 
@@ -4807,22 +4814,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     { message = "" } = {},
   ) {
     const token = actorToken(this.actor);
-    const SPATIAL_OPERATIONS = new Set([
-      "maneuver",
-      "rotate",
-      "armEvasion",
-      "disarmEvasion",
-      "attack",
-      "ping",
-      "acquire",
-      "analyze",
-      "deepScan",
-      "firingSolution",
-      "jam",
-      "breakLock",
-      "burnThrough",
-    ]);
-    if (!token && SPATIAL_OPERATIONS.has(type)) {
+    if (!token && requiresPlacedToken(type)) {
       throw new Error("Place this ship on the active Scene to operate it.");
     }
     const sourceUuid = token ? token.uuid : this.actor.uuid;
@@ -4900,7 +4892,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   }
 
   async #resetToReferenceBuild(form) {
-    const requested = form?.querySelector("[data-reference-build]")?.value ??
+    const requested = form?.querySelector("[data-reference-build]")?.value ||
       DEFAULT_REFERENCE_BUILD_ID;
     const build = referenceBuild(requested);
     if (!build) {

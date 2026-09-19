@@ -153,7 +153,7 @@ function kindFor(channelId) {
   throw new RuleViolation("UNKNOWN_CONDITION_CHANNEL", "The condition channel is not part of the V1 Fault/Hazard rules.", { channelId });
 }
 
-function supportsHazards(config) {
+export function supportsHazards(config) {
   const profile = config?.capabilityProfile;
   if (!profile || typeof profile !== "object") return true;
   return profile.supportsHazards !== false && profile.hazards !== false;
@@ -406,32 +406,50 @@ function resolveEntry(config, draft, key) {
       weight: 1,
     }, existing.region ?? existing.sector, config);
   }
-  if (typeof key === "string") {
-    const [channelId, region] = key.split(":");
-    if (HAZARD_CHANNELS.includes(channelId)) {
-      return normalizePoolEntry({
-        kind: "hazard",
-        channelId,
-        sector: region ?? null,
-        region: region ?? null,
-        weight: 1,
-      }, region ?? null, config);
-    }
-  }
   return null;
+}
+
+/** Hazard entry for a bare `<channel>[:<region>]` key, or null when the key names no hazard. */
+function hazardKeyEntry(key, config) {
+  if (typeof key !== "string") return null;
+  const [channelId, region] = key.split(":");
+  if (!HAZARD_CHANNELS.includes(channelId)) return null;
+  return normalizePoolEntry({
+    kind: "hazard",
+    channelId,
+    sector: region ?? null,
+    region: region ?? null,
+    weight: 1,
+  }, region ?? null, config);
+}
+
+/** A fault listed in several sector pools must not gain extra selection weight. */
+function distinctEntries(entries) {
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const key = conditionKey(entry);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function selectFaultConversion(config, draft, sector, random, randomIndex = 0) {
   const targetSector = SECTORS.includes(sector) ? sector : null;
-  const candidates = targetSector
+  const candidates = distinctEntries(targetSector
     ? eligibleEntries(config, draft, targetSector, [], "fault")
-    : SECTORS.flatMap((s) => eligibleEntries(config, draft, s, [], "fault"));
+    : SECTORS.flatMap((s) => eligibleEntries(config, draft, s, [], "fault")));
   return selectWeighted(candidates, random, randomIndex);
 }
 
 function applyConditionTiersCore(config, draft, { conditionId, tiers, sector, random, selector }) {
   let entry = resolveEntry(config, draft, conditionId);
+  // A hazard-capable hull carries only the hazards its manifest declares. A hull without hazard
+  // support may still name one (fire, breach, an electrical cascade) so that the strike converts
+  // to an eligible Fault instead of being discarded.
+  if (!entry && !supportsHazards(config)) entry = hazardKeyEntry(conditionId, config);
   if (!entry) throw new RuleViolation("UNKNOWN_CONDITION_TARGET", "The condition target is not present in the ship's critical manifest.", { conditionId, sector });
+  const original = entry;
   const applications = [];
   let randomIndex = 0;
   let remaining = tiers;
@@ -443,9 +461,9 @@ function applyConditionTiersCore(config, draft, { conditionId, tiers, sector, ra
     const conversionSector = sector ?? entry.poolRegion ?? entry.region;
     entry = selectFaultConversion(config, draft, conversionSector, random, randomIndex);
     if (!entry) return { applications, discarded: remaining, convertedHazard: true };
-    const candidatePool = SECTORS.includes(conversionSector)
+    const candidatePool = distinctEntries(SECTORS.includes(conversionSector)
       ? eligibleEntries(config, draft, conversionSector, [], "fault")
-      : SECTORS.flatMap((s) => eligibleEntries(config, draft, s, [], "fault"));
+      : SECTORS.flatMap((s) => eligibleEntries(config, draft, s, [], "fault")));
     if (candidatePool.length > 1) randomIndex += 1;
   }
 
@@ -472,7 +490,7 @@ function applyConditionTiersCore(config, draft, { conditionId, tiers, sector, ra
   return {
     applications,
     discarded: remaining,
-    convertedHazard: (resolveEntry(config, draft, conditionId)?.kind === "hazard") && !supportsHazards(config),
+    convertedHazard: original.kind === "hazard" && !supportsHazards(config),
   };
 }
 

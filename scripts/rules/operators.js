@@ -624,13 +624,20 @@ export function seedOperatorResources(state, roster) {
 export function checkEligibility(config, draft, { operatorId, operation }) {
   const reasons = [];
   const isOutside = draft?.phase === "outsideCombat";
+  // Outside combat a hull has no roster to draw from: the operator is whoever is at the console,
+  // so an unmatched operatorId resolves to the ship's first profile instead of refusing.
+  const freeAssignment = () => {
+    const fallback = operatorProfiles(config).find((p) => p?.id === operatorId)
+      ?? operatorProfiles(config)[0]
+      ?? { id: operatorId ?? "crew", label: "Crew", type: "npc" };
+    return { profile: fallback, assignment: { operatorId: fallback.id }, slot: "crew" };
+  };
   let assigned;
   try {
     assigned = assignmentFor(config, draft, operatorId);
   } catch (error) {
     if (isOutside) {
-      const fallback = operatorProfiles(config).find((p) => p?.id === operatorId) ?? operatorProfiles(config)[0] ?? { id: operatorId ?? "crew", label: "Crew", type: "npc" };
-      assigned = { profile: fallback, assignment: { operatorId: fallback.id }, slot: "crew" };
+      assigned = freeAssignment();
     } else if (error instanceof RuleViolation) {
       return {
         eligible: false,
@@ -643,8 +650,7 @@ export function checkEligibility(config, draft, { operatorId, operation }) {
   }
   if (!assigned) {
     if (isOutside) {
-      const fallback = operatorProfiles(config).find((p) => p?.id === operatorId) ?? operatorProfiles(config)[0] ?? { id: operatorId ?? "crew", label: "Crew", type: "npc" };
-      assigned = { profile: fallback, assignment: { operatorId: fallback.id }, slot: "crew" };
+      assigned = freeAssignment();
     } else {
       reasons.push({ code: "OPERATOR_NOT_ASSIGNED", operatorId });
       return { eligible: false, code: reasons[0].code, reasons };

@@ -1387,7 +1387,8 @@ export function buildShipConsoleView(
     0,
   );
   // The pool the board reports is ship-wide: a viewer-filtered subset would show
-  const isOutside = (state?.phase ?? "outsideCombat") === "outsideCombat";
+  // a player a different Orders total than the GM reads on the same ship.
+  const isOutside = state?.phase === "outsideCombat";
   const shipWideOrders = allOperators
     .filter((op) => op.kind === "crew")
     .reduce((sum, op) => sum + (op.remaining ?? 0), 0);

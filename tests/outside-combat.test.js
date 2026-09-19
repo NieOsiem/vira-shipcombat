@@ -44,13 +44,15 @@ function createContext(ships, overrides = {}) {
   };
 }
 
-function createRequest(type, sourceUuid, payload = {}) {
+function createRequest(type, sourceUuid, payload = {}, targetUuids = []) {
   return {
     id: "req-test",
     type,
     sourceUuid,
-    targetUuids: [],
-    expectedRevisions: { [sourceUuid]: 0 },
+    targetUuids,
+    expectedRevisions: Object.fromEntries(
+      [[sourceUuid, 0], ...targetUuids.map((uuid) => [uuid, 0])],
+    ),
     payload,
   };
 }
@@ -101,6 +103,54 @@ describe("outside-combat lifecycle and round cycling", () => {
     expect(updated.phase).toBe("outsideCombat");
     expect(updated.ventCooldown).toBe(0);
     expect(updated.timeline).toBe(0);
+  });
+
+  test("an unplaced hull advances its round without simulating a coast", () => {
+    const unplaced = createTestShip(SOURCE_ACTOR, { token: null });
+    unplaced.state.velocity = { x: 4, y: 0 };
+    unplaced.state.heat = 5;
+    unplaced.state.ventCooldown = 1;
+    const ctx = createContext({ [SOURCE_ACTOR]: unplaced });
+    const req = createRequest("advanceTurn", SOURCE_ACTOR);
+
+    const outcome = executeShipOperation(req, ctx);
+    const detail = outcome.publicEvents.find((entry) => entry.type === "advanceTurn")?.detail;
+    const result = outcome.shipStates[SOURCE_ACTOR];
+
+    // No canvas transform means no coast: otherwise the whole round would be simulated from the
+    // scene origin and reported as if the ship had moved.
+    expect(detail.coast).toBeNull();
+    expect(result.velocity).toEqual({ x: 4, y: 0 });
+    // The rest of the round still resolves.
+    expect(result.phase).toBe("outsideCombat");
+    expect(result.heat).toBeLessThan(5);
+    expect(result.ventCooldown).toBe(0);
+  });
+
+  test("an unplaced hull is not a collision body for a placed ship's coast", () => {
+    // With one Distance Unit per 100 px the placed hull coasts from (-4, -3) at 4 DU/s straight
+    // at the origin cell an unplaced hull would otherwise occupy.
+    const placed = createTestShip(SOURCE_TOKEN);
+    placed.token = { uuid: SOURCE_TOKEN, x: -400, y: -300, rotation: 0, width: 2, height: 2 };
+    placed.state.velocity = { x: 3.2, y: 2.4 };
+    const ghost = createTestShip(SOURCE_ACTOR, { token: null });
+    const geometry = {
+      positionOf: (_source, _state, token) => ({
+        x: Number(token?.x ?? 0) / 100,
+        y: Number(token?.y ?? 0) / 100,
+      }),
+    };
+    const ctx = createContext({ [SOURCE_TOKEN]: placed, [SOURCE_ACTOR]: ghost }, { geometry });
+    const req = createRequest("advanceTurn", SOURCE_TOKEN, {}, [SOURCE_ACTOR]);
+
+    const outcome = executeShipOperation(req, ctx);
+    const detail = outcome.publicEvents.find((entry) => entry.type === "advanceTurn")?.detail;
+
+    // The coast ran its full second, so it passed through where the ghost would have sat.
+    expect(detail.coast.position.x).toBeCloseTo(-0.8);
+    expect(detail.coast.position.y).toBeCloseTo(-0.6);
+    expect(detail.coast.collisions).toEqual([]);
+    expect(outcome.shipStates[SOURCE_ACTOR].hull).toBe(ghost.state.hull);
   });
 });
 
@@ -160,7 +210,7 @@ describe("operations outside combat", () => {
     // Field patch hull
     const hullReq = createRequest("hullRepair", SOURCE_TOKEN);
     const hullResult = executeShipOperation(hullReq, ctx);
-    expect(hullResult.shipStates[SOURCE_TOKEN].hull).toBeGreaterThanOrEqual(30);
+    expect(hullResult.shipStates[SOURCE_TOKEN].hull).toBeGreaterThan(30);
   });
 
   test("spatial operations require a placed canvas token", () => {
@@ -319,7 +369,7 @@ describe("player permissions and advance cooldown outside combat", () => {
     expect(() => assertPermission(player, req, source)).toThrow("Observer permission on the ship is required");
   });
 
-  test("player advancing turn triggers 12-second cooldown on subsequent advances", () => {
+  test("player advancing turn is refused while the ship is on cooldown", () => {
     const player = { id: "p1", isGM: false };
     const fakeActor = {
       testUserPermission: () => true,
@@ -331,11 +381,30 @@ describe("player permissions and advance cooldown outside combat", () => {
     };
     const req = createRequest("advanceTurn", SOURCE_TOKEN);
 
-    // First advance succeeds
     expect(() => assertPermission(player, req, source)).not.toThrow();
 
-    // Second advance immediately afterwards fails with ADVANCE_COOLDOWN
+    // A committed round books the cooldown; the next advance inside 12 s is refused.
+    advanceCooldowns.set(SOURCE_TOKEN, Date.now());
     expect(() => assertPermission(player, req, source)).toThrow("Advance Turn is on cooldown");
+  });
+
+  test("checking permission never books the advance cooldown", () => {
+    const player = { id: "p1", isGM: false };
+    const fakeActor = {
+      testUserPermission: () => true,
+    };
+    const source = {
+      uuid: SOURCE_TOKEN,
+      state: { phase: "outsideCombat" },
+      tokenDocument: { actor: fakeActor },
+    };
+    const req = createRequest("advanceTurn", SOURCE_TOKEN);
+
+    assertPermission(player, req, source);
+
+    // Booking belongs to the commit, not the check: a refused or failed advance must not bench
+    // the player for 12 s.
+    expect(advanceCooldowns.size).toBe(0);
   });
 
   test("GM is not subject to advance cooldown", () => {

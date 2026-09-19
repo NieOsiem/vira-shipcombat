@@ -141,8 +141,6 @@ export function assertPermission(user, request, source) {
         const remaining = Math.ceil((12000 - (nowMs - last)) / 1000);
         throw rule("ADVANCE_COOLDOWN", `Advance Turn is on cooldown. Please wait ${remaining}s before advancing again.`);
       }
-      advanceCooldowns.set(source.uuid, nowMs);
-      if (actorUuid) advanceCooldowns.set(actorUuid, nowMs);
     }
     return;
   }
@@ -164,6 +162,16 @@ export function assertPermission(user, request, source) {
       sourceUuid: source.uuid,
     });
   }
+}
+
+/** Advance Turn is rate-limited per ship; the booking happens only once the round has committed. */
+function recordAdvanceCooldown(request, records) {
+  if (request.type !== "advanceTurn" && request.type !== "cycleRound") return;
+  const record = records.get(request.sourceUuid);
+  const actorUuid = (record?.tokenDocument?.actor ?? record?.actorDocument)?.uuid;
+  const nowMs = Date.now();
+  advanceCooldowns.set(request.sourceUuid, nowMs);
+  if (actorUuid) advanceCooldowns.set(actorUuid, nowMs);
 }
 
 function validateExpectedRevisions(request, records) {
@@ -506,6 +514,7 @@ async function processRequest(request, submitterId) {
     incrementChangedStates(result, records, request, submitterId, timestamp);
     const response = { ok: true, id: request.id, result: cloneDocumentData(result) };
     await persistOperation(records, result, before);
+    recordAdvanceCooldown(request, records);
     rememberResult(request.id, response);
     emitCommitted(result, cloneDocumentData(request));
     return response;

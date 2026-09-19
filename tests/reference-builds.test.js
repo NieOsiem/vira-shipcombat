@@ -35,6 +35,10 @@ function peregrinusShip() {
   return createDefaultShipData(PEREGRINUS_ID);
 }
 
+function canadensisShip() {
+  return createDefaultShipData(CANADENSIS_HULL_CONFIG.id);
+}
+
 function mountedReferences(hull) {
   return [
     ...(hull.slots ?? []).map((slot) => slot.itemId),
@@ -354,6 +358,26 @@ describe("Peregrinus Interceptor reference build", () => {
     expect(result.applications[0].applied).toBe(1);
     expect(Object.values(state.conditions)).toHaveLength(1);
     expect(Object.values(state.conditions)[0].kind).toBe("fault");
+  });
+
+  test("keeps the critical manifest closed on a hazard-capable hull", () => {
+    const { config, state } = canadensisShip();
+    // `electricalCascade` is declared ship-wide on this hull; the region-qualified key names a
+    // hazard it does not declare, which a hazard-capable hull must refuse instead of inventing.
+    expect(() => applyConditionTiers(config, state, {
+      conditionId: "electricalCascade:fore",
+      tiers: 1,
+      random: 0,
+    })).toThrow("not present in the ship's critical manifest");
+
+    const declared = applyConditionTiers(config, state, {
+      conditionId: "electricalCascade",
+      tiers: 1,
+      random: 0,
+    });
+    expect(declared.convertedHazard).toBe(false);
+    expect(declared.applications).toHaveLength(1);
+    expect(Object.values(state.conditions)[0].kind).toBe("hazard");
   });
 
   test("denies its single pilot combat repair and Recovery Work (rules 3.5)", () => {
