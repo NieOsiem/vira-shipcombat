@@ -122,7 +122,7 @@ function eventPresentation(event) {
     case "routePower":
     case "toggleWeapon":
     case "routeDefense":
-    case "operation.rollback": return null;
+      return null;
     default:
       // Explicit prose notices are allowed; unknown technical event payloads are not.
       title = event.title ?? event.label ?? "Ship event";

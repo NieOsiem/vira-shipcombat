@@ -709,10 +709,9 @@
     <section id="panel-log-config" class="ship-console-panel" role="tabpanel" aria-label="Log and diagnostics" data-tab-panel="log-config" {{#unless tabState.log-config.active}}hidden{{/unless}}>
       <div class="ship-panel-heading"><h2>Log &amp; Diagnostics</h2></div>
       {{#if isGM}}
-        <section class="ship-card"><header><h3>Recent operations</h3></header>{{#if log}}<ol class="ship-console-log">{{#each log}}<li class="{{#unless ok}}is-error{{/unless}}"><div><strong>{{type}}</strong><span>{{timestamp}}</span></div><details><summary>Operation detail</summary><pre>{{json}}</pre></details>{{#if rollback}}<button type="button" data-rollback="{{id}}">Roll back operation</button>{{/if}}</li>{{/each}}</ol>{{else}}<p class="ship-empty">No logged operations.</p>{{/if}}</section>
         <details class="ship-card ship-diagnostics"><summary>Raw operation console</summary><p class="ship-muted">Diagnostic escape hatch. Normal play uses combat controls.</p><div class="ship-console-actions">{{#each rawActions}}<form class="ship-operation" data-raw-operation="{{type}}"><fieldset {{#if disabled}}disabled{{/if}}><legend>{{group}} · {{type}}</legend>{{#if targeted}}<label>Target Token UUID(s)<input name="targets" type="text" placeholder="Scene.…Token.…"></label>{{/if}}<label>Payload JSON<textarea name="payload" rows="4" spellcheck="false">{}</textarea></label><p class="ship-console-help">{{help}}</p><details><summary>Raw preview</summary><pre data-preview aria-live="polite"></pre></details><button type="submit">Commit {{type}}</button>{{#if reason}}<p class="ship-console-reason">{{reason}}</p>{{/if}}</fieldset></form>{{/each}}</div></details>
         <details class="ship-card ship-diagnostics"><summary>Raw ship state</summary><pre class="ship-console-state">{{stateJson}}</pre></details>
-      {{else}}<p class="ship-empty">Operation history and diagnostics are available only to the GM.</p>{{/if}}
+      {{else}}<p class="ship-empty">Diagnostics are available only to the GM.</p>{{/if}}
     </section>
   </div>
 </section>

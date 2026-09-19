@@ -1,4 +1,4 @@
-import { RuleViolation, SHIP_TYPE } from "../constants.js";
+import { MODULE_ID, RuleViolation, SHIP_TYPE } from "../constants.js";
 import { executeShipOperation } from "../rules/operations.js";
 import { sceneGridGeometry } from "../foundry/scene-geometry.js";
 import {
@@ -10,17 +10,9 @@ import {
   writeTokenTransform,
 } from "./token-state.js";
 import {
-  appendOperationEntry,
-  findOperationEntry,
-  initializeOperationLog,
-  readOperationEntries,
-  removeOperationEntry,
-} from "./operation-log.js";
-import {
   initializeShipSocket,
   isActiveGM,
   requestRemoteShipOperation,
-  requestRemoteShipRollback,
 } from "../socket.js";
 
 const processed = new Map();
@@ -186,27 +178,13 @@ function incrementChangedStates(result, records, request, submitterId, timestamp
   result.changedUuids = changed;
 }
 
-function mergedTransform(before, update) {
-  const result = cloneDocumentData(before);
-  const merge = (target, source) => {
-    for (const [key, value] of Object.entries(source ?? {})) {
-      if (value && typeof value === "object" && !Array.isArray(value)) {
-        merge(target[key] ??= {}, value);
-      } else target[key] = cloneDocumentData(value);
-    }
-  };
-  merge(result, update);
-  return result;
-}
-
-function operationSnapshots(records, result = null) {
+/** Capture the pre-operation ship documents so a failed write can be undone in this session. */
+function operationSnapshots(records) {
   const ships = {};
   for (const [uuid, record] of records) {
     ships[uuid] = {
-      state: cloneDocumentData(result?.shipStates?.[uuid] ?? record.state),
-      tokenTransform: result?.tokenUpdates?.[uuid]
-        ? mergedTransform(record.token, result.tokenUpdates[uuid])
-        : cloneDocumentData(record.token),
+      state: cloneDocumentData(record.state),
+      tokenTransform: cloneDocumentData(record.token),
     };
   }
   return { ships };
@@ -411,8 +389,12 @@ async function restoreDocuments(records, before) {
   return errors;
 }
 
-async function persistOperation(records, result, entry) {
-  const before = entry.before;
+async function persistOperation(records, result, before) {
+  // Writes stay sequential per ship on purpose: a measured A/B showed overlapping them is ~45% SLOWER
+  // (855 ms vs 590 ms for a five-ship reposition). The cost is client-side document apply plus the
+  // console rebuild each update triggers, not the client->server round trip, so concurrency only makes
+  // the client contend with itself. A ship's transform also has to follow its own state write, since
+  // an unlinked ship persists its state into that same TokenDocument.
   try {
     for (const uuid of result.changedUuids) {
       await writeShipState(records.get(uuid).tokenDocument, result.shipStates[uuid]);
@@ -420,14 +402,8 @@ async function persistOperation(records, result, entry) {
     for (const [uuid, transform] of Object.entries(result.tokenUpdates)) {
       await writeTokenTransform(records.get(uuid).tokenDocument, transform);
     }
-    await appendOperationEntry(entry);
   } catch (cause) {
     const restoreErrors = await restoreDocuments(records, before);
-    try {
-      await removeOperationEntry(entry.id);
-    } catch (error) {
-      restoreErrors.push({ document: "journal", message: error.message });
-    }
     throw rule("PERSISTENCE_FAILED", "The operation could not be persisted; prior ship and token documents were restored.", {
       cause: cause.message,
       restoreErrors,
@@ -455,42 +431,22 @@ function emitCommitted(result, request) {
   }
 }
 
-async function recordRejection(request, submitterId, error, records = null) {
+function recordRejection(request, error) {
   const response = failure(request?.id, error);
   if (response.id) processed.set(response.id, response);
-  if (!isActiveGM() || !request?.id) return response;
-  const timestamp = now();
-  await appendOperationEntry({
-    id: request.id,
-    kind: "rejected",
-    timestamp,
-    submitterId,
-    request: cloneDocumentData(request),
-    before: records ? operationSnapshots(records) : null,
-    after: records ? operationSnapshots(records) : null,
-    publicEvents: [],
-    gmEvents: [{ type: "operation.rejected", code: error.code, message: error.message, details: cloneDocumentData(error.details) }],
-    response,
-  });
   return response;
 }
 
 async function processRequest(request, submitterId) {
   if (!isActiveGM()) throw new Error("Only the active GM may execute the authoritative ship operation queue.");
-  let records = null;
   try {
     validateRequest(request);
     const user = activeUser(submitterId);
     const cached = processed.get(request.id);
     if (cached) return cloneDocumentData(cached);
-    const persisted = await findOperationEntry(request.id);
-    if (persisted?.response) {
-      processed.set(request.id, persisted.response);
-      return cloneDocumentData(persisted.response);
-    }
     await normalizeSceneParticipants(request);
     const uuids = operationUuids(request);
-    records = await loadShipRecords(uuids);
+    const records = await loadShipRecords(uuids);
     validateExpectedRevisions(request, records);
     assertPermission(user, request, records.get(request.sourceUuid));
 
@@ -502,25 +458,13 @@ async function processRequest(request, submitterId) {
     validateLiveRevisions(request, records);
     incrementChangedStates(result, records, request, submitterId, timestamp);
     const response = { ok: true, id: request.id, result: cloneDocumentData(result) };
-    const entry = {
-      id: request.id,
-      kind: "operation",
-      timestamp,
-      submitterId,
-      request: cloneDocumentData(request),
-      before,
-      after: operationSnapshots(records, result),
-      publicEvents: cloneDocumentData(result.publicEvents),
-      gmEvents: cloneDocumentData(result.gmEvents),
-      response: cloneDocumentData(response),
-    };
-    await persistOperation(records, result, entry);
+    await persistOperation(records, result, before);
     processed.set(request.id, response);
     emitCommitted(result, cloneDocumentData(request));
     return response;
   } catch (error) {
     if (!(error instanceof RuleViolation)) throw error;
-    return recordRejection(request, submitterId, error, records);
+    return recordRejection(request, error);
   }
 }
 
@@ -536,27 +480,40 @@ async function receiveRemote(request, submitterId) {
   return publicResponse(response, user ?? { isGM: false });
 }
 
-async function receiveRemoteRollback(request, submitterId) {
-  const user = globalThis.game?.users?.get?.(submitterId);
-  const rollbackId = typeof request?.id === "string" ? request.id : "";
-  if (!user?.active) return failure(rollbackId, rule("INACTIVE_SUBMITTER", "The request submitter is not an active Foundry user.", { userId: submitterId }));
-  if (!user.isGM) return failure(rollbackId, rule("GM_ONLY", "Only a GM may roll back ship operations."));
-  return enqueue(() => resolveRollback(request?.operationId, rollbackId, submitterId));
+const LEGACY_OPERATION_LOG_MARKER = "isOperationLog";
+
+function isLegacyOperationLog(journalEntry) {
+  return (journalEntry?.getFlag?.(MODULE_ID, LEGACY_OPERATION_LOG_MARKER)
+    ?? journalEntry?.flags?.[MODULE_ID]?.[LEGACY_OPERATION_LOG_MARKER]) === true;
+}
+
+/**
+ * Delete the journal entry that used to hold the operation history. Nothing reads it any more, so
+ * leaving a multi-megabyte blob in the world would only cost load time and storage.
+ */
+async function purgeLegacyOperationLog() {
+  if (!isActiveGM()) return;
+  try {
+    const legacy = collectionValues(globalThis.game?.journal).filter(isLegacyOperationLog);
+    for (const journalEntry of legacy) await journalEntry.delete();
+    if (legacy.length) {
+      globalThis.ui?.notifications?.info?.("Vira Ship Combat removed its unused operation log journal entry.");
+    }
+  } catch (error) {
+    globalThis.console?.warn?.("Vira Ship Combat could not remove the unused operation log journal entry", error);
+  }
 }
 
 export async function initializeShipAuthority() {
-  initializeShipSocket(receiveRemote, receiveRemoteRollback);
+  initializeShipSocket(receiveRemote);
   if (!isActiveGM()) {
     initialized = true;
     return;
   }
   if (initialization) return initialization;
   initialization = (async () => {
-    await initializeOperationLog();
-    for (const entry of await readOperationEntries()) {
-      if (entry?.id && entry.response) processed.set(entry.id, entry.response);
-    }
     initialized = true;
+    await purgeLegacyOperationLog();
   })();
   try {
     await initialization;
@@ -589,120 +546,4 @@ export async function submitAutomaticShipOperation(buildRequest) {
     if (!request) return null;
     return processRequest(cloneDocumentData(request), globalThis.game.user.id);
   });
-}
-
-function rollbackRequestId(operationId, suppliedId) {
-  return suppliedId || `rollback:${operationId}`;
-}
-
-async function processRollback(operationId, rollbackId, userId) {
-  if (!isActiveGM()) throw new Error("Only the active GM may roll back ship operations.");
-  if (typeof rollbackId !== "string" || !rollbackId) {
-    return failure("", rule("INVALID_REQUEST_ID", "A rollback requires a non-empty process-once ID."));
-  }
-  if (typeof operationId !== "string" || !operationId) {
-    return failure(rollbackId, rule("ROLLBACK_OPERATION_REQUIRED", "A rollback requires an operation ID."));
-  }
-  const user = activeUser(userId);
-  if (!user.isGM) return failure(rollbackId, rule("GM_ONLY", "Only a GM may roll back ship operations."));
-  const cached = processed.get(rollbackId);
-  if (cached) return cloneDocumentData(cached);
-  const original = await findOperationEntry(operationId);
-  if (!original?.before?.ships || original.kind !== "operation") {
-    return failure(rollbackId, rule("ROLLBACK_NOT_FOUND", "The completed operation snapshot was not found.", { operationId }));
-  }
-
-  const records = await loadShipRecords(Object.keys(original.before.ships));
-  validateLiveRevisions({
-    expectedRevisions: Object.fromEntries([...records].map(([uuid, record]) => [uuid, record.state.revision])),
-  }, records);
-  const timestamp = now();
-  const before = operationSnapshots(records);
-  const shipStates = {};
-  const tokenUpdates = {};
-  for (const [uuid, record] of records) {
-    const snapshot = original.before.ships[uuid];
-    if (!snapshot?.state || !snapshot?.tokenTransform) {
-      return failure(rollbackId, rule("ROLLBACK_INCOMPLETE", "The operation does not contain a complete ship snapshot.", { operationId, uuid }));
-    }
-    const restored = cloneDocumentData(snapshot.state);
-    restored.revision = Number(record.state.revision) + 1;
-    restored.history = Array.isArray(restored.history) ? restored.history : [];
-    restored.history.push({ id: rollbackId, type: "operation.rollback", timestamp, submitterId: userId, operationId });
-    shipStates[uuid] = restored;
-    tokenUpdates[uuid] = cloneDocumentData(snapshot.tokenTransform);
-  }
-  const result = {
-    shipStates,
-    tokenUpdates,
-    publicEvents: [{ type: "operation.rollback", operationId }],
-    gmEvents: [{ type: "operation.rollback", operationId, rollbackId }],
-    changedUuids: [...records.keys()],
-  };
-  const response = { ok: true, id: rollbackId, result: cloneDocumentData(result) };
-  const entry = {
-    id: rollbackId,
-    kind: "rollback",
-    timestamp,
-    submitterId: userId,
-    rolledBackOperationId: operationId,
-    request: {
-      id: rollbackId,
-      type: "operation.rollback",
-      sourceUuid: records.keys().next().value,
-      targetUuids: [...records.keys()].slice(1),
-      expectedRevisions: Object.fromEntries([...records].map(([uuid, record]) => [uuid, record.state.revision])),
-      payload: { operationId },
-    },
-    before,
-    after: operationSnapshots(records, result),
-    publicEvents: cloneDocumentData(result.publicEvents),
-    gmEvents: cloneDocumentData(result.gmEvents),
-    response: cloneDocumentData(response),
-  };
-  try {
-    await persistOperation(records, result, entry);
-  } catch (error) {
-    if (error instanceof RuleViolation) return failure(rollbackId, error);
-    throw error;
-  }
-  processed.set(rollbackId, response);
-  emitCommitted(result, cloneDocumentData(entry.request));
-  return response;
-}
-
-async function resolveRollback(operationId, rollbackId, userId) {
-  try {
-    const response = await processRollback(operationId, rollbackId, userId);
-    if (response?.id) processed.set(response.id, cloneDocumentData(response));
-    return response;
-  } catch (error) {
-    if (error instanceof RuleViolation) {
-      const response = failure(rollbackId, error);
-      if (response.id) processed.set(response.id, cloneDocumentData(response));
-      return response;
-    }
-    throw error;
-  }
-}
-
-export async function rollbackShipOperation(operationIdOrOptions, options = {}) {
-  const operationId = typeof operationIdOrOptions === "string" ? operationIdOrOptions : operationIdOrOptions?.operationId;
-  const suppliedId = typeof operationIdOrOptions === "object" ? operationIdOrOptions?.id : options.id;
-  const rollbackId = rollbackRequestId(operationId, suppliedId);
-  if (typeof operationId !== "string" || !operationId) {
-    return failure(rollbackId, rule("ROLLBACK_OPERATION_REQUIRED", "rollbackShipOperation requires an operation ID."));
-  }
-  if (!initialized) await initializeShipAuthority();
-  if (!globalThis.game?.user?.isGM) return failure(rollbackId, rule("GM_ONLY", "Only a GM may roll back ship operations."));
-  if (!isActiveGM()) {
-    return requestRemoteShipRollback({ id: rollbackId, operationId }, globalThis.game.user.id);
-  }
-  return enqueue(() => resolveRollback(operationId, rollbackId, globalThis.game.user.id));
-}
-
-export async function getOperationLog() {
-  if (!globalThis.game?.user?.isGM) return [];
-  if (!initialized) await initializeShipAuthority();
-  return readOperationEntries();
 }

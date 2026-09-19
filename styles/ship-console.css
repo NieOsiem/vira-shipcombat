@@ -2905,24 +2905,8 @@
 .vira-shipcombat.ship-console #panel-refit,
 .vira-shipcombat.ship-console #panel-log-config { overflow-y: auto; }
 
-.ship-console-log {
-  display: grid;
-  gap: 0.3rem;
-  max-height: 20rem;
-  margin: 0;
-  padding: 0;
-  overflow: auto;
-  list-style: none;
-}
-
-.ship-console-log li { padding: 0.35rem; border-left: 2px solid var(--ship-cyan); background: rgb(0 0 0 / 15%); }
-.ship-console-log li.is-error { border-color: var(--ship-red); }
-.ship-console-log li > div { display: flex; justify-content: space-between; gap: 0.35rem; }
-.ship-console-log li span { color: var(--ship-muted); font-size: 0.6rem; }
-.ship-console-log pre,
 .ship-console-state,
 .ship-operation pre { max-width: 100%; max-height: 16rem; padding: 0.35rem; overflow: auto; border: 1px solid var(--ship-border); background: #070b0f; color: #b9d1d8; font: 0.65rem var(--font-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
-.ship-console-log button { margin-top: 0.25rem; }
 
 .ship-console-specifications,
 .ship-diagnostics,

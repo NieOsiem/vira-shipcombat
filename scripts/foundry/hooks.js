@@ -39,18 +39,36 @@ let hooksRegistered = false;
 let hookWork = Promise.resolve();
 const INITIATIVE_PATCH = Symbol.for(`${MODULE_ID}.shipInitiativePatch`);
 let activeGmAuthority = false;
-let consoleRefreshPending = false;
+let consoleRefreshTimer = null;
+let consoleRefreshDeadline = 0;
 const deletedCombats = new WeakSet();
 const removedCombatants = new WeakSet();
 
+/**
+ * A console rebuild re-renders every tab and rebuilds the radar, and one operation writes a document
+ * per changed ship, so the previous same-tick coalescer rebuilt a console once per ship. A trailing
+ * debounce folds a whole operation's writes into a single rebuild, and the cap keeps a steady stream
+ * of updates from starving the UI.
+ */
+const CONSOLE_REFRESH_QUIET_MS = 80;
+const CONSOLE_REFRESH_MAX_WAIT_MS = 250;
+
 function refreshConsoles() {
-  if (consoleRefreshPending) return;
-  consoleRefreshPending = true;
-  setTimeout(() => {
-    consoleRefreshPending = false;
+  const now = Date.now();
+  if (consoleRefreshDeadline === 0) {
+    consoleRefreshDeadline = now + CONSOLE_REFRESH_MAX_WAIT_MS;
+  }
+  const wait = Math.max(
+    0,
+    Math.min(CONSOLE_REFRESH_QUIET_MS, consoleRefreshDeadline - now),
+  );
+  clearTimeout(consoleRefreshTimer);
+  consoleRefreshTimer = setTimeout(() => {
+    consoleRefreshTimer = null;
+    consoleRefreshDeadline = 0;
     // No snapshots cross this hook: each console rebuilds its own sanitized view.
     Hooks.callAll?.("viraShipCombatConsoleRefresh");
-  }, 0);
+  }, wait);
 }
 
 function activeGm() {

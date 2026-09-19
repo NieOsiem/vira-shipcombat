@@ -3,7 +3,6 @@ import { MODULE_ID } from "./constants.js";
 const CHANNEL = `module.${MODULE_ID}`;
 const pending = new Map();
 let requestHandler = null;
-let rollbackHandler = null;
 let listening = false;
 
 function activeUsers() {
@@ -49,11 +48,10 @@ function deserializeUnexpected(value) {
 
 async function receive(envelope) {
   if (!envelope || envelope.moduleId !== MODULE_ID) return;
-  if (envelope.kind === "request" || envelope.kind === "rollback-request") {
-    const handler = envelope.kind === "request" ? requestHandler : rollbackHandler;
-    if (!isActiveGM() || !handler) return;
+  if (envelope.kind === "request") {
+    if (!isActiveGM() || !requestHandler) return;
     try {
-      const response = await handler(envelope.request, envelope.submitterId);
+      const response = await requestHandler(envelope.request, envelope.submitterId);
       emit({
         moduleId: MODULE_ID,
         kind: "result",
@@ -84,9 +82,8 @@ async function receive(envelope) {
   else waiter.resolve(envelope.response);
 }
 
-export function initializeShipSocket(handler, handleRollback = null) {
+export function initializeShipSocket(handler) {
   if (handler) requestHandler = handler;
-  if (handleRollback) rollbackHandler = handleRollback;
   if (listening) return;
   const socket = globalThis.game?.socket;
   if (!socket?.on) throw new Error("Foundry socket transport is unavailable");
@@ -94,7 +91,7 @@ export function initializeShipSocket(handler, handleRollback = null) {
   listening = true;
 }
 
-function requestRemote(kind, request, submitterId) {
+function requestRemote(request, submitterId) {
   const gm = getActiveGM();
   if (!gm) return Promise.reject(new Error("No active GM is available to authorize ship operations."));
   if (!submitterId) return Promise.reject(new Error("An active Foundry user is required to submit ship operations."));
@@ -112,7 +109,7 @@ function requestRemote(kind, request, submitterId) {
   }, 30_000);
   pending.set(request.id, { promise, resolve, reject, timer });
   try {
-    emit({ moduleId: MODULE_ID, kind, request, submitterId });
+    emit({ moduleId: MODULE_ID, kind: "request", request, submitterId });
   } catch (error) {
     pending.delete(request.id);
     clearTimeout(timer);
@@ -122,11 +119,7 @@ function requestRemote(kind, request, submitterId) {
 }
 
 export function requestRemoteShipOperation(request, submitterId = globalThis.game?.user?.id) {
-  return requestRemote("request", request, submitterId);
-}
-
-export function requestRemoteShipRollback(request, submitterId = globalThis.game?.user?.id) {
-  return requestRemote("rollback-request", request, submitterId);
+  return requestRemote(request, submitterId);
 }
 
 export { CHANNEL };

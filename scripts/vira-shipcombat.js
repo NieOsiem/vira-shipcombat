@@ -10,9 +10,7 @@ import { registerShipHooks } from "./foundry/hooks.js";
 import { registerShipComponent } from "./foundry/component-registration.js";
 import { registerShipComponentSheet } from "./foundry/component-sheet.js";
 import {
-  getOperationLog,
   initializeShipAuthority,
-  rollbackShipOperation,
   submitShipOperation,
 } from "./state/action-queue.js";
 import {
@@ -29,8 +27,6 @@ const api = Object.freeze({
   createInitialState,
   validateShipConfig,
   submitShipOperation,
-  getOperationLog,
-  rollbackShipOperation,
   setMovementPreview,
   clearMovementPreview,
 });

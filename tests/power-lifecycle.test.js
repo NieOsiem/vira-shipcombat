@@ -1031,7 +1031,6 @@ test("registered hooks repair mixed synthetic data, retry failed startup, and gr
     "CONST",
     "Item",
     "fromUuid",
-    "JournalEntry",
   ];
   const previous = Object.fromEntries(
     globals.map((key) => [key, globalThis[key]]),
@@ -1164,20 +1163,6 @@ test("registered hooks repair mixed synthetic data, retry failed startup, and gr
     combatants: new Collection([[combatant.id, combatant]]),
   };
   combatant.parent = combat;
-  const journal = {
-    flags: { [MODULE_ID]: { isOperationLog: true, operationLog: "[]" } },
-    ownership: { default: 0 },
-    getFlag(module, key) {
-      return this.flags[module]?.[key];
-    },
-    async update(changes) {
-      for (const [path, value] of Object.entries(changes)) {
-        assign(this, path, value);
-      }
-      return this;
-    },
-  };
-  const entries = () => JSON.parse(journal.flags[MODULE_ID].operationLog);
   async function settled(predicate, label) {
     const deadline = Date.now() + 1500;
     while (!predicate() && Date.now() < deadline) {
@@ -1221,12 +1206,10 @@ test("registered hooks repair mixed synthetic data, retry failed startup, and gr
       actors: new Collection([[world.id, world], [other.id, other]]),
       scenes: new Collection([[scene.id, scene]]),
       combats: new Collection([[combat.id, combat]]),
-      journal: new Collection([["log", journal]]),
       socket: { on() {} },
     };
     globalThis.fromUuid = async (uuid) =>
       scene.tokens.contents.find((entry) => entry.uuid === uuid);
-    globalThis.JournalEntry = { create: async () => journal };
     const { initializeShipActor } = await import(
       "../scripts/foundry/initialization.js"
     );
@@ -1258,17 +1241,13 @@ test("registered hooks repair mixed synthetic data, retry failed startup, and gr
     expect(source.system.shipCombat.state).toEqual(originalState);
     expect(source.system.shipCombat.config.components).toEqual(legacy);
     expect(source.flags[MODULE_ID]?.legacyInlineComponents).toBeUndefined();
-    expect(entries()).toEqual([]);
+    expect(source._source.system.shipCombat.state).toEqual(originalState);
 
     source.items.set(missingId, missing);
     hooks.callAll("updateCombat", combat, {}, {}, gm.id);
     await settled(
       () => source.system.shipCombat.state.phase === "active",
       "repaired startup",
-    );
-    await settled(
-      () => entries().some((entry) => entry.request?.type === "phase.start"),
-      "startup commit",
     );
     expect(source.system.shipCombat.config.components).toBeUndefined();
     expect(source.flags[MODULE_ID].legacyInlineComponents).toEqual(legacy);
@@ -1295,18 +1274,11 @@ test("registered hooks repair mixed synthetic data, retry failed startup, and gr
           `${combat.id}:2:${combatant.id}`,
       "round transition",
     );
-    await settled(
-      () =>
-        entries().filter((entry) => entry.request?.type === "phase.start")
-          .length === 2,
-      "round commit",
-    );
     expect(source.system.shipCombat.state.resources.actions[operator])
       .toBeGreaterThan(0);
     expect(notices).toHaveLength(1);
     expect(source.flags[MODULE_ID].legacyInlineComponents).toEqual(legacy);
   } finally {
-    journal.invalid = true;
     await new Promise((resolve) => setTimeout(resolve, 25));
     for (const key of globals) globalThis[key] = previous[key];
   }

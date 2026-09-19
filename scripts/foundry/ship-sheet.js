@@ -35,11 +35,7 @@ import {
   assignedUserIds,
   rosterIdentityConflicts,
 } from "../rules/operators.js";
-import {
-  getOperationLog,
-  rollbackShipOperation,
-  submitShipOperation,
-} from "../state/action-queue.js";
+import { submitShipOperation } from "../state/action-queue.js";
 import {
   clearMovementPreview,
   setMovementPreview,
@@ -1315,25 +1311,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       })
     );
 
-    let log = [];
-    if (isGM && token) {
-      try {
-        log = await getOperationLog() ?? [];
-      } catch (error) {
-        log = [{ error: errorText(error) }];
-      }
-    }
-    const visibleLog = Array.isArray(log)
-      ? log.slice(-30).reverse().map((entry) => ({
-        id: entry.id ?? entry.requestId ?? "",
-        type: entry.request?.type ?? entry.type ?? entry.kind ?? "operation",
-        timestamp: entry.timestamp ?? "",
-        ok: entry.response?.ok !== false && entry.kind !== "rejected",
-        json: pretty(entry),
-        rollback: entry.kind === "operation" &&
-          Boolean(entry.id ?? entry.requestId),
-      }))
-      : [];
     const refitDenial = getRefitDenial(actor);
     const refitSlots = (hullConfig.slots ?? []).map((slot) =>
       refitMountView(actor, state, slot, "slot")
@@ -1391,7 +1368,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       configJson: this.#hullDraft?.json ?? pretty(hullConfig),
       configRevision: this.#hullDraft?.revision ?? state.revision,
       hullDraftStale: this.#hullDraft?.stale ?? false,
-      log: visibleLog,
     }, { inplace: false });
   }
 
@@ -1721,12 +1697,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       button.addEventListener(
         "click",
         () => void this.#browseComponents(button.dataset.refitBrowse, button),
-      );
-    });
-    html.querySelectorAll("[data-rollback]").forEach((button) => {
-      button.addEventListener(
-        "click",
-        () => this.#rollback(button.dataset.rollback),
       );
     });
     html.querySelector("[data-native-vehicle-sheet]")?.addEventListener(
@@ -4485,26 +4455,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     } catch (error) {
       if (error?.code === "REFIT_CLEANUP_FAILED") this.#hullDraft = null;
       await this.#refitError(error);
-    }
-  }
-
-  async #rollback(id) {
-    if (
-      !game.user.isGM ||
-      !globalThis.confirm(`Roll back the whole operation ${id}?`)
-    ) return;
-    try {
-      const response = await rollbackShipOperation(id);
-      if (!response?.ok) {
-        throw new Error(
-          response?.error?.message ?? response?.error ??
-            "Rollback was rejected.",
-        );
-      }
-      ui.notifications.info("Whole operation rolled back.");
-      await this.render();
-    } catch (error) {
-      ui.notifications.error(errorText(error));
     }
   }
 }
