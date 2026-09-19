@@ -534,7 +534,7 @@
         <input type="hidden" name="targetUuid" value="">
         <canvas class="ship-radar-canvas" data-radar-canvas aria-hidden="true"></canvas>
         <div class="ship-radar-hits" data-radar-hits>
-          {{#each view.contacts}}<button type="button" class="ship-radar-hit{{#if targeted}} is-targeted{{/if}}{{#if stale}} is-stale{{/if}}{{#if hoisted}} is-hoisted{{/if}}" data-sensor-focus="{{targetUuid}}" data-radar-state="{{state}}" aria-pressed="false" aria-label="{{designatorLabel}} · {{distanceLabel}} · bearing {{bearingLabel}} · {{stateLabel}}{{#if jammed}} · interference{{/if}}" style="{{style}}"><span class="ship-radar-hit-label">{{label}}</span></button>{{/each}}
+          {{#each view.contacts}}{{#unless unknown}}<button type="button" class="ship-radar-hit{{#if targeted}} is-targeted{{/if}}{{#if stale}} is-stale{{/if}}{{#if hoisted}} is-hoisted{{/if}}" data-sensor-focus="{{targetUuid}}" data-radar-state="{{state}}" aria-pressed="false" aria-label="{{designatorLabel}} · {{distanceLabel}} · bearing {{bearingLabel}} · {{stateLabel}}{{#if jammed}} · interference{{/if}}" style="{{style}}"><span class="ship-radar-hit-label">{{label}}</span></button>{{/unless}}{{/each}}
         </div>
         <aside class="ship-radar-corner ship-radar-corner--locks" aria-label="Targeting and locks">
           <span class="ship-kicker">Targeting &amp; Locks</span>

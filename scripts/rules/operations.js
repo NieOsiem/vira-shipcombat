@@ -30,8 +30,10 @@ import {
   getDriveCapabilities,
 } from "./movement.js";
 import {
+  MODULE_CONTROLS,
   contributeWork,
   refreshResources,
+  seedOperatorResources,
   spendOperationResource,
   takeControl,
   validateRoster,
@@ -212,6 +214,16 @@ const DRIVE_COMPONENT_ROLES = Object.freeze([
   "reverse",
   "portLateral",
   "starboardLateral",
+]);
+
+/** Declaration keys a client could use to name a target AC; stripped by `withoutDeclaredTargetAc`. */
+const DECLARED_AC_KEYS = Object.freeze([
+  "ac",
+  "targetAc",
+  "declaredAc",
+  "finalAc",
+  "actualTargetAc",
+  "effectiveAc",
 ]);
 
 const GM_EVENT_ONLY_TYPES = new Set([
@@ -676,29 +688,14 @@ function requireSingleTarget(operation, drafts) {
   return requireShip(drafts, operation.targetUuids[0], "target");
 }
 
-function requireTargets(operation, drafts) {
-  if (operation.targetUuids.length === 0) {
-    violation(
-      "TARGET_REQUIRED",
-      "This operation requires at least one target token UUID.",
-    );
-  }
-  const unique = new Set(operation.targetUuids);
-  if (unique.size !== operation.targetUuids.length) {
-    violation(
-      "DUPLICATE_OPERATION_TARGET",
-      "An operation cannot target the same ship more than once.",
-    );
-  }
-  if (unique.has(operation.sourceUuid)) {
-    violation(
-      "SELF_TARGET_FORBIDDEN",
-      "This operation cannot target its own source ship.",
-    );
-  }
-  return operation.targetUuids.map((uuid) =>
-    requireShip(drafts, uuid, "target")
-  );
+/**
+ * The AC a shot rolls against is derived from the target's own configuration, so no field a
+ * client can set may stand in for it (§10.10, §8.10, AGENTS.md authority invariants).
+ */
+function withoutDeclaredTargetAc(source) {
+  const clean = { ...source };
+  for (const key of DECLARED_AC_KEYS) delete clean[key];
+  return clean;
 }
 
 function validateExpectedRevisions(operation, drafts, uuids) {
@@ -732,6 +729,23 @@ function validateExpectedRevisions(operation, drafts, uuids) {
         },
       );
     }
+  }
+}
+
+/**
+ * §19.1: a ship awaiting its fate pauses further NEW deliberate operations, and a Hull-0
+ * wreck (disabled or destroyed) cannot take normal deliberate Ship Actions/Orders at all.
+ * Lifecycle transitions, GM operations, resolveFate, and everything outside ACTIVE_TYPES
+ * stay available, because those are what move a wrecked ship back out of combat.
+ */
+function assertShipCanAct(state) {
+  const hull = Number(state?.hull);
+  if (state?.pendingFate?.status === "pending" || !(hull > 0)) {
+    violation(
+      "SHIP_DESTROYED",
+      "A ship at Hull 0 or awaiting its fate cannot perform further deliberate operations.",
+      { hull: Number.isFinite(hull) ? hull : null, pendingFate: state?.pendingFate ?? null },
+    );
   }
 }
 
@@ -787,12 +801,15 @@ function applyImmediateConsequences(ship) {
 }
 
 /**
- * Rules 8.8 / 8.11: passive detection is event-driven, so a ship that moves is re-detected by every
- * observer (and re-detects everyone itself) instead of waiting for its next Start. Only pairs that
- * involve a ship which actually moved can change, and a live track lost to range survives until the
- * observer's next Start, so a target beyond Passive Range is dropped after a single distance
- * comparison. That gate is what keeps a move cheap: no line-of-sight raycast, no observation clone,
- * and — unless a track really changed — no observer write and so no console rebuild on any client.
+ * Rules 8.8 / 8.11 / 8.12: passive detection is event-driven, so a ship that moves is
+ * re-detected by every observer (and re-detects everyone itself) instead of waiting for its
+ * next Start. Only pairs that involve a ship which actually moved can change, and every such
+ * pair is handed to `refreshObserverTracks`, which applies the §8.8/§8.11/§8.12 split itself:
+ * a passive-only Contact whose detection fails (including by leaving Passive Range) downgrades
+ * to Undetected with a visibly stale last-known marker, a Targeted track keeps its next-Start
+ * range grace, and a still-live active-contact lifetime stays a Contact. Ranged-out pairs are
+ * cheap there — no line-of-sight raycast, and unless a track really changed no observer write
+ * and so no console rebuild on any client.
  */
 function refreshMovementDetection(drafts, moved, request, context, changed, events) {
   if (!moved.size) return;
@@ -804,7 +821,6 @@ function refreshMovementDetection(drafts, moved, request, context, changed, even
     for (const other of drafts.values()) {
       if (other.uuid === observer.uuid) continue;
       if (!moved.has(other.uuid) && !moved.has(observer.uuid)) continue;
-      if (distanceBetween(observer, other, context) > stats.passiveRange) continue;
       targets.push(targetObservation(observer, other, request, context));
     }
     if (!targets.length) continue;
@@ -1009,7 +1025,10 @@ export function executeShipOperation(operation, context) {
   if (!GM_TYPES.has(request.type)) {
     operator = operatorFor(source, request, context);
   }
-  if (ACTIVE_TYPES.has(request.type)) assertActivePhase(source.state);
+  if (ACTIVE_TYPES.has(request.type)) {
+    assertActivePhase(source.state);
+    assertShipCanAct(source.state);
+  }
   validateExpectedRevisions(request, drafts, [
     request.sourceUuid,
     ...request.targetUuids,
@@ -1072,6 +1091,9 @@ export function executeShipOperation(operation, context) {
         command: validated.command,
         crew: validated.crew,
       };
+      // A mid-combat recruit seated after the Start Phase still needs its pool entry, and
+      // seeding only absent entries leaves every partly spent pool untouched.
+      seedOperatorResources(source.state, source.state.roster);
       result = validated;
       break;
     }
@@ -1094,6 +1116,15 @@ export function executeShipOperation(operation, context) {
       break;
     case OPERATION_TYPES.RELEASE_CONTROL: {
       const control = request.payload.control;
+      if (!MODULE_CONTROLS.includes(control)) {
+        violation(
+          "INVALID_CONTROL",
+          `Unknown subsystem control "${control}". Allowed controls: ${
+            MODULE_CONTROLS.join(", ")
+          }.`,
+          { control, allowed: MODULE_CONTROLS },
+        );
+      }
       const holder = source.state?.controls?.[control];
       const holderId = typeof holder === "string" ? holder : holder?.operatorId;
       if (
@@ -1254,6 +1285,9 @@ export function executeShipOperation(operation, context) {
       const input = sensorInput(source, target, request, context, operator);
       if (request.type === OPERATION_TYPES.ACQUIRE) {
         if (request.payload.dc != null) input.d20 = requireRoll(context);
+        // §8.10: the AC and velocity a Targeted track reveals come from the target itself,
+        // never from a declaration field the client supplied.
+        input.telemetry = targetObservation(source, target, request, context);
         result = acquireTarget(source.state, input);
       } else if (request.type === OPERATION_TYPES.ANALYZE) {
         result = analyzeDefenses(source.state, {
@@ -1332,58 +1366,43 @@ export function executeShipOperation(operation, context) {
       break;
     }
     case OPERATION_TYPES.ATTACK: {
-      const targets = requireTargets(request, drafts);
-      const attacks = targets.map((target) => {
-        const targetPayload = request.payload.targets?.[target.uuid] ?? {};
-        const declaration = {
-          ...request.payload,
-          ...targetPayload,
-          targetUuid: target.uuid,
-          attackerPosition: positionOf(source, context),
-          targetPosition: positionOf(target, context),
-          attackerVelocity: clone(source.state.velocity),
-          targetVelocity: clone(target.state.velocity),
-          attackerFacing: facingOf(source, context),
-          targetFacing: facingOf(target, context),
-          lineOfSight: lineOfSight("weapon", source, target, request, context),
-          gunneryModifier: Number(
-            operator?.ratings?.gunnery ?? operator?.gunnery ?? 0,
-          ),
-        };
-        const attack = commitAttack({
-          attackerConfig: source.config,
-          attackerDraft: source.state,
-          targetConfig: target.config,
-          targetDraft: target.state,
-          declaration,
-          rollD20: () => requireRoll(context),
-          random: randomSource(context),
-          helpers: {
-            spendOperationResource,
-            applyConditionTiers,
-            selectCondition,
-            getFaultEffects,
-          },
-        });
-        changed.add(target.uuid);
-        return { targetUuid: target.uuid, ...attack };
+      // §9 and decision 46: one Action fires one weapon or Barrage at exactly one target, so a
+      // second target is rejected here instead of spending an extra Action per target.
+      const target = requireSingleTarget(request, drafts);
+      const targetPayload = request.payload.targets?.[target.uuid] ?? {};
+      const declaration = {
+        ...withoutDeclaredTargetAc(request.payload),
+        ...withoutDeclaredTargetAc(targetPayload),
+        attackerUuid: source.uuid,
+        targetUuid: target.uuid,
+        attackerPosition: positionOf(source, context),
+        targetPosition: positionOf(target, context),
+        attackerVelocity: clone(source.state.velocity),
+        targetVelocity: clone(target.state.velocity),
+        attackerFacing: facingOf(source, context),
+        targetFacing: facingOf(target, context),
+        lineOfSight: lineOfSight("weapon", source, target, request, context),
+        gunneryModifier: Number(
+          operator?.ratings?.gunnery ?? operator?.gunnery ?? 0,
+        ),
+      };
+      result = commitAttack({
+        attackerConfig: source.config,
+        attackerDraft: source.state,
+        targetConfig: target.config,
+        targetDraft: target.state,
+        declaration,
+        rollD20: () => requireRoll(context),
+        random: randomSource(context),
+        helpers: {
+          spendOperationResource,
+          applyConditionTiers,
+          selectCondition,
+          getFaultEffects,
+          resolveShieldDamage,
+        },
       });
-      result = attacks.length === 1
-        ? { public: attacks[0].public, gm: attacks[0].gm }
-        : {
-          public: {
-            attacks: attacks.map(({ targetUuid, public: detail }) => ({
-              targetUuid,
-              detail,
-            })),
-          },
-          gm: {
-            attacks: attacks.map(({ targetUuid, gm: detail }) => ({
-              targetUuid,
-              detail,
-            })),
-          },
-        };
+      changed.add(target.uuid);
       break;
     }
     case OPERATION_TYPES.BEGIN_RELOAD:
@@ -1494,6 +1513,7 @@ export function executeShipOperation(operation, context) {
     case OPERATION_TYPES.RESOLVE_FATE:
       result = resolveShipFate(source.config, source.state, {
         nonLethal: request.payload.nonLethal === true,
+        outcome: request.payload.outcome,
       });
       break;
     default:

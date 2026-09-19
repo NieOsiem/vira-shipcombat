@@ -465,7 +465,7 @@ export class SensorRadar {
     if (!hits) return;
     for (const button of hits.querySelectorAll("[data-sensor-focus]")) {
       const plot = this.#plotByUuid.get(button.dataset.sensorFocus ?? "");
-      // Without a fix the template already parks the target at the centre.
+      // A contact without a usable fix renders no hit target at all.
       if (!plot) continue;
       applyPercentStyle(button, plot.u, plot.v);
       button.classList.toggle("is-hoisted", plot.hoisted === true);

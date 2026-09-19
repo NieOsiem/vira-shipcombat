@@ -595,6 +595,28 @@ export function refreshObserverTracks(input) {
   return { online: true, updated, acquired, lost, expiredJams, results };
 }
 
+/**
+ * Drop every stored track whose target no longer exists. A track key is the canonical target
+ * TokenDocument UUID (URL-encoded), so a deleted target would otherwise leave a permanent contact on
+ * every observer that once detected it. Pure: it touches only the supplied state object, so callers
+ * decide how (and through which authority) the pruned state is persisted.
+ * @param {object} state observer state, mutated in place
+ * @param {Iterable<string>} liveUuids TokenDocument UUIDs that still exist
+ * @returns {string[]} target UUIDs whose tracks were removed
+ */
+export function pruneOrphanedTracks(state, liveUuids) {
+  const live = liveUuids instanceof Set ? liveUuids : new Set(liveUuids ?? []);
+  const tracks = ensureTracks(state);
+  const removed = [];
+  for (const [key, track] of Object.entries(tracks)) {
+    const targetUuid = targetUuidForTrackEntry(key, track);
+    if (live.has(targetUuid)) continue;
+    delete tracks[key];
+    removed.push(targetUuid);
+  }
+  return removed;
+}
+
 function upsertActivePingEffect(state, input) {
   if (!Array.isArray(state.effects)) state.effects = objectValues(state.effects);
   const sourceUuid = String(input?.observerUuid ?? input?.sourceUuid ?? "self");

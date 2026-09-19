@@ -15,6 +15,17 @@ const FALLBACK_POWER_SYSTEMS = Object.freeze([
 ]);
 const FALLBACK_WEAPON_STATUSES = Object.freeze(["off", "booting", "online"]);
 const FALLBACK_WEAPON_MODES = Object.freeze(["nominal", "overclock"]);
+// The only weapon-document fields Route Power may stage; the console never sends
+// weapon state at all, and every other stored field is rules-owned (readiness,
+// reloadProgress, reloadWork) and must survive a staged route untouched.
+const STAGEABLE_WEAPON_FIELDS = Object.freeze(["status", "mode", "bootCounter"]);
+// Each generic overclocked subsystem is covered by exactly one Fault channel;
+// Engines resolve a per-Drive channel in systemOverclockHeat instead.
+const OVERCLOCK_FAULT_CHANNEL = Object.freeze({
+  shields: "shieldEmitterDamage",
+  sensors: "sensorFault",
+  cooling: "coolingFailure",
+});
 const FAULT_RANK = Object.freeze({
   healthy: 0,
   minor: 1,
@@ -171,6 +182,9 @@ function tierFor(config, system, power, { passive = false } = {}) {
   const component = componentForSystem(config, system);
   const tier = component?.tiers?.find((candidate) => candidate.power === power);
   if (!tier) {
+    // Passive inspection (power state, shedding) must survive a stale allocation
+    // instead of wedging every later operation; only explicit routing rejects.
+    if (passive) return { power, online: false, overclock: false };
     violation("INVALID_POWER_TIER", `${system} has no Power ${power} tier`, { system, power });
   }
   return tier;
@@ -250,8 +264,19 @@ function mergedWeaponStates(config, state, stagedWeapons) {
       } else {
         result[weapon.id] = { ...current, mode: staged };
       }
+    } else if (staged && typeof staged === "object") {
+      for (const field of Object.keys(staged)) {
+        if (!STAGEABLE_WEAPON_FIELDS.includes(field)) {
+          violation(
+            "INVALID_WEAPON_INPUT",
+            `Weapon ${weapon.id} staged an unknown weapon field: ${field}`,
+            { weaponId: weapon.id, field },
+          );
+        }
+      }
+      result[weapon.id] = { ...current, ...staged };
     } else {
-      result[weapon.id] = { ...current, ...(staged ?? {}) };
+      result[weapon.id] = { ...current };
     }
     if (result[weapon.id].status === "off") {
       result[weapon.id].mode = "nominal";
@@ -447,10 +472,16 @@ function systemOverclockHeat(config, state, system, power, beforePower = null) {
     }
     return heat;
   }
+  const component = componentForSystem(config, system);
+  const channel = OVERCLOCK_FAULT_CHANNEL[system];
+  if (component?.id && channel
+    && !getFaultEffects(config, state, { componentId: component.id, channel }).operational) {
+    return 0;
+  }
   const tier = tierFor(config, system, power, { passive: true });
   if (!tier.overclock) return 0;
   if (beforePower !== null && tierFor(config, system, beforePower, { passive: true }).overclock) return 0;
-  return tier.overclockHeat ?? componentForSystem(config, system)?.overclockHeat ?? 0;
+  return tier.overclockHeat ?? component?.overclockHeat ?? 0;
 }
 
 function enteringOverclockHeat(config, state, beforeAllocation, afterAllocation, beforeRedlining, afterRedlining) {

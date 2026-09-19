@@ -1176,6 +1176,8 @@ function contactViews(state, token, sensorStats, labels = {}, requestedScale = n
       live: entry.live,
       targeted: entry.targeted,
       stale: entry.stale,
+      // No usable relative position: the dial cannot plot the contact, so the
+      // hit layer renders no target for it.
       unknown: entry.relative === null,
       jammed: jams.length > 0,
       jamLabel: jams.length === 0

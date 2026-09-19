@@ -262,11 +262,16 @@ function scaledInteger(healthy, multiplier) {
 function applyImmediateFaultConsequences(config, draft, condition) {
   if (condition.kind !== "fault") return;
   const effects = faultEffect(condition.conditionId, condition.severity);
-  if (condition.conditionId === "weaponMalfunction" && condition.severity === "destroyed") {
+  // A Major-or-worse Weapon Malfunction disables Overclocking, so the mount must
+  // leave Overclock immediately. Leaving it Overclocked would wedge the ship:
+  // validateWeaponStates rejects that pairing, and every later Route Power,
+  // shedding pass, or power inspection re-validates the stored weapon state.
+  if (condition.conditionId === "weaponMalfunction"
+    && severityIndex(condition.severity) >= SEVERITY_RANK.major) {
     const weapon = draft.weapons?.[condition.componentId ?? condition.targetId];
     if (weapon && typeof weapon === "object") {
-      weapon.status = "off";
       weapon.mode = "nominal";
+      if (condition.severity === "destroyed") weapon.status = "off";
     }
   }
   if (condition.conditionId === "shieldEmitterDamage") {

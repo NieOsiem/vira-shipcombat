@@ -85,7 +85,7 @@ export function sweptCircleVsCircle(startA, endA, radiusA, startB, endB, radiusB
     fraction = 0;
     initialOverlap = c < -EPSILON;
     const initialNormal = circleContactNormal(startA, startB, idA, idB);
-    if (!initialOverlap && dot(relativeDelta, initialNormal) <= EPSILON) return null;
+    if (dot(relativeDelta, initialNormal) <= EPSILON) return null;
   } else {
     const a = magnitudeSquared(relativeDelta);
     if (a <= EPSILON * EPSILON) return null;
@@ -124,7 +124,7 @@ export function sweptCircleVsSegment(start, end, radius, wallStart, wallEnd, opt
     const normal = wallContactNormal(start, wall, movement);
     const initialOverlap = startDistanceSquared < radiusSquared - EPSILON;
     const closing = dot(movement, normal) < -EPSILON;
-    if (!initialOverlap && !closing) return null;
+    if (!closing) return null;
     return {
       fraction: 0,
       point: subtract(start, scale(normal, radius)),
@@ -216,12 +216,7 @@ export function sweptCircleVsSegment(start, end, radius, wallStart, wallEnd, opt
 
 /** @param {{target:{x:number,y:number},source:{x:number,y:number},facing:number,coincidentNormal?:{x:number,y:number}}} input @returns {"fore"|"port"|"starboard"|"aft"} */
 export function struckSector(input) {
-  let bearing;
-  if (distanceSquared(input.target, input.source) <= EPSILON * EPSILON && input.coincidentNormal) {
-    bearing = bearingDegrees({ x: 0, y: 0 }, input.coincidentNormal);
-  } else {
-    bearing = bearingDegrees(input.target, input.source);
-  }
+  const bearing = bearingDegrees(input.target, input.source, input.coincidentNormal);
   const relative = normalizeAngle(bearing - input.facing);
   if (relative >= -45 && relative < 45) return "fore";
   if (relative >= 45 && relative < 135) return "starboard";
@@ -229,11 +224,11 @@ export function struckSector(input) {
   return "aft";
 }
 
-/** @param {{origin:{x:number,y:number},target:{x:number,y:number},facing:number,arcCenter?:number,arcWidth:number}} input @returns {boolean} */
+/** @param {{origin:{x:number,y:number},target:{x:number,y:number},facing:number,arcCenter?:number,arcWidth:number,coincidentNormal?:{x:number,y:number}}} input @returns {boolean} */
 export function isInFiringArc(input) {
   if (!Number.isFinite(input.arcWidth) || input.arcWidth < 0) return false;
   if (input.arcWidth >= 360) return true;
-  const bearing = bearingDegrees(input.origin, input.target);
+  const bearing = bearingDegrees(input.origin, input.target, input.coincidentNormal);
   const center = input.facing + (input.arcCenter ?? 0);
   return Math.abs(normalizeAngle(bearing - center)) <= (input.arcWidth / 2) + ANGLE_EPSILON;
 }

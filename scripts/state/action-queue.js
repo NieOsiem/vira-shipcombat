@@ -15,6 +15,12 @@ import {
   requestRemoteShipOperation,
 } from "../socket.js";
 
+/**
+ * Committed results are retained so a repeated request id replays instead of executing twice. Keys
+ * are never re-set, so Map insertion order lets the oldest entry be evicted to bound the retained
+ * deep clones; replay semantics for the ids still held are unchanged.
+ */
+const PROCESSED_LIMIT = 64;
 const processed = new Map();
 let queueTail = Promise.resolve();
 let initialized = false;
@@ -431,9 +437,15 @@ function emitCommitted(result, request) {
   }
 }
 
+/** Retain a result for replay, evicting the oldest entries once the cache exceeds its bound. */
+function rememberResult(id, response) {
+  processed.set(id, response);
+  while (processed.size > PROCESSED_LIMIT) processed.delete(processed.keys().next().value);
+}
+
 function recordRejection(request, error) {
   const response = failure(request?.id, error);
-  if (response.id) processed.set(response.id, response);
+  if (response.id) rememberResult(response.id, response);
   return response;
 }
 
@@ -459,7 +471,7 @@ async function processRequest(request, submitterId) {
     incrementChangedStates(result, records, request, submitterId, timestamp);
     const response = { ok: true, id: request.id, result: cloneDocumentData(result) };
     await persistOperation(records, result, before);
-    processed.set(request.id, response);
+    rememberResult(request.id, response);
     emitCommitted(result, cloneDocumentData(request));
     return response;
   } catch (error) {
@@ -520,6 +532,14 @@ export async function initializeShipAuthority() {
   } finally {
     initialization = null;
   }
+}
+
+/**
+ * Run GM-side work serialized with the authoritative operation queue. Never call from inside the
+ * queue: the work would then block behind the operation that is waiting for it.
+ */
+export function enqueueAuthorityWork(work) {
+  return enqueue(work);
 }
 
 export async function submitShipOperation(request) {

@@ -32,6 +32,8 @@ import {
   processHazardEnd,
   selectCondition,
 } from "../scripts/rules/conditions.js";
+import { resolveShieldDamage } from "../scripts/rules/shields.js";
+import { stableCoincidentNormal } from "../scripts/rules/geometry.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 
 const GUNNER = "canadensis-gunner-sensor";
@@ -45,6 +47,9 @@ function freshShip() {
   const config = clone(defaults.config);
   return { config, state: createInitialState(config) };
 }
+
+// Weapon fire and collisions share one shield-damage implementation (§11.2).
+const DAMAGE_HELPERS = Object.freeze({ resolveShieldDamage });
 
 function expectViolation(callback, code) {
   let thrown;
@@ -585,6 +590,83 @@ describe("attack previews, commitment, and damage", () => {
     expect(outOfArc.violations.map(({ code }) => code)).toContain("TARGET_OUT_OF_ARC");
   });
 
+  test("a coincident declaration resolves from the stable collision normal instead of throwing", () => {
+    const { attacker, target, declaration } = prepareAttack({
+      weaponId: CANADENSIS_IDS.laser,
+      attackerPosition: { x: 0, y: 0 },
+      targetPosition: { x: 0, y: 0 },
+    });
+    const attackerUuid = "Scene.test.Token.coincident-attacker";
+    const targetUuid = "Scene.test.Token.coincident-target";
+    const track = { ...clone(attacker.state.tracks.target), targetUuid };
+    attacker.state.tracks = {
+      [attackerUuid]: { ...clone(track), targetUuid: attackerUuid },
+      [targetUuid]: track,
+    };
+    const preview = (changes = {}) => previewAttack({
+      attackerConfig: attacker.config,
+      attackerState: clone(attacker.state),
+      targetConfig: target.config,
+      targetState: clone(target.state),
+      declaration: {
+        ...clone(declaration),
+        attackerUuid,
+        targetUuid,
+        ...changes,
+      },
+    });
+    const bearingOf = (from, to) => {
+      const normal = stableCoincidentNormal(from, to);
+      return (Math.atan2(normal.x, -normal.y) * 180 / Math.PI + 360) % 360;
+    };
+
+    // §10.11: coincident centers use the shared collision normal, so the shot still
+    // resolves into an ordinary legal declaration for every client.
+    const shot = preview();
+    expect(shot.violations).toEqual([]);
+    expect(shot.public.relativeBearing).toBeCloseTo(
+      bearingOf(attackerUuid, targetUuid),
+    );
+    const struck = bearingOf(targetUuid, attackerUuid);
+    expect(shot.public.struckSector).toBe(
+      struck < 45 || struck >= 315
+        ? "fore"
+        : struck < 135
+        ? "starboard"
+        : struck < 225
+        ? "aft"
+        : "port",
+    );
+    expect(preview().public).toEqual(shot.public);
+
+    const committed = commitAttack({
+      attackerConfig: attacker.config,
+      attackerDraft: clone(attacker.state),
+      targetConfig: target.config,
+      targetDraft: clone(target.state),
+      declaration: { ...clone(declaration), attackerUuid, targetUuid },
+      helpers: { resolveShieldDamage },
+      rollD20: () => 15,
+    });
+    expect(committed.gm.roll).toMatchObject({ natural: 15, hit: true });
+    expect(committed.gm.commitment.geometry.sector).toBe(
+      shot.public.struckSector,
+    );
+    expect(committed.gm.damage.sector).toBe(shot.public.struckSector);
+
+    // Swapping the two stable ids reverses the direction by exactly 180 degrees.
+    const reversed = preview({
+      attackerUuid: targetUuid,
+      targetUuid: attackerUuid,
+    });
+    expect(
+      Math.abs(
+        ((reversed.public.relativeBearing - shot.public.relativeBearing + 360) %
+          360) - 180,
+      ),
+    ).toBeLessThan(1e-9);
+  });
+
   test("preview itemizes every term behind the group totals the console renders", () => {
     const { attacker, target, declaration } = prepareAttack({
       weaponId: CANADENSIS_IDS.portMacrocannon,
@@ -710,6 +792,31 @@ describe("attack previews, commitment, and damage", () => {
     expect(preview.gm.actualTargetAc).toBe(target.config.ac + 3);
   });
 
+  test("a declared AC cannot override the target's AC or the track's known AC", () => {
+    const { attacker, target, declaration } = prepareAttack();
+    attacker.state.tracks.target.effectiveAc = 11;
+
+    const preview = previewAttack({
+      attackerConfig: attacker.config,
+      attackerState: clone(attacker.state),
+      targetConfig: target.config,
+      targetState: clone(target.state),
+      declaration: {
+        ...clone(declaration),
+        targetAc: 0,
+        finalAc: 0,
+        actualTargetAc: 0,
+      },
+    });
+
+    // §10.9/§10.10: the shot resolves against the target's own AC, while the card keeps
+    // showing the AC the observer's Targeted track knows.
+    expect(preview.legal).toBe(true);
+    expect(preview.commitment.targetAc).toBe(target.config.ac);
+    expect(preview.gm.actualTargetAc).toBe(target.config.ac);
+    expect(preview.public.finalAc).toBe(11);
+  });
+
   test("stale declarations and post-spend roll failures are atomic", () => {
     const { attacker, target, declaration } = prepareAttack({ firingSolution: true });
     const attackerBefore = clone(attacker.state);
@@ -787,6 +894,7 @@ describe("attack previews, commitment, and damage", () => {
       targetConfig: target.config,
       targetDraft: target.state,
       declaration: clone(declaration),
+      helpers: { resolveShieldDamage },
       rollD20: () => 19,
     });
 
@@ -812,6 +920,21 @@ describe("attack previews, commitment, and damage", () => {
     expect(result.gm.damage.totals).toEqual({ hullDamage: 3, heatDamage: 0 });
   });
 
+  test("projectile resolution refuses to run without the shared shield implementation", () => {
+    const target = freshShip();
+    target.state.shields.hp.fore = 6;
+
+    // The deleted inline duplicate is gone: a caller that omits the §11.2 resolver fails
+    // loudly instead of silently resolving shields by a second, divergent implementation.
+    expectViolation(() => resolveProjectile(target.config, target.state, {
+      sector: "fore",
+      damage: { shield: 4, hull: 4, heat: 0 },
+      armorPiercing: 0,
+    }), "MISSING_SHIELD_HELPER");
+    expect(target.state.shields.hp.fore).toBe(6);
+    expect(target.state.hull).toBe(target.config.maxHull);
+  });
+
   test("a projectile resolves shield breakthrough, Armor, Hull, then Heat in order", () => {
     const target = freshShip();
     target.state.shields.hp.fore = 2;
@@ -821,10 +944,12 @@ describe("attack previews, commitment, and damage", () => {
       sector: "fore",
       damage: { shield: 6, hull: 8, heat: 6 },
       armorPiercing: 1,
-    });
+    }, DAMAGE_HELPERS);
 
     expect(result.gm).toMatchObject({
-      shield: { before: 2, activeBefore: 2, damage: 6, after: 0, collapsed: true },
+      // The shared §11.2 resolver reports the Shield HP actually consumed (2), not the listed
+      // Shield Damage (6); the inline duplicate this replaced reported the listed value.
+      shield: { before: 2, activeBefore: 2, damage: 2, after: 0, collapsed: true },
       armor: { base: 3, piercing: 1, effective: 2 },
       hull: { listed: 8, transmitted: 5, taken: 3, before: 50, after: 47 },
       heat: { listed: 6, transmitted: 4, before: 1, after: 5 },
@@ -842,7 +967,7 @@ describe("attack previews, commitment, and damage", () => {
       sector: "fore",
       damage: { shield: 6, hull: 8, heat: 0 },
       armorPiercing: 0,
-    });
+    }, DAMAGE_HELPERS);
 
     expect(result.gm.shield).toMatchObject({ activeBefore: 2, after: 0, collapsed: true });
     expect(target.state.shields.hp.fore).toBe(0);
@@ -860,7 +985,7 @@ describe("attack previews, commitment, and damage", () => {
       sector: "fore",
       damage: { shield: 20, hull: 8, heat: 0 },
       armorPiercing: 3,
-    });
+    }, DAMAGE_HELPERS);
 
     expect(result.gm).toMatchObject({
       shield: { active: false, activeBefore: 0, after: 0, collapsed: false },
@@ -870,11 +995,43 @@ describe("attack previews, commitment, and damage", () => {
     expect(target.state.hull).toBe(42);
   });
 
+  test("a bubble shield hit on the weapon path keeps the impact sector's Armor", () => {
+    const target = freshShip();
+    target.config.components.shield.topology = "bubble";
+    target.config.components.shield.sectors = ["bubble"];
+    target.config.components.shield.emitters = [{
+      id: `${target.config.components.shield.id}:bubble`,
+      sector: "bubble",
+      regions: ["fore", "port", "starboard", "aft"],
+    }];
+    delete target.config.components.shield.sectorCap;
+    target.state = createInitialState(target.config);
+    target.state.power.shields = 2;
+    target.state.shields.hp.bubble = 10;
+
+    const result = resolveProjectile(target.config, target.state, {
+      sector: "fore",
+      damage: { shield: 25, hull: 10, heat: 5 },
+      armorPiercing: 1,
+    }, DAMAGE_HELPERS);
+
+    // §7.6 / §11.2: one shared resolver serves weapons and collisions, so a bubble pool
+    // takes the shield damage while Armor still reads the struck impact sector.
+    expect(result.gm).toMatchObject({
+      sector: "bubble",
+      shield: { slot: "bubble", before: 10, activeBefore: 10, damage: 10, after: 0, collapsed: true },
+      armor: { base: 3, piercing: 1, effective: 2 },
+      hull: { listed: 10, transmitted: 6, taken: 4, before: 50, after: 46 },
+      heat: { listed: 5, transmitted: 3, before: 0, after: 3 },
+    });
+    expect(target.state.shields.hp).toEqual({ bubble: 0 });
+  });
+
   test("natural-20 criticals deterministically select and then escalate the same condition", () => {
     const target = freshShip();
     target.state.power.shields = 0;
     target.state.shields.hp.fore = 0;
-    const helpers = { applyConditionTiers, selectCondition };
+    const helpers = { applyConditionTiers, selectCondition, resolveShieldDamage };
     const attack = {
       effectiveHits: 1,
       naturalRoll: 20,
@@ -975,7 +1132,7 @@ describe("attack previews, commitment, and damage", () => {
       damage: { shield: 0, hull: 10, heat: 0 },
       armorPiercing: 0,
       traits: [{ id: "nonLethal" }],
-    });
+    }, DAMAGE_HELPERS);
 
     expect(target.state.hull).toBe(0);
     expect(target.state.pendingFate).toEqual({

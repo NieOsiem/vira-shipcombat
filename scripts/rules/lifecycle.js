@@ -260,6 +260,10 @@ export function runEndPhase(config, state, { random = [], endKey = state?.turnKe
     const fate = resolveShipFate(config, draft);
     if (fate.public) events.push(event("afterEnd", "shipFate", { public: fate.public, gm: fate.gm }));
     draft.phase = "start";
+    // A rewind to Start must invalidate the finished turn: beginTurn recomputes the same
+    // `${combatId}:${round}:${combatantId}` key, so a retained turnKey would make the
+    // phase.start guard treat the new Start as a duplicate and deadlock the ship.
+    draft.turnKey = null;
     return { events, fate };
   });
 }

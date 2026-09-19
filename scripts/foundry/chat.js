@@ -1,6 +1,16 @@
 import { MODULE_ID } from "../constants.js";
+import { FAULT_CHANNELS, HAZARD_CHANNELS } from "../rules/conditions.js";
 
 const CHAT_ALIAS = "Vira Ship Combat";
+
+const CONDITION_KIND_LABELS = Object.freeze({
+  critical: "Critical",
+  viciousCritical: "Vicious critical",
+  aimed: "Aimed shot",
+  aimedCritical: "Aimed critical",
+  aimedViciousCritical: "Aimed vicious critical",
+  noneEligible: "Critical",
+});
 
 function escape(value) {
   return foundry.utils.escapeHTML(value ?? "");
@@ -11,6 +21,57 @@ function fateSummary(fate) {
   if (fate?.outcome === "disabled") return "The ship is disabled.";
   if (fate?.status === "pending") return "Hull depleted. The ship's fate awaits resolution.";
   return "";
+}
+
+/**
+ * `conditionKey` composes faults as `<component>:<channel>[:<sector>]` and
+ * hazards as `<channel>[:<region>]`. Public payloads carry no labels, so the
+ * affected target is read back out of the key alone.
+ */
+function conditionTarget(key) {
+  const segments = String(key ?? "").split(":");
+  const faultIndex = segments.findIndex((segment) =>
+    FAULT_CHANNELS.includes(segment)
+  );
+  if (faultIndex > 0) {
+    const location = segments[faultIndex + 1];
+    const component = segments.slice(0, faultIndex).join(":");
+    return {
+      hazard: false,
+      label: `${component} ${segments[faultIndex]}${
+        location ? ` (${location})` : ""
+      }`,
+    };
+  }
+  const hazardIndex = segments.findIndex((segment) =>
+    HAZARD_CHANNELS.includes(segment)
+  );
+  if (hazardIndex >= 0) {
+    const region = segments[hazardIndex + 1];
+    return {
+      hazard: true,
+      label: `${segments[hazardIndex]}${region ? ` (${region})` : ""}`,
+    };
+  }
+  return { hazard: false, label: segments.join(" ") };
+}
+
+/** Names the Fault or Hazard an attack applied, from public damage data only. */
+function conditionSummary(condition) {
+  if (!condition || typeof condition !== "object") return "";
+  const headline = CONDITION_KIND_LABELS[condition.kind] ?? "Subsystem damage";
+  const applications = (
+    Array.isArray(condition.applications) ? condition.applications : []
+  ).filter((application) => Number(application?.applied) > 0);
+  if (!applications.length) return `${headline}: no subsystem fault applied.`;
+  const targets = applications.map((application) =>
+    conditionTarget(application.key ?? condition.conditionId)
+  );
+  const noun = targets.every((target) => target.hazard) ? "hazard" : "fault";
+  const entries = applications.map((application, index) =>
+    `${targets[index].label} — ${application.before} → ${application.after}`
+  );
+  return `${headline} ${noun}: ${entries.join("; ")}.`;
 }
 
 function attackSummary(detail) {
@@ -25,6 +86,8 @@ function attackSummary(detail) {
   const damage = detail.damage;
   if (damage?.sector) parts.push(`Impact sector: ${damage.sector}.`);
   if (damage?.totals) parts.push(`Hull damage: ${damage.totals.hullDamage}; heat damage: ${damage.totals.heatDamage}.`);
+  const condition = conditionSummary(damage?.conditionEvent);
+  if (condition) parts.push(condition);
   const fate = fateSummary(damage?.fate);
   if (fate) parts.push(fate);
   return parts.join(" ");

@@ -4,6 +4,7 @@ import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../scripts/data/canadensis
 import { initializeShipActor } from "../scripts/foundry/initialization.js";
 import { createDefaultShipSystemData } from "../scripts/model/defaults.js";
 import { materializeShipConfig } from "../scripts/model/equipment.js";
+import { trackKey } from "../scripts/rules/sensors.js";
 import {
   readShipRecord,
   writeShipState,
@@ -279,6 +280,13 @@ describe("native vehicle edits through registered Actor hooks", () => {
     expect(errors.mock.calls).toEqual([]);
   }
 
+  // The console refresh coalescer rebuilds on an 80 ms trailing debounce and every hook event
+  // restarts it, so restoring these Foundry globals without waiting leaves a timer behind that fires
+  // after `Hooks` is gone (a cross-file failure). Wait the window out before the restore.
+  async function drainConsoleRefresh() {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
   beforeEach(async () => {
     previousGlobals = {
       Hooks: globalThis.Hooks,
@@ -342,6 +350,7 @@ describe("native vehicle edits through registered Actor hooks", () => {
   afterEach(async () => {
     try {
       await settleHooks();
+      await drainConsoleRefresh();
     } finally {
       errors.mockRestore();
       Object.assign(globalThis, previousGlobals);
@@ -522,5 +531,179 @@ describe("native vehicle edits through registered Actor hooks", () => {
 
     expect(updateChanges).toHaveLength(1);
     expect(actor.system.shipCombat.state).toEqual(state);
+  });
+
+  /** A ship TokenDocument, synthetic (unlinked) unless the caller links it to a world Actor. */
+  function shipToken(id, tokenScene, shipActor, { actorLink = false } = {}) {
+    shipActor.id = `ship-${id}`;
+    shipActor.uuid = `${tokenScene.uuid}.Token.${id}.Actor.ship`;
+    shipActor.isToken = actorLink !== true;
+    const token = {
+      id,
+      uuid: `${tokenScene.uuid}.Token.${id}`,
+      documentName: "Token",
+      name: `Ship ${id}`,
+      actorId: shipActor.id,
+      actorLink,
+      actor: shipActor,
+      parent: tokenScene,
+    };
+    shipActor.token = token;
+    return token;
+  }
+
+  function unlinkedCopy(id, tokenScene) {
+    const copy = new FakeActor(
+      createDefaultShipSystemData(),
+      CANADENSIS_DEFAULT_COMPONENT_SOURCES,
+    );
+    Object.assign(copy.system.shipCombat.state, {
+      phase: "active",
+      turnKey: "combat-1:3:cb-1",
+      revision: 9,
+      hull: 2,
+      resources: { actions: { "canadensis-pilot-commander": 0 } },
+    });
+    copy._source.system = clone(copy.system);
+    return shipToken(id, tokenScene, copy);
+  }
+
+  test("a synthetic copy no combat references is reset to a fresh outside-combat state", async () => {
+    const scene = { id: "scene-1", uuid: "Scene.scene-1", tokens: [] };
+    const token = unlinkedCopy("copy", scene);
+    scene.tokens = [token];
+    Object.assign(game, { scenes: [scene], combats: [] });
+    const config = clone(token.actor.system.shipCombat.config);
+
+    Hooks.callAll("createToken", token);
+    await settleHooks();
+
+    const { state, config: kept } = token.actor.system.shipCombat;
+    expect(state.phase).toBe("outsideCombat");
+    expect(state.turnKey).toBeNull();
+    expect(state.revision).toBe(0);
+    expect(state.hull).toBe(config.maxHull);
+    expect(state.resources).toEqual({ actions: {}, orders: {} });
+    expect(kept).toEqual(config);
+    expect(notifications).toEqual([]);
+  });
+
+  test("a synthetic copy a combat references keeps the phase it is playing", async () => {
+    const scene = { id: "scene-1", uuid: "Scene.scene-1", tokens: [] };
+    const token = unlinkedCopy("referenced", scene);
+    scene.tokens = [token];
+    Object.assign(game, {
+      scenes: [scene],
+      combats: [{
+        id: "combat-1",
+        round: 3,
+        scene,
+        combatants: [{ id: "cb-1", tokenId: token.id, token }],
+      }],
+    });
+
+    Hooks.callAll("createToken", token);
+    await settleHooks();
+
+    const { state } = token.actor.system.shipCombat;
+    expect(state.phase).toBe("active");
+    expect(state.turnKey).toBe("combat-1:3:cb-1");
+    expect(state.hull).toBe(2);
+    expect(notifications).toEqual([]);
+  });
+
+  /** Model core's deletion: the copy keeps neither its Actor context nor, when detached, its Scene. */
+  function deleteShipToken(token, { detachScene = false } = {}) {
+    token.actor = null;
+    token.delta = { type: SHIP_TYPE };
+    if (detachScene) delete token.parent;
+    Hooks.callAll("deleteToken", token);
+  }
+
+  /** Install one linked survivor on `scene`, tracking itself and every token in `deadTokens`. */
+  function shipScene(scene, deadTokens, combatTokens = []) {
+    const survivor = shipToken(
+      "survivor",
+      scene,
+      new FakeActor(
+        createDefaultShipSystemData(),
+        CANADENSIS_DEFAULT_COMPONENT_SOURCES,
+      ),
+      { actorLink: true },
+    );
+    scene.tokens = [survivor];
+    game.scenes = [scene];
+    // The Scene lookup is the fallback for a deleted copy that no longer reports its parent.
+    game.scenes.get = (id) => (id === scene.id ? scene : undefined);
+    game.combats = combatTokens.map((token) => ({
+      id: `combat-${token.id}`,
+      round: 1,
+      scene,
+      combatants: [{ id: `cb-${token.id}`, tokenId: token.id, token }],
+    }));
+    const tracks = {
+      [trackKey(survivor.uuid)]: { targetUuid: survivor.uuid, state: "contact" },
+    };
+    for (const token of deadTokens) {
+      tracks[trackKey(token.uuid)] = { targetUuid: token.uuid, state: "contact" };
+    }
+    Object.assign(survivor.actor.system.shipCombat.state, { tracks });
+    survivor.actor._source.system = clone(survivor.actor.system);
+    return { survivor, tracks };
+  }
+
+  test("a deleted ship token prunes the tracks it left on surviving ships, through the authority", async () => {
+    const scene = { id: "scene-1", uuid: "Scene.scene-1", tokens: [] };
+    const doomed = unlinkedCopy("doomed", scene);
+    const { survivor, tracks } = shipScene(scene, [doomed], [doomed]);
+
+    deleteShipToken(doomed);
+    expect(survivor.actor.system.shipCombat.state.tracks).toEqual(tracks);
+
+    await settleHooks();
+
+    expect(Object.keys(survivor.actor.system.shipCombat.state.tracks))
+      .toEqual([trackKey(survivor.uuid)]);
+    expect(survivor.actor.updates).toBe(1);
+    expect(notifications).toEqual([]);
+  });
+
+  test("a deleted copy that no longer reports its Scene still prunes on that Scene", async () => {
+    const scene = { id: "scene-1", uuid: "Scene.scene-1", tokens: [] };
+    const doomed = unlinkedCopy("detached", scene);
+    const { survivor } = shipScene(scene, [doomed]);
+
+    deleteShipToken(doomed, { detachScene: true });
+    await settleHooks();
+
+    expect(Object.keys(survivor.actor.system.shipCombat.state.tracks))
+      .toEqual([trackKey(survivor.uuid)]);
+    expect(notifications).toEqual([]);
+  });
+
+  test("a world actor update reconciles its linked token, never an unlinked copy", async () => {
+    const sceneA = { id: "scene-a", uuid: "Scene.scene-a", tokens: [] };
+    const sceneB = { id: "scene-b", uuid: "Scene.scene-b", tokens: [] };
+    const linked = shipToken("linked", sceneA, actor, { actorLink: true });
+    linked.actorId = actor.id;
+    sceneA.tokens = [linked];
+    const copy = new FakeActor(
+      clone(actor.system.shipCombat),
+      [...actor.items.values()],
+    );
+    // Copy-pasting a token keeps the base Actor id; only the link makes the copy authoritative.
+    const copyToken = shipToken("copy", sceneB, copy);
+    copyToken.actorId = actor.id;
+    delete copy.system.shipCombat.state.schemaVersion;
+    sceneB.tokens = [copyToken];
+    Object.assign(game, { scenes: [sceneA, sceneB], combats: [] });
+
+    await actor.update({ "system.attributes.hp.value": 11 });
+    await settleHooks();
+
+    expect(copy.updates).toBe(0);
+    expect(copy.system.shipCombat.state.schemaVersion).toBeUndefined();
+    expect(actor.system.attributes.hp.value).toBe(11);
+    expect(notifications).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@ import {
   MODULE_ID,
   SHIP_TYPE,
 } from "../constants.js";
-import { normalizeShipData } from "../model/defaults.js";
+import { createInitialState, normalizeShipData } from "../model/defaults.js";
 import { materializeShipConfig } from "../model/equipment.js";
 import {
   validateComponentItem,
@@ -15,11 +15,14 @@ import {
   shipFieldsFromNativeVehicleChanges,
 } from "../model/native-vehicle.js";
 import { assignedUserIds } from "../rules/operators.js";
+import { pruneOrphanedTracks } from "../rules/sensors.js";
 
 import {
+  enqueueAuthorityWork,
   submitAutomaticShipOperation,
   submitShipOperation,
 } from "../state/action-queue.js";
+import { readShipRecord, writeShipState } from "../state/token-state.js";
 import { isActiveGM } from "../socket.js";
 import { createGmEventMessages, publishOperationEvents } from "./chat.js";
 import {
@@ -27,7 +30,11 @@ import {
   isInternalComponentMutation,
 } from "./initialization.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
-import { CREW_FEATURE_NAME, getActorCrewData } from "./crew.js";
+import {
+  CREW_FEATURE_NAME,
+  getActorCrewData,
+  refreshOperatorIncapacitation,
+} from "./crew.js";
 import {
   CrewRatingSheet,
   openCrewRatingEditor,
@@ -43,6 +50,7 @@ let consoleRefreshTimer = null;
 let consoleRefreshDeadline = 0;
 const deletedCombats = new WeakSet();
 const removedCombatants = new WeakSet();
+const deletedTokens = new WeakSet();
 
 /**
  * A console rebuild re-renders every tab and rebuilds the radar, and one operation writes a document
@@ -279,31 +287,100 @@ async function enforceOperatorOwnership(subject) {
   }
 }
 
-/** Initialize, normalize, and synchronize one world or synthetic ship Actor in its own context. */
-async function initializeActorShipData(actor) {
-  if (actor?.type !== SHIP_TYPE || !activeGm()) return false;
-  const initialized = await initializeShipActor(actor);
-  const current = clone(actor.system?.shipCombat ?? {});
-  const items = componentItems(actor);
-  const normalized = normalizeShipData(current, items);
-  const effective = materializeShipConfig(normalized.config, items);
-  const shipChanged = !sameData(current, normalized);
-  const update = nativeVehicleFieldChanges(actor, effective, normalized.state);
-  if (shipChanged) update["system.shipCombat"] = forcedReplacement(normalized);
-  if (Object.keys(update).length) {
-    const updated = await actor.update(update, { [INTERNAL_UPDATE]: true });
-    if (!updated) {
-      throw new Error("Ship normalization did not update the Actor.");
+/** Resolve the Actor a config operator links to on this client, if any. */
+function resolveOperatorActor(actorId) {
+  return game.actors?.get?.(actorId) ?? null;
+}
+
+/**
+ * Whether a combatant points at this token. The resolved document is preferred; the stored token id
+ * is the fallback for a token that is already deleted or whose Scene is not loaded, and it is
+ * deliberately not cross-checked against the Combat's Scene: claiming a token is in combat merely
+ * keeps its state, while failing to see one would reset a ship that is mid-turn.
+ */
+function combatantReferencesToken(combatant, token) {
+  const document = combatant?.token;
+  if (document) return document === token || document.uuid === token?.uuid;
+  return Boolean(combatant?.tokenId) && combatant.tokenId === token?.id;
+}
+
+function tokenReferencedByCombat(token) {
+  for (const combat of collectionValues(game.combats)) {
+    for (const combatant of collectionValues(combat?.combatants)) {
+      if (combatantReferencesToken(combatant, token)) return true;
     }
   }
-  await enforceOperatorOwnership(actor);
-  return initialized || shipChanged || Object.keys(update).length > 0;
+  return false;
+}
+
+/**
+ * Whether an unlinked copy carries a phase it cannot legitimately hold. A synthetic token owns its
+ * own ship data, so it is only mid-combat while a Combatant still references it: a duplicated token
+ * is born with its source's phase and turnKey, and `combat.enter` is suppressed for a ship that is
+ * not outsideCombat, so it could never advance. That persisted phase is stale.
+ */
+function orphanedSyntheticState(token) {
+  if (token?.actorLink !== false) return false;
+  const phase = token?.actor?.system?.shipCombat?.state?.phase;
+  return phase !== undefined && phase !== "outsideCombat" &&
+    !tokenReferencedByCombat(token);
+}
+
+/** Whether a scheduled initialization outlived its TokenDocument. */
+function tokenDocumentGone(token) {
+  return !token?.actor || deletedTokens.has(token);
+}
+
+/**
+ * Initialize, normalize, and synchronize one world or synthetic ship Actor in its own context.
+ * `queued: false` is mandatory for callers that already run inside the authority queue: enqueuing
+ * from there would make the running task await work appended behind itself. `refreshOperators`
+ * re-derives operator incapacitation from the linked crew Actors, and `resetOrphanedState` rebuilds
+ * the state of a synthetic copy that no combat references.
+ */
+async function initializeActorShipData(actor, {
+  refreshOperators = false,
+  resetOrphanedState = false,
+  queued = true,
+} = {}) {
+  if (actor?.type !== SHIP_TYPE || !activeGm()) return false;
+  const work = async () => {
+    const initialized = await initializeShipActor(actor);
+    const current = clone(actor.system?.shipCombat ?? {});
+    const items = componentItems(actor);
+    const normalized = normalizeShipData(current, items);
+    const operatorsChanged = refreshOperators
+      ? refreshOperatorIncapacitation(normalized.config, resolveOperatorActor)
+      : false;
+    const effective = materializeShipConfig(normalized.config, items);
+    if (resetOrphanedState && normalized.state.phase !== "outsideCombat") {
+      normalized.state = createInitialState(effective);
+    }
+    const shipChanged = operatorsChanged || !sameData(current, normalized);
+    const update = nativeVehicleFieldChanges(actor, effective, normalized.state);
+    if (shipChanged) update["system.shipCombat"] = forcedReplacement(normalized);
+    if (Object.keys(update).length) {
+      const updated = await actor.update(update, { [INTERNAL_UPDATE]: true });
+      if (!updated) {
+        throw new Error("Ship normalization did not update the Actor.");
+      }
+    }
+    await enforceOperatorOwnership(actor);
+    return initialized || shipChanged || Object.keys(update).length > 0;
+  };
+  return queued ? enqueueAuthorityWork(work) : work();
 }
 
 /** Fill only absent ship-data fields, retaining every value already stored by the token actor. */
-async function initializeTokenShipData(token) {
-  if (!isShipToken(token) || !activeGm()) return false;
-  return initializeActorShipData(token.actor);
+async function initializeTokenShipData(token, options = {}) {
+  const { refreshOperators = false, resetOrphanedState = false, queued = true } =
+    options;
+  if (tokenDocumentGone(token) || !isShipToken(token) || !activeGm()) return false;
+  return initializeActorShipData(token.actor, {
+    refreshOperators,
+    resetOrphanedState: resetOrphanedState && orphanedSyntheticState(token),
+    queued,
+  });
 }
 
 function scheduleSubmission(label, task) {
@@ -322,6 +399,17 @@ function scheduleSubmission(label, task) {
 
 function schedule(label, task) {
   return scheduleSubmission(label, () => activeGm() ? task() : undefined);
+}
+
+/**
+ * Background document cleanup: a failure is logged and the hook chain continues, without the
+ * user-facing "correct the ship data" notice reserved for failed player-facing reconciliation.
+ */
+function scheduleCleanup(label, task) {
+  hookWork = hookWork.then(task).catch((error) => {
+    console.warn(`${MODULE_ID} | ${label}`, error);
+  });
+  return hookWork;
 }
 
 function combatantToken(combatant) {
@@ -375,7 +463,13 @@ async function executeLifecycle(combat, combatant, type, key) {
       (deletedCombats.has(combat) || removedCombatants.has(combatant))
     ) return null;
     for (const involved of [token, ...targetTokens]) {
-      await initializeTokenShipData(involved);
+      // This builder already runs at the queue head: enqueuing the initialization would make this
+      // operation await work appended behind itself. A Start Phase additionally re-derives operator
+      // incapacitation, so a crew member lost mid-session stops operating from the next Start.
+      await initializeTokenShipData(involved, {
+        refreshOperators: type === "phase.start",
+        queued: false,
+      });
     }
     const state = token.actor.system.shipCombat.state;
     // These guards run inside the operation queue, not against a stale hook snapshot.
@@ -559,23 +653,79 @@ async function submitAdministrativeReposition(token, proposed, options) {
   }
 }
 
+/**
+ * The tokens that carry `actor`'s authoritative ship data. A world Actor is mounted by its linked
+ * tokens, wherever those Scenes are; a synthetic Actor is carried by exactly its own token. An
+ * unlinked copy holds independent state under its own delta, so reconciling the base Actor must never
+ * touch it.
+ */
 function sceneTokensForActor(actor) {
+  if (actor?.isToken) return actor.token ? [actor.token] : [];
   const tokens = [];
   for (const scene of game.scenes ?? []) {
     for (const token of scene.tokens ?? []) {
-      if (token?.actorId === actor?.id) {
+      if (token?.actorId === actor?.id && token.actorLink !== false) {
         tokens.push(token);
-        continue;
-      }
-      if (!token?.actorId) {
-        const tokenActor = token?.actor;
-        const baseActor = tokenActor?.baseActor ??
-          tokenActor?.token?.baseActor ?? tokenActor;
-        if (baseActor?.id === actor?.id) tokens.push(token);
       }
     }
   }
   return tokens;
+}
+
+/** Every TokenDocument UUID this client can still resolve, used to find dead sensor tracks. */
+function liveTokenUuids() {
+  const uuids = new Set();
+  for (const scene of game.scenes ?? []) {
+    for (const token of scene.tokens ?? []) {
+      if (token?.uuid) uuids.add(token.uuid);
+    }
+  }
+  return uuids;
+}
+
+/** Whether a deleted document was a ship token; a synthetic copy keeps its type only in its delta. */
+function deletedTokenIsShip(token) {
+  if (isShipToken(token)) return true;
+  const delta = token?.delta ?? token?._source?.delta ?? null;
+  return delta?.type === SHIP_TYPE;
+}
+
+/** The Scene that owns a token document, even when a deleted copy has detached from it. */
+function tokenScene(token) {
+  if (token?.parent?.tokens) return token.parent;
+  const [documentName, sceneId] = String(token?.uuid ?? "").split(".");
+  if (documentName !== "Scene" || !sceneId) return null;
+  return game.scenes?.get?.(sceneId) ?? null;
+}
+
+/**
+ * Drop the sensor tracks that referenced a deleted token from every surviving ship on its Scene. Run
+ * inside the authority queue: the records are read and written there, so the cleanup can never
+ * interleave with a queued operation's own state write.
+ */
+async function pruneOrphanedSceneTracks(token) {
+  const live = liveTokenUuids();
+  const surviving = collectionValues(tokenScene(token)?.tokens).filter(
+    (candidate) => candidate !== token && isShipToken(candidate),
+  );
+  for (const ship of surviving) {
+    // Only a ship that has ever held a track can hold an orphaned one, and an uninitialized
+    // ship has no ship data to read at all.
+    const held = ship?.actor?.system?.shipCombat?.state?.tracks;
+    if (!held || !Object.keys(held).length) continue;
+    try {
+      const record = readShipRecord(ship);
+      if (!pruneOrphanedTracks(record.state, live).length) continue;
+      await writeShipState(ship, record.state);
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | Could not prune the sensor tracks of ${
+          ship?.uuid ?? ship
+        }`,
+        error,
+      );
+    }
+  }
 }
 
 function initializeLoadedTokens() {
@@ -586,7 +736,7 @@ function initializeLoadedTokens() {
           `Failed to initialize ship ${
             token.name ?? token.actor.name
           } (${token.uuid})`,
-          () => initializeTokenShipData(token),
+          () => initializeTokenShipData(token, { resetOrphanedState: true }),
         );
       }
     }
@@ -723,7 +873,7 @@ export function registerShipHooks() {
         `Failed to initialize ship ${
           token.name ?? token.actor.name
         } (${token.uuid})`,
-        () => initializeTokenShipData(token),
+        () => initializeTokenShipData(token, { resetOrphanedState: true }),
       );
     }
   });
@@ -733,7 +883,37 @@ export function registerShipHooks() {
     if (changes.delta || changes.actorId || changes.actorLink) {
       schedule(
         "Failed to reconcile updated ship token",
-        () => initializeTokenShipData(token),
+        () => initializeTokenShipData(token, { resetOrphanedState: true }),
+      );
+    }
+  });
+
+  Hooks.on("deleteToken", (token) => {
+    try {
+      deletedTokens.add(token);
+      if (!deletedTokenIsShip(token)) return;
+      // A deleted token cannot leave combat through its own hook, so every combatant that pointed at
+      // it is retired here. Both leaveCombatant and the track prune tolerate an already-gone token.
+      for (const combat of collectionValues(game.combats)) {
+        for (const combatant of collectionValues(combat?.combatants)) {
+          if (!combatantReferencesToken(combatant, token)) continue;
+          removedCombatants.add(combatant);
+          schedule(
+            "Failed to leave removed ship combatant",
+            () => leaveCombatant(combat, combatant),
+          );
+        }
+      }
+      scheduleCleanup(
+        "Failed to prune orphaned sensor tracks",
+        () => enqueueAuthorityWork(() => pruneOrphanedSceneTracks(token)),
+      );
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | Failed to clean up the deleted ship token ${
+          token?.uuid ?? token
+        }`,
+        error,
       );
     }
   });
@@ -761,37 +941,40 @@ export function registerShipHooks() {
       );
     }
     const tokens = sceneTokensForActor(actor).filter(isShipToken);
-    schedule("Failed to reconcile ship actor", async () => {
-      if (hasNativeEdit) {
-        const { config, state } = actor.system.shipCombat;
-        const allowConfig = !configBlocked && state.phase === "outsideCombat";
-        if (hasConfigEdit && !configBlocked && !allowConfig) {
-          ui.notifications.error(
-            `Native ship configuration cannot be edited during phase '${state.phase}'. Refit is only allowed outside combat.`,
-          );
-        }
-        const update = shipFieldsFromNativeVehicleChanges(
-          changes,
-          config,
-          state,
-          { allowConfig },
-        );
-        if (Object.keys(update).length) {
-          update["system.shipCombat.state.revision"] =
-            Number.isInteger(state.revision) ? state.revision + 1 : 1;
-          const updated = await actor.update(update, {
-            [INTERNAL_UPDATE]: true,
-          });
-          if (!updated) {
-            throw new Error(
-              "Native vehicle edits did not update the ship data.",
+    schedule("Failed to reconcile ship actor", () =>
+      enqueueAuthorityWork(async () => {
+        if (hasNativeEdit) {
+          const { config, state } = actor.system.shipCombat;
+          const allowConfig = !configBlocked && state.phase === "outsideCombat";
+          if (hasConfigEdit && !configBlocked && !allowConfig) {
+            ui.notifications.error(
+              `Native ship configuration cannot be edited during phase '${state.phase}'. Refit is only allowed outside combat.`,
             );
           }
+          const update = shipFieldsFromNativeVehicleChanges(
+            changes,
+            config,
+            state,
+            { allowConfig },
+          );
+          if (Object.keys(update).length) {
+            update["system.shipCombat.state.revision"] =
+              Number.isInteger(state.revision) ? state.revision + 1 : 1;
+            const updated = await actor.update(update, {
+              [INTERNAL_UPDATE]: true,
+            });
+            if (!updated) {
+              throw new Error(
+                "Native vehicle edits did not update the ship data.",
+              );
+            }
+          }
         }
-      }
-      await initializeActorShipData(actor);
-      for (const token of tokens) await initializeTokenShipData(token);
-    });
+        await initializeActorShipData(actor, { queued: false });
+        for (const token of tokens) {
+          await initializeTokenShipData(token, { queued: false });
+        }
+      }));
   });
 
   Hooks.on(

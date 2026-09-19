@@ -1,11 +1,16 @@
 import { SHIP_TYPE } from "../constants.js";
 import { materializeActorConfig } from "../foundry/refit.js";
+import { sceneGridGeometry } from "../foundry/scene-geometry.js";
 import { isAssignedOperator, registerShipVisibility } from "./visibility.js";
 
 const MODULE_ID = "vira-shipcombat";
 const previews = new Map();
 const hookIds = new Map();
 const shieldGraphics = new Map();
+/** Overlay children reused frame to frame, keyed by the slot that draws them. */
+const overlayLabels = new Map();
+const overlayGhosts = new Map();
+let overlayFrame = 0;
 let shieldTicker = null;
 let overlayContainer = null;
 let overlayGraphics = null;
@@ -83,9 +88,7 @@ function headingPoint(origin, heading, distance) {
 }
 
 function gridSize() {
-  return Number(
-    globalThis.canvas?.dimensions?.size ?? globalThis.canvas?.grid?.size ?? 100,
-  ) || 100;
+  return sceneGridGeometry(globalThis.canvas?.scene).gridSize;
 }
 
 function useModernGraphics(graphics) {
@@ -292,16 +295,47 @@ function shieldLabel(text, color, heading, radius) {
   label.eventMode = "none";
   label._viraHeading = heading;
   label._viraRadius = radius;
+  label._viraColor = color;
   return label;
+}
+
+/**
+ * Shield labels are rebuilt on every redraw, so each sector keeps one cached
+ * text object and only its content, tone, and offset are refreshed.
+ */
+function shieldLabelFor(entry, key, { text, color, heading, radius }) {
+  const content = String(text);
+  let label = entry.labelPool.get(key);
+  if (!label || label.destroyed) {
+    label = shieldLabel(content, color, heading, radius);
+    entry.labelPool.set(key, label);
+  } else {
+    if (label.text !== content) label.text = content;
+    if (label._viraColor !== color) {
+      label._viraColor = color;
+      label.style.fill = color;
+    }
+  }
+  label._viraHeading = heading;
+  label._viraRadius = radius;
+  return label;
+}
+
+/** Drops the cached labels the finished frame no longer draws for the token. */
+function releaseShieldLabels(entry, wanted = null) {
+  for (const [key, label] of entry.labelPool) {
+    if (wanted?.has(key)) continue;
+    entry.labelPool.delete(key);
+    entry.labels.removeChild(label);
+    label.destroy?.({ children: true });
+  }
 }
 
 function drawTokenShields(entry, token) {
   const shieldData = tokenShieldData(token);
   if (!shieldData) {
     entry.graphics.clear();
-    entry.labels.removeChildren().forEach((child) =>
-      child.destroy?.({ children: true })
-    );
+    releaseShieldLabels(entry);
     return;
   }
   const { shield, state } = shieldData;
@@ -316,10 +350,9 @@ function drawTokenShields(entry, token) {
 
   entry.graphics.clear();
   drawDestinationFacing(entry.graphics, center, 0, Number(token.h ?? token.w));
-  entry.labels.removeChildren().forEach((child) =>
-    child.destroy?.({ children: true })
-  );
+  const wanted = new Set();
   for (const sector of sectors) {
+    wanted.add(sector);
     const hp = Number(state.hp?.[sector] ?? 0);
     const collapsed = Number(state.collapse?.[sector] ?? 0) > 0;
     const appearance = shieldAppearance(
@@ -338,14 +371,15 @@ function drawTokenShields(entry, token) {
       appearance,
     );
     entry.labels.addChild(
-      shieldLabel(
-        collapsed ? "×" : String(hp),
-        appearance.color,
+      shieldLabelFor(entry, sector, {
+        text: collapsed ? "×" : String(hp),
+        color: appearance.color,
         heading,
-        radius + 12,
-      ),
+        radius: radius + 12,
+      }),
     );
   }
+  releaseShieldLabels(entry, wanted);
 }
 
 function positionShieldLabels(entry, token) {
@@ -395,7 +429,7 @@ function renderTokenShield(token) {
     labels.zIndex = 1;
     root.addChild(graphics, labels);
     token.addChild(root);
-    entry = { root, graphics, labels };
+    entry = { root, graphics, labels, labelPool: new Map() };
     shieldGraphics.set(key, entry);
   }
   drawTokenShields(entry, token);
@@ -515,22 +549,30 @@ function destinationSize(preview) {
   return { width: textureWidth * scale, height: textureHeight * scale };
 }
 
-function addDestinationGhost(preview, point, facing, size) {
+/** The destination ghost is pooled per preview for the same reason as labels. */
+function addDestinationGhost(preview, key, point, facing, size) {
   const token = sourceToken(preview);
   const texture = token?.mesh?.texture;
   if (
     !overlayContainer || !point || !texture || texture === PIXI.Texture?.EMPTY
   ) return;
-  const ghost = new PIXI.Sprite(texture);
-  ghost.name = `${MODULE_ID}.destination`;
-  ghost.anchor?.set?.(0.5);
+  let ghost = overlayGhosts.get(key);
+  if (!ghost || ghost.destroyed) {
+    ghost = new PIXI.Sprite(texture);
+    ghost.name = `${MODULE_ID}.destination`;
+    ghost.anchor?.set?.(0.5);
+    ghost.alpha = 0.36;
+    ghost.eventMode = "none";
+    ghost.zIndex = 5;
+    overlayGhosts.set(key, ghost);
+  } else if (ghost.texture !== texture) {
+    ghost.texture = texture;
+  }
+  ghost._viraFrame = overlayFrame;
   ghost.position.set(point.x, point.y);
   ghost.width = size.width;
   ghost.height = size.height;
   ghost.angle = Number(facing) || 0;
-  ghost.alpha = 0.36;
-  ghost.eventMode = "none";
-  ghost.zIndex = 5;
   overlayContainer.addChild(ghost);
 }
 
@@ -554,7 +596,7 @@ function drawDestinationFacing(graphics, point, facing, shipHeight) {
   });
 }
 
-function drawArc(graphics, arc, fallbackOrigin, fallbackFacing) {
+function drawArc(graphics, arc, fallbackOrigin, fallbackFacing, slot) {
   const origin = finitePoint(arc?.origin) ?? fallbackOrigin;
   const facing = Number(arc?.rotation ?? arc?.facing ?? fallbackFacing);
   const width = Number(
@@ -605,13 +647,15 @@ function drawArc(graphics, arc, fallbackOrigin, fallbackFacing) {
   band(optimal, radius, COLORS.extendedArc);
   band(0, optimal, Number(arc.color ?? COLORS.arc));
   if (arc?.optimalRange != null) {
-    addLabel(
+    acquireLabel(
+      `${slot}:optimal`,
       "OPTIMAL",
       headingPoint(origin, facing + center, optimal),
       COLORS.arc,
       { x: 10, y: -22 },
     );
-    addLabel(
+    acquireLabel(
+      `${slot}:maximum`,
       "MAXIMUM · extended range",
       headingPoint(origin, facing + center, radius),
       COLORS.extendedArc,
@@ -668,13 +712,33 @@ function makeText(text, color, { fontSize = 14, strokeWidth = 4 } = {}) {
   });
 }
 
-function addLabel(text, point, color, offset = { x: 10, y: -10 }) {
-  if (!overlayContainer || !point || !text) return;
-  const label = makeText(String(text), color);
+/**
+ * One label per semantic slot, reused across redraws: a slider drag repaints
+ * every frame, so only the slots the new frame drops are destroyed.
+ * Re-appending in draw order keeps equal-zIndex labels stacked as a fresh
+ * build of the same frame stacked them.
+ */
+function acquireLabel(key, text, point, color, offset = { x: 10, y: -10 }) {
+  if (!overlayContainer || !point || !text) return null;
+  const content = String(text);
+  let label = overlayLabels.get(key);
+  if (!label || label.destroyed) {
+    label = makeText(content, color);
+    label.eventMode = "none";
+    label.zIndex = 30;
+    label._viraColor = color;
+    overlayLabels.set(key, label);
+  } else {
+    if (label.text !== content) label.text = content;
+    if (label._viraColor !== color) {
+      label._viraColor = color;
+      label.style.fill = color;
+    }
+  }
+  label._viraFrame = overlayFrame;
   label.position.set(point.x + offset.x, point.y + offset.y);
-  label.eventMode = "none";
-  label.zIndex = 30;
   overlayContainer.addChild(label);
+  return label;
 }
 
 function warningEntries(preview, anchor, collisions) {
@@ -724,8 +788,11 @@ function warningEntries(preview, anchor, collisions) {
   return warnings;
 }
 
-function drawPreview(graphics, preview) {
+function drawPreview(graphics, key, preview) {
+  let coastIndex = 0;
   for (const projection of preview?.targetedCoasts ?? []) {
+    const slot = `${key}:coast:${coastIndex}`;
+    coastIndex += 1;
     const points = pointsFrom(projection.path ?? []);
     strokePath(trajectoryGraphics, points, {
       color: COLORS.pathShadow,
@@ -740,7 +807,8 @@ function drawPreview(graphics, preview) {
       dashed: true,
     });
     if (points.length) {
-      addLabel(
+      acquireLabel(
+        slot,
         `${projection.label ?? "Target"} · COAST`,
         points.at(-1),
         COLORS.marker,
@@ -788,7 +856,7 @@ function drawPreview(graphics, preview) {
     });
 
     const size = destinationSize(preview);
-    addDestinationGhost(preview, finalPoint, facing, size);
+    addDestinationGhost(preview, key, finalPoint, facing, size);
     drawDestinationFacing(graphics, finalPoint, facing, size.height);
   }
 
@@ -797,7 +865,9 @@ function drawPreview(graphics, preview) {
     : preview?.firingArc
     ? [preview.firingArc]
     : [];
-  for (const arc of arcs) drawArc(graphics, arc, finalPoint, facing);
+  for (const [index, arc] of arcs.entries()) {
+    drawArc(graphics, arc, finalPoint, facing, `${key}:arc:${index}`);
+  }
 
   const suppliedCollisions = preview?.collisions ?? preview?.collisionPoints ??
     preview?.sweptCollisions ?? [];
@@ -809,14 +879,14 @@ function drawPreview(graphics, preview) {
   warningEntries(preview, finalPoint, collisions).forEach((warning, index) => {
     const kind = String(warning.kind).toLowerCase();
     const color = kind.includes("wall") ? COLORS.wall : COLORS.overspeed;
-    addLabel(warning.message, warning.position, color, {
+    acquireLabel(`${key}:warning:${index}`, warning.message, warning.position, color, {
       x: 12,
       y: -14 + (index * 19),
     });
   });
 }
 
-function drawLastKnown(graphics, marker) {
+function drawLastKnown(graphics, marker, key) {
   const point = finitePoint(marker?.position);
   if (!point) return;
   const radius = Math.max(9, gridSize() * 0.14);
@@ -835,15 +905,29 @@ function drawLastKnown(graphics, marker) {
     { x: point.x, y: point.y + radius },
   ], { color: COLORS.marker, width: 1, alpha: 0.75, dashed: true });
   drawFacing(graphics, point, marker.facing, radius * 1.8, COLORS.marker);
-  addLabel(marker.label, point, COLORS.marker, { x: radius + 5, y: -radius });
+  acquireLabel(key, marker.label, point, COLORS.marker, {
+    x: radius + 5,
+    y: -radius,
+  });
 }
 
-function clearLabels() {
-  if (!overlayContainer) return;
-  for (const child of Array.from(overlayContainer.children)) {
-    if (child === overlayGraphics) continue;
-    overlayContainer.removeChild(child);
-    child.destroy?.({ children: true });
+function beginOverlayFrame() {
+  overlayFrame += 1;
+}
+
+/** Destroys the pooled labels and ghosts the finished frame no longer draws. */
+function endOverlayFrame() {
+  for (const [key, label] of overlayLabels) {
+    if (label._viraFrame === overlayFrame) continue;
+    overlayLabels.delete(key);
+    overlayContainer?.removeChild(label);
+    label.destroy?.({ children: true });
+  }
+  for (const [key, ghost] of overlayGhosts) {
+    if (ghost._viraFrame === overlayFrame) continue;
+    overlayGhosts.delete(key);
+    overlayContainer?.removeChild(ghost);
+    ghost.destroy?.();
   }
 }
 
@@ -856,12 +940,15 @@ function redraw() {
   trajectoryGraphics.clear();
   trajectoryGraphics.elevation = Number(canvas.level?.elevation?.base ?? 0);
   canvas.primary.sortDirty = true;
-  clearLabels();
+  beginOverlayFrame();
   refreshTokenShields();
-  for (const preview of previews.values()) {
-    drawPreview(overlayGraphics, preview);
+  for (const [key, preview] of previews) {
+    drawPreview(overlayGraphics, key, preview);
   }
-  for (const marker of lastKnownMarkers) drawLastKnown(overlayGraphics, marker);
+  lastKnownMarkers.forEach((marker, index) => {
+    drawLastKnown(overlayGraphics, marker, `marker:${marker?.targetUuid ?? index}`);
+  });
+  endOverlayFrame();
 }
 
 function createContainer() {
@@ -903,6 +990,8 @@ function destroyContainer() {
     overlayContainer.destroy({ children: true });
   }
   overlayContainer = null;
+  overlayLabels.clear();
+  overlayGhosts.clear();
   destroyTokenShields();
   overlayGraphics = null;
 }
@@ -946,6 +1035,25 @@ export function clearMovementPreview(sourceUuid) {
   redraw();
 }
 
+/**
+ * A deleted token is only findable by the identifiers it left in the preview
+ * map: the entry key (`uuid` or `id`) plus whatever the preview itself carries.
+ * Trajectories would otherwise keep painting the dead token's path.
+ */
+function forgetTokenPreviews(document) {
+  const identifiers = new Set(
+    [document?.id, document?.uuid].filter(Boolean).map(String),
+  );
+  if (!identifiers.size) return;
+  for (const [key, preview] of previews) {
+    const belongs = [key, preview?.sourceUuid, preview?.tokenUuid, preview?.id]
+      .some((identifier) =>
+        identifier != null && identifiers.has(String(identifier))
+      );
+    if (belongs) previews.delete(key);
+  }
+}
+
 /** Install event-driven canvas overlays and permission-safe ship visibility. */
 export function registerCanvasIntegration() {
   registerShipVisibility({
@@ -973,6 +1081,7 @@ export function registerCanvasIntegration() {
   });
   registerHook("deleteToken", (document) => {
     removeTokenShield(document?.id);
+    forgetTokenPreviews(document);
     redraw();
   });
   registerHook("updateActor", (actor) => {

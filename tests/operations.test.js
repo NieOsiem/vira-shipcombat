@@ -421,6 +421,38 @@ describe("authority invariants", () => {
     }]);
   });
 
+  test("seating an operator after Start seeds only its absent pool entry", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "active";
+    // The Loader was not aboard when Start ran, so it still has no Order entry.
+    const loader = "canadensis-loader-general";
+    source.state.roster.crew = source.state.roster.crew.filter((entry) =>
+      entry.operatorId !== loader
+    );
+    source.state.resources = {
+      actions: { [PILOT]: 1, [GUNNER]: 3 },
+      orders: { [DAMAGE_CONTROL]: 1 },
+    };
+
+    const result = executeShipOperation(
+      request("setRoster", SOURCE, [], {
+        roster: {
+          command: clone(source.state.roster.command),
+          crew: [
+            ...clone(source.state.roster.crew),
+            { operatorId: loader, slot: 1 },
+          ],
+        },
+      }),
+      context([[SOURCE, source]]),
+    );
+
+    expect(result.shipStates[SOURCE].resources).toEqual({
+      actions: { [PILOT]: 1, [GUNNER]: 3 },
+      orders: { [DAMAGE_CONTROL]: 1, [loader]: 1 },
+    });
+  });
+
   test("resource refresh reports but never rejects a user bound on another ship", () => {
     const source = ship(SOURCE);
     const target = ship(TARGET_A);
@@ -682,6 +714,307 @@ describe("authority invariants", () => {
         before,
       );
     }
+  });
+  test("a declared target AC cannot stand in for the target's own AC", () => {
+    const source = ship(SOURCE);
+    const target = ship(TARGET_A);
+    source.state.phase = "active";
+    target.token.y = -20;
+    assignedUser(source, GUNNER, "gunner-user");
+    source.state.resources.actions[GUNNER] = 1;
+    source.state.tracks[trackKey(TARGET_A)] = {
+      state: "targeted",
+      passiveContact: true,
+      firingSolution: false,
+      effectiveAc: 9,
+      remembered: {},
+      jams: [],
+    };
+    const weaponId = CANADENSIS_IDS.railgun;
+    source.state.weapons[weaponId].readiness = 1;
+
+    const fire = (payload) =>
+      executeShipOperation(
+        request("attack", SOURCE, [TARGET_A], {
+          operatorId: GUNNER,
+          weaponId,
+          barrageRounds: 1,
+          ...payload,
+        }),
+        context([[SOURCE, source], [TARGET_A, target]], {
+          isGM: false,
+          userId: "gunner-user",
+          rollD20: () => 10,
+        }),
+      );
+
+    const honest = fire({});
+    const spoofed = fire({
+      ac: 0,
+      targetAc: 0,
+      declaredAc: 0,
+      finalAc: 0,
+      actualTargetAc: 0,
+      effectiveAc: 0,
+      targets: { [TARGET_A]: { ac: 0, targetAc: 0, effectiveAc: 0 } },
+    });
+
+    // §10.9/§10.10: the roll and its margin come from the target's own AC, while the card
+    // still shows the AC the observer's track knows.
+    expect(spoofed.publicEvents[0].detail).toEqual(honest.publicEvents[0].detail);
+    const { roll } = spoofed.publicEvents[0].detail;
+    expect(roll.ac).toBe(target.config.ac);
+    expect(roll.margin).toBe(roll.total - target.config.ac);
+    expect(roll.hit).toBe(roll.margin >= 0);
+    expect(spoofed.shipStates[SOURCE].tracks[trackKey(TARGET_A)].effectiveAc)
+      .toBe(9);
+  });
+
+  test("an acquired track reveals the target's own AC, not a declared one", () => {
+    const source = ship(SOURCE);
+    const target = ship(TARGET_A);
+    source.state.phase = "active";
+    target.token.y = -20;
+    assignedUser(source, GUNNER, "gunner-user");
+    source.state.resources.actions[GUNNER] = 1;
+    source.state.tracks[trackKey(TARGET_A)] = {
+      targetUuid: TARGET_A,
+      state: "contact",
+      passiveContact: true,
+      remembered: {},
+      jams: [],
+    };
+
+    const result = executeShipOperation(
+      request("acquire", SOURCE, [TARGET_A], {
+        operatorId: GUNNER,
+        telemetry: {
+          effectiveAc: 1,
+          position: { x: 999, y: 999 },
+          velocity: { x: 99, y: 99 },
+        },
+      }),
+      context([[SOURCE, source], [TARGET_A, target]], {
+        isGM: false,
+        userId: "gunner-user",
+      }),
+    );
+
+    // §8.10: acquisition reveals the target's current effective attack AC and velocity.
+    expect(result.shipStates[SOURCE].tracks[trackKey(TARGET_A)]).toMatchObject({
+      state: "targeted",
+      effectiveAc: target.config.ac,
+      lastKnown: { position: { x: 0, y: -20 } },
+    });
+  });
+
+  test("an attack on two targets is rejected before spending or rolling", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "active";
+    assignedUser(source, GUNNER, "gunner-user");
+    source.state.resources.actions[GUNNER] = 1;
+    const weaponId = CANADENSIS_IDS.railgun;
+    source.state.weapons[weaponId].readiness = 1;
+    let rolls = 0;
+    const authority = context(
+      [[SOURCE, source], [TARGET_A, ship(TARGET_A)], [TARGET_B, ship(TARGET_B)]],
+      {
+        isGM: false,
+        userId: "gunner-user",
+        rollD20: () => {
+          rolls += 1;
+          return 20;
+        },
+      },
+    );
+    const before = json(authority);
+
+    // §9 and decision 46: one Action fires one weapon or Barrage at one target, so a
+    // second target is rejected up front instead of spending a second Action.
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("attack", SOURCE, [TARGET_A, TARGET_B], {
+          operatorId: GUNNER,
+          weaponId,
+          barrageRounds: 1,
+        }),
+        authority,
+      )
+    )).toBe("SINGLE_TARGET_REQUIRED");
+    expect(rolls).toBe(0);
+    expect(json(authority)).toBe(before);
+  });
+
+  test("releasing an unknown subsystem control is rejected without touching controls", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "active";
+    assignedUser(source, PILOT, "pilot-user");
+    source.state.controls.helm = { operatorId: PILOT };
+    const authority = context([[SOURCE, source]], {
+      isGM: false,
+      userId: "pilot-user",
+    });
+    const before = json(authority);
+
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("releaseControl", SOURCE, [], {
+          operatorId: PILOT,
+          control: "reactor",
+        }),
+        authority,
+      )
+    )).toBe("INVALID_CONTROL");
+    expect(json(authority)).toBe(before);
+    expect(source.state.controls.helm).toEqual({ operatorId: PILOT });
+  });
+});
+
+describe("ship destruction and fate", () => {
+  function wrecked(mutate = () => {}) {
+    const record = ship(SOURCE);
+    record.state.phase = "active";
+    record.state.hull = 0;
+    record.state.resources.actions[PILOT] = 3;
+    assignedUser(record, PILOT, "pilot-user");
+    mutate(record);
+    return record;
+  }
+
+  function wreckContext(record) {
+    return context([[SOURCE, record], [TARGET_A, ship(TARGET_A)]], {
+      isGM: false,
+      userId: "pilot-user",
+    });
+  }
+
+  test("a Hull-0 or fate-pending ship cannot begin new deliberate operations", () => {
+    const preparations = [
+      () => {},
+      (record) => {
+        record.state.pendingFate = {
+          status: "pending",
+          outcome: null,
+          reason: "important",
+        };
+      },
+      (record) => {
+        record.state.hull = 12;
+        record.state.pendingFate = {
+          status: "pending",
+          outcome: null,
+          reason: "important",
+        };
+      },
+    ];
+    const deliberate = [
+      ["spendResource", {}, []],
+      ["takeControl", { control: "helm" }, []],
+      ["attack", { weaponId: CANADENSIS_IDS.railgun }, [TARGET_A]],
+    ];
+
+    for (const prepare of preparations) {
+      const source = wrecked(prepare);
+      const authority = wreckContext(source);
+      const before = json(authority);
+      for (const [type, payload, targets] of deliberate) {
+        expect(errorCode(() =>
+          executeShipOperation(
+            request(type, SOURCE, targets, {
+              operatorId: PILOT,
+              ...payload,
+            }),
+            authority,
+          )
+        )).toBe("SHIP_DESTROYED");
+      }
+      expect(json(authority)).toBe(before);
+      expect(source.state.resources.actions[PILOT]).toBe(3);
+    }
+  });
+
+  test("a fate-pending wreck still accepts GM recovery and lifecycle operations", () => {
+    const source = wrecked((record) => {
+      record.state.pendingFate = {
+        status: "pending",
+        outcome: null,
+        reason: "important",
+      };
+    });
+    const authority = context([[SOURCE, source]]);
+
+    const relocated = executeShipOperation(
+      request("admin.reposition", SOURCE, [], {
+        position: { x: 40, y: 40 },
+        facing: 90,
+      }),
+      authority,
+    );
+    expect(relocated.shipStates[SOURCE].pendingFate).toEqual({
+      status: "pending",
+      outcome: null,
+      reason: "important",
+    });
+    expect(relocated.tokenUpdates[SOURCE]).toMatchObject({
+      x: 40,
+      y: 40,
+      rotation: 90,
+    });
+  });
+
+  test("the GM can resolve an important ship's fate to destroyed or disabled", () => {
+    const fateOf = (payload, prepare = () => {}) => {
+      const source = wrecked((record) => {
+        record.state.pendingFate = {
+          status: "pending",
+          outcome: null,
+          reason: "important",
+        };
+        prepare(record);
+      });
+      return executeShipOperation(
+        request("resolveFate", SOURCE, [], payload),
+        context([[SOURCE, source]]),
+      );
+    };
+
+    for (const outcome of ["destroyed", "disabled"]) {
+      const result = fateOf({ outcome });
+      expect(result.shipStates[SOURCE].pendingFate).toEqual({
+        status: "resolved",
+        outcome,
+        reason: "gm",
+      });
+      expect(result.gmEvents[0].detail).toEqual(
+        result.shipStates[SOURCE].pendingFate,
+      );
+    }
+
+    // §19.1 defaults are unchanged when the GM states no outcome.
+    expect(fateOf({}).shipStates[SOURCE].pendingFate).toEqual({
+      status: "pending",
+      outcome: null,
+      reason: "important",
+    });
+    expect(fateOf({ nonLethal: true }).shipStates[SOURCE].pendingFate).toEqual({
+      status: "resolved",
+      outcome: "disabled",
+      reason: "nonLethal",
+    });
+    expect(
+      fateOf({}, (record) => {
+        record.config.fatePolicy = "disposable";
+      }).shipStates[SOURCE].pendingFate,
+    ).toEqual({ status: "resolved", outcome: "destroyed", reason: "fatePolicy" });
+
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("resolveFate", SOURCE, [], { outcome: "surrender" }),
+        context([[SOURCE, wrecked((record) => {
+          record.state.pendingFate = { status: "pending" };
+        })]]),
+      )
+    )).toBe("INVALID_FATE_OUTCOME");
   });
 });
 
@@ -1125,14 +1458,80 @@ describe("movement-driven passive detection", () => {
     });
   });
 
-  test("a move beyond passive range leaves the observer's track as it was", () => {
+  test("a move beyond passive range downgrades the Contact to a stale marker", () => {
     const range = passiveRange();
     const { result, track } = moveContact(range, range * 0.2, range * 3);
 
-    expect(result.changedUuids).toEqual([TARGET_A]);
+    // §8.8 / decision 31: a passive-only Contact is live only while passive detection
+    // remains true, so leaving Passive Range ages it on the move instead of holding a
+    // live Contact at obsolete coordinates until the observer's next Start.
+    expect(result.changedUuids).toEqual([SOURCE, TARGET_A].sort());
     expect(track).toMatchObject({
+      state: "undetected",
+      passiveContact: false,
+      lastKnown: { position: { x: range * 0.2, y: 0 }, stale: true },
+    });
+  });
+
+  test("a move beyond passive range keeps a Targeted track and an active-contact lifetime", () => {
+    const range = passiveRange();
+
+    const targetedObserver = ship(SOURCE);
+    const targetedMover = ship(TARGET_A);
+    targetedObserver.state.position = { x: 0, y: 0 };
+    targetedMover.state.position = { x: range * 0.2, y: 0 };
+    targetedObserver.state.tracks = {
+      [trackKey(TARGET_A)]: {
+        targetUuid: TARGET_A,
+        state: "targeted",
+        passiveContact: true,
+        firingSolution: true,
+        remembered: {},
+        jams: [],
+      },
+    };
+    const targeted = executeShipOperation(
+      request("reposition", TARGET_A, [SOURCE], {
+        position: { x: range * 3, y: 0 },
+        facing: 0,
+        resetVelocity: true,
+      }),
+      context([[SOURCE, targetedObserver], [TARGET_A, targetedMover]]),
+    );
+
+    // §8.11: leaving Passive Range keeps a Targeted track until the observer's next Start.
+    const retained = targeted.shipStates[SOURCE].tracks[trackKey(TARGET_A)];
+    expect(retained).toMatchObject({ state: "targeted", firingSolution: true });
+    expect(retained.outsideRangeUntilTurnKey).toBeDefined();
+
+    const lifetimeObserver = ship(SOURCE);
+    const lifetimeMover = ship(TARGET_A);
+    lifetimeObserver.state.position = { x: 0, y: 0 };
+    lifetimeMover.state.position = { x: range * 0.2, y: 0 };
+    lifetimeObserver.state.tracks = {
+      [trackKey(TARGET_A)]: {
+        targetUuid: TARGET_A,
+        state: "contact",
+        passiveContact: false,
+        activeUntilTurnKey: "next-start",
+        remembered: {},
+        jams: [],
+      },
+    };
+    const lifetime = executeShipOperation(
+      request("reposition", TARGET_A, [SOURCE], {
+        position: { x: range * 3, y: 0 },
+        facing: 0,
+        resetVelocity: true,
+      }),
+      context([[SOURCE, lifetimeObserver], [TARGET_A, lifetimeMover]]),
+    );
+
+    // §8.12: a still-valid active-contact lifetime keeps the Contact alive out of range.
+    expect(lifetime.shipStates[SOURCE].tracks[trackKey(TARGET_A)]).toMatchObject({
       state: "contact",
-      lastKnown: { position: { x: range * 0.2, y: 0 } },
+      passiveContact: false,
+      activeUntilTurnKey: "next-start",
     });
   });
 

@@ -7,6 +7,7 @@ import {
   sweptCircleVsCircle,
   sweptCircleVsSegment,
 } from "../scripts/rules/geometry.js";
+import { bearingDegrees } from "../scripts/rules/math.js";
 import {
   applyManeuver,
   armEvasion,
@@ -350,6 +351,49 @@ describe("continuous collision geometry", () => {
     expect(wallContact.initialOverlap).toBe(false);
   });
 
+  test("an overlapping circle pair only collides while its normal motion closes", () => {
+    const active = { x: 1 - 1e-6, y: 0 };
+    const obstacle = { x: 0, y: 0 };
+    const sweep = (end) => sweptCircleVsCircle(active, end, 0.5, obstacle, { ...obstacle }, 0.5, "active", "obstacle");
+
+    expect(sweep({ ...active })).toBeNull();
+    expect(sweep({ x: active.x + 1, y: 0 })).toBeNull();
+
+    const closing = sweep({ x: active.x - 0.5, y: 0 });
+    expect(closing).not.toBeNull();
+    expect(closing.fraction).toBe(0);
+    expect(closing.initialOverlap).toBe(true);
+    expect(closing.closing).toBe(true);
+
+    const tangent = sweptCircleVsCircle(
+      { x: 1, y: 0 },
+      { x: 1, y: 0 },
+      0.5,
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      0.5,
+      "active",
+      "obstacle",
+    );
+    expect(tangent).toBeNull();
+  });
+
+  test("a wall only collides with a closing sweep even when the sweep starts inside the wall radius", () => {
+    const wallStart = { x: 3, y: -5 };
+    const wallEnd = { x: 3, y: 5 };
+    const insideRadius = { x: 2.5, y: 0 };
+    const sweep = (end) => sweptCircleVsSegment(insideRadius, end, 1, wallStart, wallEnd, { id: "bulkhead" });
+
+    expect(sweep({ ...insideRadius })).toBeNull();
+    expect(sweep({ x: 0, y: 0 })).toBeNull();
+
+    const closing = sweep({ x: 3.5, y: 0 });
+    expect(closing).not.toBeNull();
+    expect(closing.fraction).toBe(0);
+    expect(closing.initialOverlap).toBe(true);
+    expect(closing.closing).toBe(true);
+  });
+
   test("coincident circle normals are stable, unit length, and antisymmetric by ship order", () => {
     const first = stableCoincidentNormal("alpha", "beta");
     const repeated = stableCoincidentNormal("alpha", "beta");
@@ -408,6 +452,29 @@ describe("arcs, sectors, and impact consequences", () => {
     expect(isInFiringArc({ ...deepClone(arc), target: pointAtBearing(-25.001) })).toBe(false);
     expect(isInFiringArc({ ...deepClone(arc), target: pointAtBearing(45.001) })).toBe(false);
     expect(isInFiringArc({ ...deepClone(arc), target: pointAtBearing(10), arcWidth: 0 })).toBe(true);
+  });
+
+  test("coincident bearings resolve from a supplied contact normal instead of North", () => {
+    const origin = { x: 4, y: -2 };
+    const coincident = { ...origin };
+
+    expect(bearingDegrees({ x: 0, y: 0 }, { x: 0, y: -1 })).toBe(0);
+    expectNear(bearingDegrees({ x: 0, y: 0 }, { x: 1, y: 0 }), 90);
+    expectNear(bearingDegrees({ x: 0, y: 0 }, { x: 0, y: 1 }), -180);
+    expectNear(bearingDegrees({ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }), 90);
+
+    expect(bearingDegrees(origin, coincident)).toBe(0);
+    expect(bearingDegrees(origin, coincident, { x: 0, y: -1 })).toBe(0);
+    expectNear(bearingDegrees(origin, coincident, { x: 2, y: 0 }), 90);
+    expectNear(bearingDegrees(origin, coincident, { x: 0, y: 3 }), -180);
+    expect(bearingDegrees(origin, coincident, { x: 0, y: 0 })).toBe(0);
+    expect(bearingDegrees(origin, coincident, { x: Number.NaN, y: 1 })).toBe(0);
+
+    const arc = { origin, target: coincident, facing: 0, arcWidth: 20 };
+    expect(isInFiringArc({ ...arc, coincidentNormal: { x: 0, y: -1 } })).toBe(true);
+    expect(isInFiringArc({ ...arc, coincidentNormal: { x: 0, y: 1 } })).toBe(false);
+    expect(struckSector({ target: origin, source: coincident, facing: 0, coincidentNormal: { x: 1, y: 0 } })).toBe("starboard");
+    expect(struckSector({ target: origin, source: coincident, facing: 0, coincidentNormal: { x: -1, y: 0 } })).toBe("port");
   });
 
   test("struck-sector boundaries have stable half-open ownership", () => {

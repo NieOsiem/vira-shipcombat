@@ -156,10 +156,20 @@ export function worldToLocal(world, facing) {
   return { x: dot(world, starboardVector(facing)), y: dot(world, forwardVector(facing)) };
 }
 
-/** @param {{x:number,y:number}} from @param {{x:number,y:number}} to @returns {number} */
-export function bearingDegrees(from, to) {
+/** @param {{x:number,y:number}} from @param {{x:number,y:number}} to @param {{x:number,y:number}} [coincidentNormal] @returns {number} */
+export function bearingDegrees(from, to, coincidentNormal) {
   const delta = subtract(to, from);
-  if (magnitudeSquared(delta) <= EPSILON * EPSILON) return 0;
+  if (magnitudeSquared(delta) <= EPSILON * EPSILON) {
+    if (
+      coincidentNormal
+      && Number.isFinite(coincidentNormal.x)
+      && Number.isFinite(coincidentNormal.y)
+      && magnitudeSquared(coincidentNormal) > EPSILON * EPSILON
+    ) {
+      return normalizeAngle(toDegrees(Math.atan2(coincidentNormal.x, -coincidentNormal.y)));
+    }
+    return 0;
+  }
   return normalizeAngle(toDegrees(Math.atan2(delta.x, -delta.y)));
 }
 

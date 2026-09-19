@@ -205,5 +205,56 @@ export function buildOperatorProfileFromActor(actor) {
     ratings: crewData.ratings,
     img: actor.img ?? actor.prototypeToken?.texture?.src ?? null,
     capabilities: crewData.capabilities,
+    incapacitated: readActorIncapacitation(actor),
   };
+}
+
+/** Conditions that remove a crew member from the ship's stations in dnd5e 5.x. */
+const INCAPACITATING_STATUSES = Object.freeze(["dead", "unconscious"]);
+
+function hasStatus(actor, statuses) {
+  const active = actor?.statuses ?? [];
+  if (typeof active?.has === "function") {
+    return statuses.some((status) => active.has(status));
+  }
+  const list = Array.isArray(active) ? active : Array.from(active ?? []);
+  return statuses.some((status) => list.includes(status));
+}
+
+/**
+ * Whether a linked crew Actor cannot operate a station. Reads the condition the Actor carries
+ * directly: an applied `dead`/`unconscious` status, or a depleted HP pool (an Actor with no HP block
+ * at all is never reported incapacitated).
+ * @param {object} actor
+ * @returns {boolean}
+ */
+export function readActorIncapacitation(actor) {
+  if (!actor || typeof actor !== "object") return false;
+  if (hasStatus(actor, INCAPACITATING_STATUSES)) return true;
+  const value = Number(actor.system?.attributes?.hp?.value);
+  return Number.isFinite(value) && value <= 0;
+}
+
+/**
+ * Re-derive `config.operators[*].incapacitated` from the crew Actors the ship is currently linked to.
+ * A crew member killed or dropped mid-session therefore stops operating from the next Start Phase.
+ * Operators without a linked Actor, and operators whose Actor cannot be resolved, keep the flag they
+ * already carry; `active` and `disconnected` are never touched.
+ * @param {object} config ship configuration, mutated in place
+ * @param {(actorId: string) => object|null|undefined} lookup resolves an Actor id to a live Actor
+ * @returns {boolean} whether any operator's flag changed
+ */
+export function refreshOperatorIncapacitation(config, lookup) {
+  const operators = Array.isArray(config?.operators) ? config.operators : [];
+  let changed = false;
+  for (const operator of operators) {
+    if (!operator?.actorId) continue;
+    const actor = lookup?.(operator.actorId);
+    if (!actor) continue;
+    const incapacitated = readActorIncapacitation(actor);
+    if (operator.incapacitated === incapacitated) continue;
+    operator.incapacitated = incapacitated;
+    changed = true;
+  }
+  return changed;
 }

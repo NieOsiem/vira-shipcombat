@@ -1,5 +1,7 @@
 import { RuleViolation } from "../constants.js";
 import { resolveAttack } from "./damage.js";
+import { stableCoincidentNormal } from "./geometry.js";
+import { bearingDegrees } from "./math.js";
 import { trackKey } from "./sensors.js";
 
 const PROJECTILE_MULTIPLIERS = Object.freeze({
@@ -69,16 +71,13 @@ function normalizeDegrees(value) {
   return Object.is(normalized, -0) ? 0 : normalized;
 }
 
-function bearingDegrees(from, to) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  if (Math.hypot(dx, dy) <= EPSILON) {
-    throw new RuleViolation(
-      "COINCIDENT_ATTACK_CENTERS",
-      "An attack bearing requires distinct ship centers.",
-    );
-  }
-  return normalizeDegrees(Math.atan2(dx, -dy) * 180 / Math.PI);
+/**
+ * §10.11: coincident ship centers still need a direction, so every client derives
+ * the same collision normal from the two stable token UUIDs instead of throwing.
+ * The direction runs from `firstUuid` to `secondUuid`.
+ */
+function coincidentNormal(firstUuid, secondUuid) {
+  return stableCoincidentNormal(firstUuid ?? "", secondUuid ?? "");
 }
 
 function projectileKey(value) {
@@ -252,15 +251,11 @@ function barrageProfile(profile, declaration) {
   return selected;
 }
 
-export function getEffectiveAttackAC(config, state, declaredAc) {
-  if (Number.isFinite(declaredAc)) return declaredAc;
+/** @param {object} config @param {object} state @returns {number} */
+export function getEffectiveAttackAC(config, state) {
   const base = finite(config?.ac);
   return base +
     (state?.evasion?.armed === true ? finite(config?.evasionAcBonus, 2) : 0);
-}
-
-function activeTargetAC(config, state, track, declaration) {
-  return getEffectiveAttackAC(config, state, declaration.targetAc);
 }
 
 function knownTargetAC(track, actual) {
@@ -780,7 +775,7 @@ export function calculateRelativeMotion(input) {
   };
 }
 
-/** @param {object} input @returns {boolean} */
+/** @param {{shooterPosition:object,targetPosition:object,shooterFacing:number,hardpointOrientation:number,arcWidth:number,coincidentNormal?:object}} input @returns {boolean} */
 export function isWithinFiringArc(input) {
   const width = finite(input.arcWidth, NaN);
   if (!Number.isFinite(width) || width < 0 || width > 360) {
@@ -793,6 +788,7 @@ export function isWithinFiringArc(input) {
   const bearing = bearingDegrees(
     vector(input.shooterPosition),
     vector(input.targetPosition),
+    vector(input.coincidentNormal),
   );
   const center = normalizeDegrees(
     finite(input.shooterFacing) + finite(input.hardpointOrientation),
@@ -800,11 +796,12 @@ export function isWithinFiringArc(input) {
   return Math.abs(normalizeDegrees(bearing - center)) <= width / 2 + EPSILON;
 }
 
-/** @param {object} input @returns {'fore'|'port'|'starboard'|'aft'} */
+/** @param {{attackerPosition:object,targetPosition:object,targetFacing:number,coincidentNormal?:object}} input @returns {'fore'|'port'|'starboard'|'aft'} */
 export function calculateStruckSector(input) {
   const bearing = bearingDegrees(
     vector(input.targetPosition),
     vector(input.attackerPosition),
+    vector(input.coincidentNormal),
   );
   const relative = normalizeDegrees(bearing - finite(input.targetFacing));
   if (relative >= -45 && relative < 45) return "fore";
@@ -840,6 +837,8 @@ function makePreview(context) {
   } = context;
   const violations = [];
   const targetId = declaration.targetUuid ?? declaration.targetId;
+  const attackerToTarget = coincidentNormal(declaration.attackerUuid, targetId);
+  const targetToAttacker = coincidentNormal(targetId, declaration.attackerUuid);
   const operatorId = declaration.operatorId;
   const track = targetTrack(attackerState, targetId);
   const weapon = weaponById(attackerConfig, declaration.weaponId);
@@ -1032,6 +1031,7 @@ function makePreview(context) {
     facing: finite(declaration.attackerFacing, finite(attackerState?.facing)),
     arcCenter: hardpointOrientation,
     arcWidth: finite(profile.arc),
+    coincidentNormal: attackerToTarget,
   };
   const arcValid = typeof helpers.isInFiringArc === "function"
     ? helpers.isInFiringArc(arcInput) === true
@@ -1041,6 +1041,7 @@ function makePreview(context) {
       shooterFacing: arcInput.facing,
       hardpointOrientation: arcInput.arcCenter,
       arcWidth: arcInput.arcWidth,
+      coincidentNormal: attackerToTarget,
     });
   if (!arcValid) {
     violations.push(
@@ -1064,6 +1065,7 @@ function makePreview(context) {
     target: targetPosition,
     source: shooterPosition,
     facing: finite(declaration.targetFacing, finite(targetState?.facing)),
+    coincidentNormal: targetToAttacker,
   };
   const sector = typeof helpers.struckSector === "function"
     ? helpers.struckSector(sectorInput)
@@ -1071,6 +1073,7 @@ function makePreview(context) {
       attackerPosition: sectorInput.source,
       targetPosition: sectorInput.target,
       targetFacing: sectorInput.facing,
+      coincidentNormal: targetToAttacker,
     });
   const relativeMotion = calculateRelativeMotion({
     shooterPosition,
@@ -1158,12 +1161,7 @@ function makePreview(context) {
     : localSensorFault(attackerConfig, attackerState);
   const jamModifier = activeJamModifier(track);
 
-  const targetAc = activeTargetAC(
-    targetConfig,
-    targetState,
-    track,
-    declaration,
-  );
+  const targetAc = getEffectiveAttackAC(targetConfig, targetState);
   const sensorFaultModifier = finite(
     sensorFault.activeModifier,
     finite(sensorFault.ewModifier),
@@ -1361,7 +1359,8 @@ function makePreview(context) {
     struckSector: sector,
     distance,
     relativeBearing: (normalizeDegrees(
-      bearingDegrees(shooterPosition, targetPosition) - arcInput.facing,
+      bearingDegrees(shooterPosition, targetPosition, attackerToTarget) -
+        arcInput.facing,
     ) + 360) % 360,
     range,
     relativeMotion,

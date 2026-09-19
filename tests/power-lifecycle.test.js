@@ -10,6 +10,7 @@ import {
   applyMaintainedOverclockHeat,
   applyPowerShedding,
   commitPowerRoute,
+  getPowerState,
   previewPowerRoute,
 } from "../scripts/rules/power.js";
 import { applyConditionTiers, conditionKey } from "../scripts/rules/conditions.js";
@@ -342,6 +343,169 @@ describe("Power routing and weapon lifecycle", () => {
       mode: "nominal",
       bootCounter: 0,
     });
+  });
+
+  test("a Destroyed Emitter or Sensor at an overclock tier generates no Overclock Heat", () => {
+    const cases = [
+      {
+        system: "shields",
+        allocation: { engines: 2, shields: 4, sensors: 2, cooling: 1, weapons: 3 },
+        fault: (config) =>
+          conditionKey({
+            kind: "fault",
+            channelId: "shieldEmitterDamage",
+            componentId: config.components.shield.id,
+            sector: "fore",
+          }),
+      },
+      {
+        system: "sensors",
+        allocation: { engines: 3, shields: 3, sensors: 3, cooling: 0, weapons: 3 },
+        fault: (config) =>
+          conditionKey({
+            kind: "fault",
+            channelId: "sensorFault",
+            componentId: config.components.sensor.id,
+          }),
+      },
+      {
+        system: "cooling",
+        configure: (config) => {
+          const tier = config.components.cooling.tiers.find(({ power }) =>
+            power === 3
+          );
+          Object.assign(tier, { overclock: true, overclockHeat: 2 });
+        },
+        allocation: { engines: 1, shields: 3, sensors: 2, cooling: 3, weapons: 3 },
+        fault: (config) =>
+          conditionKey({
+            kind: "fault",
+            channelId: "coolingFailure",
+            componentId: config.components.cooling.id,
+          }),
+      },
+    ];
+
+    for (const { system, configure, allocation, fault } of cases) {
+      const { config, state } = freshShip(configure);
+      commitPowerRoute(config, state, clone({ allocation }));
+      expect(applyMaintainedOverclockHeat(config, state).sources).toEqual([
+        { system, heat: 2 },
+      ]);
+
+      state.heat = 0;
+      const destroyed = applyConditionTiers(config, state, {
+        conditionId: fault(config),
+        tiers: 4,
+      });
+      expect(destroyed.applications[0].after).toBe("destroyed");
+
+      state.phase = "start";
+      const maintained = runStartPhase(config, state).events.find(
+        ({ type }) => type === "maintainedOverclockHeat",
+      );
+      expect(maintained).toMatchObject({ heatAdded: 0, sources: [] });
+      expect(state.heat).toBe(0);
+    }
+  });
+
+  test("a Major Weapon Malfunction drops an overclocked mount instead of wedging the ship", () => {
+    const { config, state } = freshShip();
+    const weaponId = CANADENSIS_IDS.portMacrocannon;
+    commitPowerRoute(
+      config,
+      state,
+      clone({
+        allocation: { weapons: 4 },
+        weaponStates: { [weaponId]: { mode: "overclock" } },
+      }),
+    );
+    expect(state.weapons[weaponId].mode).toBe("overclock");
+    expect(getPowerState(config, state).weaponReserved).toBe(4);
+
+    const applied = applyConditionTiers(config, state, {
+      conditionId: `weaponMalfunction:${weaponId}`,
+      tiers: 2,
+    });
+    expect(applied.applications[0].after).toBe("major");
+    expect(state.weapons[weaponId]).toMatchObject({
+      status: "online",
+      mode: "nominal",
+      readiness: 20,
+    });
+
+    expect(getPowerState(config, state).weaponReserved).toBe(3);
+    expect(applyPowerShedding(config, state).weaponReserved).toBe(3);
+
+    const before = clone(state);
+    captureViolation(
+      () =>
+        commitPowerRoute(
+          config,
+          state,
+          clone({ weaponStates: { [weaponId]: "overclock" } }),
+        ),
+      "WEAPON_OVERCLOCK_BLOCKED",
+    );
+    expect(state).toEqual(before);
+  });
+
+  test("Route Power stages only status, mode, and bootCounter", () => {
+    const { config, state } = freshShip();
+    const weaponId = CANADENSIS_IDS.portMacrocannon;
+    const before = clone(state);
+
+    captureViolation(
+      () =>
+        commitPowerRoute(
+          config,
+          state,
+          clone({
+            weaponStates: {
+              [weaponId]: { status: "online", readiness: 99, reloadProgress: 7 },
+            },
+          }),
+        ),
+      "INVALID_WEAPON_INPUT",
+    );
+    expect(state).toEqual(before);
+
+    commitPowerRoute(
+      config,
+      state,
+      clone({
+        weaponStates: {
+          [weaponId]: { status: "off", mode: "nominal", bootCounter: 0 },
+        },
+      }),
+    );
+    expect(state.weapons[weaponId]).toEqual({
+      status: "off",
+      mode: "nominal",
+      bootCounter: 0,
+      readiness: 20,
+      reloadProgress: 0,
+      reloadWork: null,
+    });
+  });
+
+  test("a stale power allocation degrades during passive inspection instead of rejecting every operation", () => {
+    const { config, state } = freshShip();
+    state.power.shields = 9;
+
+    expect(getPowerState(config, state).allocation.shields).toBe(9);
+    const shed = applyPowerShedding(config, state);
+    expect(shed.committed).toBeLessThanOrEqual(shed.ceilings.maximum);
+
+    captureViolation(
+      () =>
+        commitPowerRoute(
+          config,
+          state,
+          clone({ allocation: { shields: 9 } }),
+        ),
+      "INVALID_POWER_TIER",
+    );
   });
 });
 
@@ -988,6 +1152,19 @@ describe("ordered lifecycle transactions", () => {
       pendingFate: { status: "pending", outcome: null, reason: "important" },
       effects: [],
     });
+  });
+
+  test("End rewinds to Start with no retained turn key, so the next Start is accepted", () => {
+    const { config, state } = freshShip();
+    state.phase = "end";
+    state.turnKey = "round-7";
+
+    runEndPhase(config, state, clone({ random: [0], endKey: "round-7" }));
+
+    expect(state).toMatchObject({ phase: "start", turnKey: null });
+
+    runStartPhase(config, state, clone({ turnKey: "round-8" }));
+    expect(state).toMatchObject({ phase: "active", turnKey: "round-8" });
   });
 
   test("an injected mid-Start failure rolls back both the lifecycle transaction and dispatcher input", () => {

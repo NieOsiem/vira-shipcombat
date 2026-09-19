@@ -5,6 +5,13 @@ const CREW_ORDERS = 1;
 const ROSTER_SLOTS = ["command", "crew"];
 
 /**
+ * Subsystem controls a Control Action may claim. Only these names gate an
+ * operation (Helm movement, Power routing, Defense routing); a Control Action
+ * spent on any other name would silently buy nothing.
+ */
+export const MODULE_CONTROLS = Object.freeze(["helm", "power", "defense"]);
+
+/**
  * Conflict policies: an explicit roster edit rejects duplicate identities, every
  * other caller only reports them.
  */
@@ -399,6 +406,16 @@ function setResourceRemaining(draft, slot, operatorId, amount) {
   }
 }
 
+/** Resource pool a roster slot spends from: Command draws Actions, Crew draws Orders. */
+function resourcePoolKey(slot) {
+  return slot === "command" ? "actions" : "orders";
+}
+
+/** Canonical per-turn grant for a roster slot; the single source of seed amounts. */
+function resourceSeedAmount(slot) {
+  return slot === "command" ? COMMAND_ACTIONS : CREW_ORDERS;
+}
+
 function releaseOperatorControls(draft, operatorId) {
   const released = [];
   for (const [control, holder] of Object.entries(draft?.controls ?? {})) {
@@ -546,9 +563,11 @@ export function refreshResources(
   });
   const actions = {};
   const orders = {};
+  const pools = { actions, orders };
   for (const entry of normalized.assignments) {
-    if (entry.slot === "command") actions[entry.profile.id] = COMMAND_ACTIONS;
-    else orders[entry.profile.id] = CREW_ORDERS;
+    pools[resourcePoolKey(entry.slot)][entry.profile.id] = resourceSeedAmount(
+      entry.slot,
+    );
   }
 
   draft.roster = {
@@ -571,6 +590,35 @@ export function refreshResources(
     orders: { ...orders },
     conflicts: normalized.conflicts,
   };
+}
+
+/**
+ * Grant per-turn Action/Order pools to operators seated after the Start Phase
+ * already ran (a mid-combat recruit), using exactly the amounts `refreshResources`
+ * grants. Only ABSENT pool entries are written, so partly spent pools and every
+ * other operator's pool are left untouched. A missing roster or a state without
+ * `resources` seeds nothing instead of throwing.
+ * @param {object} state ship state, mutated in place
+ * @param {object} roster normalized or raw `{ command, crew }` roster
+ * @returns {{ seeded: { actions: Record<string, number>, orders: Record<string, number> } }} the entries written
+ */
+export function seedOperatorResources(state, roster) {
+  const resources = state?.resources;
+  const seeded = { actions: {}, orders: {} };
+  if (!resources || !roster || typeof roster !== "object") return { seeded };
+  for (const slot of ROSTER_SLOTS) {
+    const pool = resourcePoolKey(slot);
+    for (const assignment of rosterEntries(roster[slot])) {
+      const operatorId = assignmentOperatorId(assignment);
+      if (!operatorId) continue;
+      resources[pool] ??= {};
+      if (operatorId in resources[pool]) continue;
+      const amount = resourceSeedAmount(slot);
+      resources[pool][operatorId] = amount;
+      seeded[pool][operatorId] = amount;
+    }
+  }
+  return { seeded };
 }
 
 export function checkEligibility(config, draft, { operatorId, operation }) {
@@ -756,7 +804,12 @@ export function spendOperationResource(
   };
 }
 
-export function takeControl(config, draft, { operatorId, control, operation }) {
+/**
+ * Reject control identifiers this engine cannot gate: `helm`, `power`, and
+ * `defense` are the only controls with rule consequences (`requireControl`).
+ * @param {unknown} control control identifier from the operation payload
+ */
+function assertModuleControl(control) {
   if (typeof control !== "string" || !control) {
     throw new RuleViolation(
       "INVALID_CONTROL",
@@ -764,6 +817,19 @@ export function takeControl(config, draft, { operatorId, control, operation }) {
       { control },
     );
   }
+  if (!MODULE_CONTROLS.includes(control)) {
+    throw new RuleViolation(
+      "INVALID_CONTROL",
+      `Unknown subsystem control "${control}". Allowed controls: ${
+        MODULE_CONTROLS.join(", ")
+      }.`,
+      { control, allowed: MODULE_CONTROLS },
+    );
+  }
+}
+
+export function takeControl(config, draft, { operatorId, control, operation }) {
+  assertModuleControl(control);
   const eligibility = checkEligibility(config, draft, {
     operatorId,
     operation,

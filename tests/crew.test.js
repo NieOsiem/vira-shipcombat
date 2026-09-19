@@ -6,6 +6,8 @@ import {
   getActorCrewData,
   getPrimaryUserId,
   normalizeRatings,
+  readActorIncapacitation,
+  refreshOperatorIncapacitation,
 } from "../scripts/foundry/crew.js";
 import { buildShipConsoleView } from "../scripts/foundry/ship-view-model.js";
 import { CANADENSIS_CONFIG } from "../scripts/data/canadensis.js";
@@ -135,6 +137,50 @@ describe("crew qualification feature and profile extraction", () => {
     expect(profile.userId).toBe("player-1");
     expect(profile.ratings).toEqual({ piloting: 3, gunnery: 5, sensors: 9, engineering: 7 });
     expect(profile.img).toBe("icons/liara.png");
+    expect(profile.incapacitated).toBe(false);
+  });
+
+  test("incapacitation is derived from the linked crew actor's condition", () => {
+    const hp = (value) => ({ system: { attributes: { hp: { value } } } });
+
+    expect(readActorIncapacitation({ id: "a", ...hp(4) })).toBe(false);
+    expect(readActorIncapacitation({ id: "a", ...hp(0) })).toBe(true);
+    expect(readActorIncapacitation({ id: "a", statuses: new Set(["dead"]) })).toBe(true);
+    expect(readActorIncapacitation({ id: "a", statuses: ["unconscious"] })).toBe(true);
+    expect(readActorIncapacitation({ id: "a", statuses: new Set(["prone"]) })).toBe(false);
+    // An actor with no HP block at all (a non-dnd5e crew actor) is never reported incapacitated.
+    expect(readActorIncapacitation({ id: "a", type: "npc" })).toBe(false);
+    expect(readActorIncapacitation(null)).toBe(false);
+
+    expect(buildOperatorProfileFromActor({ id: "actor-dead", type: "character", ...hp(0) }).incapacitated).toBe(true);
+    expect(buildOperatorProfileFromActor({ id: "actor-live", type: "character", ...hp(6) }).incapacitated).toBe(false);
+  });
+
+  test("refreshOperatorIncapacitation re-derives linked operators and leaves the rest alone", () => {
+    const config = {
+      operators: [
+        { id: "pilot", actorId: "crew-pilot", active: true, disconnected: false },
+        { id: "gunner", actorId: "crew-gunner", incapacitated: true },
+        { id: "preset", incapacitated: false },
+        { id: "gone", actorId: "crew-gone", incapacitated: true },
+      ],
+    };
+    const actors = new Map([
+      ["crew-pilot", { id: "crew-pilot", system: { attributes: { hp: { value: 0 } } } }],
+      ["crew-gunner", { id: "crew-gunner", system: { attributes: { hp: { value: 7 } } } }],
+    ]);
+    const lookup = (actorId) => actors.get(actorId) ?? null;
+
+    expect(refreshOperatorIncapacitation(config, lookup)).toBe(true);
+    expect(config.operators[0].incapacitated).toBe(true);
+    expect(config.operators[0].active).toBe(true);
+    expect(config.operators[0].disconnected).toBe(false);
+    expect(config.operators[1].incapacitated).toBe(false);
+    // No linked actor, and an unresolvable one, keep whatever they already carried.
+    expect(config.operators[2].incapacitated).toBe(false);
+    expect(config.operators[3].incapacitated).toBe(true);
+
+    expect(refreshOperatorIncapacitation(config, lookup)).toBe(false);
   });
 });
 

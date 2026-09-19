@@ -1,7 +1,7 @@
 import { RuleViolation } from "../constants.js";
 
-const BREAKTHROUGH_FLOOR = 0.4;
 const COMPLETE_CUSTOM_TRAITS = new Set(["incendiary", "unreliable", "unstableoverclock"]);
+const GM_FATE_OUTCOMES = Object.freeze(new Set(["destroyed", "disabled"]));
 
 function number(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
@@ -12,10 +12,6 @@ function nonNegative(value, label) {
     throw new RuleViolation("INVALID_DAMAGE_PROFILE", `${label} must be a non-negative number.`, { label, value });
   }
   return value;
-}
-
-function roundHalfUp(value) {
-  return Math.floor(value + 0.5);
 }
 
 function traitKey(trait) {
@@ -51,55 +47,6 @@ function shieldBypass(traits) {
   };
 }
 
-function shieldDefinition(config) {
-  return config?.components?.shield ?? config?.shield ?? null;
-}
-
-function isBubbleShield(config) {
-  const shield = shieldDefinition(config);
-  return shield?.topology === "bubble" || shield?.type === "bubble";
-}
-
-function shieldSlot(config, sector) {
-  if (isBubbleShield(config)) return "bubble";
-  return sector;
-}
-
-function shieldHp(state, slot) {
-  return number(state?.shields?.hp?.[slot], 0);
-}
-
-function setShieldHp(state, slot, value) {
-  state.shields.hp[slot] = value;
-}
-
-function collapseCounter(state, slot) {
-  const collapse = state?.shields?.collapse;
-  if (typeof collapse === "number") return collapse;
-  return number(collapse?.[slot], 0);
-}
-
-function setCollapseCounter(config, state, slot) {
-  const delay = Math.max(0, Math.trunc(number(shieldDefinition(config)?.rechargeDelay, 0)));
-  if (typeof state.shields.collapse === "number") {
-    state.shields.collapse = delay;
-    return;
-  }
-  state.shields.collapse[slot] = delay;
-}
-
-function defaultShieldActive(config, state, slot) {
-  if (!state?.shields || !shieldDefinition(config)) return false;
-  if (number(state?.power?.shields, 0) < 1) return false;
-  return collapseCounter(state, slot) <= 0;
-}
-
-function armorAt(config, sector) {
-  const armor = config?.armor;
-  if (Number.isFinite(armor)) return Math.max(0, armor);
-  return Math.max(0, number(armor?.[sector], 0));
-}
-
 function pendingFate(config, nonLethal) {
   if (nonLethal) {
     return { status: "resolved", outcome: "disabled", reason: "nonLethal" };
@@ -108,6 +55,19 @@ function pendingFate(config, nonLethal) {
     return { status: "resolved", outcome: "destroyed", reason: "fatePolicy" };
   }
   return { status: "pending", outcome: null, reason: "important" };
+}
+
+/** §19.1: the GM's explicit choice for an important ship beats the defaults. */
+function gmFate(outcome) {
+  if (outcome == null) return null;
+  if (!GM_FATE_OUTCOMES.has(outcome)) {
+    throw new RuleViolation(
+      "INVALID_FATE_OUTCOME",
+      "A resolved ship fate must be destroyed or disabled.",
+      { outcome, allowed: [...GM_FATE_OUTCOMES] },
+    );
+  }
+  return { status: "resolved", outcome, reason: "gm" };
 }
 
 function validateConditionHelpers(input, helpers) {
@@ -141,6 +101,12 @@ function validateCustomTraits(traits, helpers) {
 
 /** @param {object} config @param {object} draft @param {object} input @param {object} [helpers] @returns {{public: object, gm: object}} */
 export function resolveProjectile(config, draft, input, helpers = {}) {
+  if (typeof helpers.resolveShieldDamage !== "function") {
+    throw new RuleViolation(
+      "MISSING_SHIELD_HELPER",
+      "Shield, Armor, and Hull damage resolution requires an injected resolveShieldDamage.",
+    );
+  }
   const sector = input.sector;
   const damage = input.damage ?? {};
   const shieldDamage = nonNegative(number(damage.shield, 0), "Shield Damage");
@@ -148,119 +114,57 @@ export function resolveProjectile(config, draft, input, helpers = {}) {
   const heatDamage = nonNegative(number(damage.heat, 0), "Heat Damage");
   const armorPiercing = nonNegative(number(input.armorPiercing, 0), "Armor Piercing");
   const bypass = input.bypass ?? shieldBypass(input.traits);
-  if (typeof helpers.resolveShieldDamage === "function") {
-    const hullBefore = Math.max(0, number(draft.hull, 0));
-    const heatBefore = number(draft.heat, 0);
-    const resolved = helpers.resolveShieldDamage(config, draft, {
-      sector,
-      shieldDamage: bypass.damageShield ? shieldDamage : 0,
-      hullDamage,
-      heatDamage,
-      armorPiercing,
-      bypass: { hull: bypass.hull, heat: bypass.heat },
-    });
-    const gm = {
-      sector: resolved.sector,
-      shield: {
-        active: resolved.fieldActive,
-        slot: resolved.sector,
-        before: resolved.shieldBefore,
-        activeBefore: resolved.activeShield,
-        damage: resolved.shieldDamageApplied,
-        after: resolved.shieldAfter,
-        collapsed: resolved.collapsed,
-      },
-      breakthrough: {
-        fraction: resolved.penetratingFraction,
-        hullFraction: resolved.hullFraction,
-        heatFraction: resolved.heatFraction,
-      },
-      armor: {
-        base: resolved.armor,
-        piercing: resolved.armorPiercing,
-        effective: resolved.effectiveArmor,
-      },
-      hull: {
-        listed: hullDamage,
-        transmitted: resolved.transmittedHull,
-        taken: resolved.hullDamageTaken,
-        before: hullBefore,
-        after: resolved.hullAfter,
-      },
-      heat: {
-        listed: heatDamage,
-        transmitted: resolved.transmittedHeat,
-        before: heatBefore,
-        after: resolved.heatAfter,
-      },
-      reducedHullToZero: hullBefore > 0 && resolved.hullAfter === 0,
-      shieldDetail: resolved,
-    };
-    return {
-      public: input.revealDamage === true
-        ? gm
-        : { sector: resolved.sector, shieldCollapsed: resolved.collapsed, hullReachedZero: resolved.hullAfter === 0 },
-      gm,
-    };
-  }
-
-  const slot = shieldSlot(config, sector);
-  const storedShieldBefore = shieldHp(draft, slot);
-  const active = typeof helpers.isShieldActive === "function"
-    ? helpers.isShieldActive(config, draft, { sector, slot }) === true
-    : defaultShieldActive(config, draft, slot);
-  const activeShieldBefore = active ? storedShieldBefore : 0;
-
-  let shieldAfter = storedShieldBefore;
-  let penetratingFraction = activeShieldBefore <= 0 ? 1 : 0;
-  let collapsed = false;
-  if (activeShieldBefore > 0 && bypass.damageShield && shieldDamage > 0) {
-    shieldAfter = Math.max(0, activeShieldBefore - shieldDamage);
-    setShieldHp(draft, slot, shieldAfter);
-    if (shieldAfter === 0) {
-      collapsed = true;
-      setCollapseCounter(config, draft, slot);
-      const rawFraction = Math.max(0, Math.min(1, 1 - activeShieldBefore / shieldDamage));
-      penetratingFraction = Math.max(BREAKTHROUGH_FLOOR, rawFraction);
-    }
-  }
-
-  const hullFraction = bypass.hull ? 1 : penetratingFraction;
-  const heatFraction = bypass.heat ? 1 : penetratingFraction;
-  const transmittedHull = roundHalfUp(hullDamage * hullFraction);
-  const transmittedHeat = roundHalfUp(heatDamage * heatFraction);
-  const armor = armorAt(config, sector);
-  const effectiveArmor = Math.max(0, armor - armorPiercing);
-  const hullTaken = Math.max(0, transmittedHull - effectiveArmor);
   const hullBefore = Math.max(0, number(draft.hull, 0));
-  const hullAfter = Math.max(0, hullBefore - hullTaken);
   const heatBefore = number(draft.heat, 0);
-  const heatAfter = heatBefore + transmittedHeat;
-  draft.hull = hullAfter;
-  draft.heat = heatAfter;
-
-  const gm = {
+  const resolved = helpers.resolveShieldDamage(config, draft, {
     sector,
+    shieldDamage: bypass.damageShield ? shieldDamage : 0,
+    hullDamage,
+    heatDamage,
+    armorPiercing,
+    bypass: { hull: bypass.hull, heat: bypass.heat },
+  });
+  const gm = {
+    sector: resolved.sector,
     shield: {
-      active,
-      slot,
-      before: storedShieldBefore,
-      activeBefore: activeShieldBefore,
-      damage: bypass.damageShield ? shieldDamage : 0,
-      after: shieldAfter,
-      collapsed,
+      active: resolved.fieldActive,
+      slot: resolved.sector,
+      before: resolved.shieldBefore,
+      activeBefore: resolved.activeShield,
+      damage: resolved.shieldDamageApplied,
+      after: resolved.shieldAfter,
+      collapsed: resolved.collapsed,
     },
-    breakthrough: { fraction: penetratingFraction, hullFraction, heatFraction },
-    armor: { base: armor, piercing: armorPiercing, effective: effectiveArmor },
-    hull: { listed: hullDamage, transmitted: transmittedHull, taken: hullTaken, before: hullBefore, after: hullAfter },
-    heat: { listed: heatDamage, transmitted: transmittedHeat, before: heatBefore, after: heatAfter },
-    reducedHullToZero: hullBefore > 0 && hullAfter === 0,
+    breakthrough: {
+      fraction: resolved.penetratingFraction,
+      hullFraction: resolved.hullFraction,
+      heatFraction: resolved.heatFraction,
+    },
+    armor: {
+      base: resolved.armor,
+      piercing: resolved.armorPiercing,
+      effective: resolved.effectiveArmor,
+    },
+    hull: {
+      listed: hullDamage,
+      transmitted: resolved.transmittedHull,
+      taken: resolved.hullDamageTaken,
+      before: hullBefore,
+      after: resolved.hullAfter,
+    },
+    heat: {
+      listed: heatDamage,
+      transmitted: resolved.transmittedHeat,
+      before: heatBefore,
+      after: resolved.heatAfter,
+    },
+    reducedHullToZero: hullBefore > 0 && resolved.hullAfter === 0,
+    shieldDetail: resolved,
   };
-
   return {
     public: input.revealDamage === true
       ? gm
-      : { sector, shieldCollapsed: collapsed, hullReachedZero: hullAfter === 0 },
+      : { sector: resolved.sector, shieldCollapsed: resolved.collapsed, hullReachedZero: resolved.hullAfter === 0 },
     gm,
   };
 }
@@ -387,12 +291,11 @@ export function resolveAttack(config, draft, input, helpers = {}) {
   };
 }
 
-/** @param {object} config @param {object} draft @param {{nonLethal?: boolean}} [input] @returns {{public:object|null,gm:object|null}} */
+/** @param {object} config @param {object} draft @param {{nonLethal?: boolean, outcome?: "destroyed"|"disabled"}} [input] @returns {{public:object|null,gm:object|null}} */
 export function resolveShipFate(config, draft, input = {}) {
   if (number(draft?.hull, 0) > 0) return { public: null, gm: null };
-  const fate = pendingFate(config, input.nonLethal === true);
+  const fate = gmFate(input.outcome) ??
+    pendingFate(config, input.nonLethal === true);
   draft.pendingFate = fate;
   return { public: fate, gm: fate };
 }
-
-export { BREAKTHROUGH_FLOOR };
