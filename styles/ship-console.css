@@ -660,6 +660,8 @@
 .ship-button-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ship-action-row { align-items: center; margin-top: 0.4rem; }
 .ship-action-row > button { flex: 1 1 8rem; }
+.ship-action-row > label { display: flex; flex: 1 1 100%; align-items: center; gap: 0.25rem; white-space: nowrap; }
+.ship-action-row > label select { flex: 1 1 auto; min-width: 0; }
 .ship-segmented > button { flex: 1 1 0; }
 
 .ship-primary {

@@ -1,7 +1,18 @@
 import { POWER_SYSTEMS, SCHEMA_VERSION, SECTORS } from "../constants.js";
-import { CANADENSIS_HULL_CONFIG } from "../data/canadensis.js";
-import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../data/canadensis-components.js";
+import {
+  DEFAULT_REFERENCE_BUILD_ID,
+  referenceBuild,
+} from "../data/reference-builds.js";
 import { materializeShipConfig } from "./equipment.js";
+
+/** Resolve a bundled reference build, or fail loudly on an unknown build id. */
+function requireBuild(buildId) {
+  const build = referenceBuild(buildId ?? DEFAULT_REFERENCE_BUILD_ID);
+  if (!build) {
+    throw new TypeError(`Unknown reference build '${buildId}'.`);
+  }
+  return build;
+}
 
 function clone(value) {
   if (Array.isArray(value)) return value.map(clone);
@@ -165,10 +176,14 @@ export function createInitialState(config) {
   };
 }
 
-/** Fresh pure reference data with detached hull, Items, effective config, and state. */
-export function createDefaultShipData() {
-  const hull = clone(CANADENSIS_HULL_CONFIG);
-  const items = clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES);
+/**
+ * Fresh pure reference data with detached hull, Items, effective config, and state.
+ * @param {string} [buildId] Registered reference build; defaults to the Canadensis.
+ */
+export function createDefaultShipData(buildId = DEFAULT_REFERENCE_BUILD_ID) {
+  const build = requireBuild(buildId);
+  const hull = clone(build.hull);
+  const items = clone(build.componentSources);
   const config = materializeShipConfig(hull, items);
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -180,9 +195,10 @@ export function createDefaultShipData() {
 }
 
 /** Fresh value suitable for persistence at `system.shipCombat`; contains no Item payloads. */
-export function createDefaultShipSystemData() {
-  const config = clone(CANADENSIS_HULL_CONFIG);
-  const effective = materializeShipConfig(config, CANADENSIS_DEFAULT_COMPONENT_SOURCES);
+export function createDefaultShipSystemData(buildId = DEFAULT_REFERENCE_BUILD_ID) {
+  const build = requireBuild(buildId);
+  const config = clone(build.hull);
+  const effective = materializeShipConfig(config, build.componentSources);
   return {
     schemaVersion: SCHEMA_VERSION,
     config,
@@ -191,10 +207,11 @@ export function createDefaultShipSystemData() {
 }
 
 /** Fresh Foundry Actor initialization payload with embedded Items kept outside system data. */
-export function createDefaultShipActorData() {
+export function createDefaultShipActorData(buildId = DEFAULT_REFERENCE_BUILD_ID) {
+  const build = requireBuild(buildId);
   return {
-    system: { shipCombat: createDefaultShipSystemData() },
-    items: clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES),
+    system: { shipCombat: createDefaultShipSystemData(build.id) },
+    items: clone(build.componentSources),
   };
 }
 
@@ -204,7 +221,9 @@ export function normalizeShipData(data, items = undefined) {
   if (supplied.schemaVersion !== undefined && supplied.schemaVersion !== SCHEMA_VERSION) {
     throw new TypeError(`Unsupported ship schema version '${supplied.schemaVersion}'.`);
   }
-  const config = clone(supplied.config ?? CANADENSIS_HULL_CONFIG);
+  const config = clone(
+    supplied.config ?? requireBuild(DEFAULT_REFERENCE_BUILD_ID).hull,
+  );
   if (!config || typeof config !== "object" || Array.isArray(config) || config.schemaVersion !== SCHEMA_VERSION) {
     throw new TypeError(`Unsupported hull schema version '${config?.schemaVersion}'.`);
   }
@@ -212,9 +231,7 @@ export function normalizeShipData(data, items = undefined) {
     ? items
     : Array.isArray(supplied.items)
       ? supplied.items
-      : config.id === CANADENSIS_HULL_CONFIG.id
-        ? CANADENSIS_DEFAULT_COMPONENT_SOURCES
-        : [];
+      : referenceBuild(config.id)?.componentSources ?? [];
   const effective = Array.isArray(config.slots)
     ? materializeShipConfig(config, componentItems)
     : clone(config);

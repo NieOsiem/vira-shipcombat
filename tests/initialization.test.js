@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { INTERNAL_UPDATE_OPTION, SHIP_TYPE } from "../scripts/constants.js";
 import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../scripts/data/canadensis-components.js";
+import { PEREGRINUS_HULL_CONFIG } from "../scripts/data/peregrinus.js";
+import { PEREGRINUS_DEFAULT_COMPONENT_SOURCES } from "../scripts/data/peregrinus-components.js";
 import { initializeShipActor } from "../scripts/foundry/initialization.js";
 import { createDefaultShipSystemData } from "../scripts/model/defaults.js";
 import { materializeShipConfig } from "../scripts/model/equipment.js";
@@ -159,6 +161,24 @@ describe("current ship initialization", () => {
     expect(actor.system.shipCombat).toEqual(data);
     expect(actor.updates).toBe(0);
     expect(await initializeShipActor(actor)).toBe(false);
+  });
+
+  test("installs the Small kit for a non-default reference build hull", async () => {
+    const data = createDefaultShipSystemData(PEREGRINUS_HULL_CONFIG.id);
+    const actor = new FakeActor(data);
+
+    expect(await initializeShipActor(actor)).toBe(true);
+    expect(actor.creationCalls).toBe(1);
+    expect(effectiveConfig(actor).id).toBe(PEREGRINUS_HULL_CONFIG.id);
+    expect(effectiveConfig(actor).components.shield.topology).toBe("bubble");
+    expect(effectiveConfig(actor).components.weapons).toHaveLength(2);
+    // Every copy is created under its bundled catalog ID, which Foundry accepts as a document ID.
+    expect([...actor.items.keys()].sort()).toEqual(
+      PEREGRINUS_DEFAULT_COMPONENT_SOURCES.map(({ _id }) => _id).sort(),
+    );
+    expect(
+      [...actor.items.values()].every((item) => item.system.size === "small"),
+    ).toBe(true);
   });
 
   test("does not replace unrelated Items occupying referenced default IDs", async () => {

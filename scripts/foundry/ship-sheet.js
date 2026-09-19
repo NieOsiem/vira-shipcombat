@@ -12,9 +12,14 @@ import {
   installShipComponent,
   materializeActorConfig,
   removeShipComponent,
-  resetShipToCanadensis,
+  resetShipToReferenceBuild,
   saveShipHull,
 } from "./refit.js";
+import {
+  DEFAULT_REFERENCE_BUILD_ID,
+  referenceBuild,
+  referenceBuildChoices,
+} from "../data/reference-builds.js";
 import {
   buildOperatorProfileFromActor,
   ensureActorCrewFeature,
@@ -1422,6 +1427,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       configJson: this.#hullDraft?.json ?? pretty(hullConfig),
       configRevision: this.#hullDraft?.revision ?? state.revision,
       hullDraftStale: this.#hullDraft?.stale ?? false,
+      referenceBuilds: referenceBuildChoices().map((choice) => ({
+        ...choice,
+        selected: choice.id ===
+          (referenceBuild(hullConfig?.id)?.id ?? DEFAULT_REFERENCE_BUILD_ID),
+      })),
     }, { inplace: false });
   }
 
@@ -1888,8 +1898,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       configForm.elements.config.focus();
     });
     this.#on(configForm, "submit", (event) => this.#saveConfig(event));
-    this.#on(html.querySelector("[data-canadensis]"), "click",
-      () => this.#resetCanadensis(),
+    this.#on(html.querySelector("[data-reference-reset]"), "click", (event) =>
+      this.#resetToReferenceBuild(event.currentTarget.closest("form")),
     );
     html.querySelectorAll("[data-refit-drop]").forEach((drop) => {
       this.#on(drop, "dragover", (event) => void this.#dragComponent(event, drop));
@@ -4793,23 +4803,32 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     }
   }
 
-  async #resetCanadensis() {
+  async #resetToReferenceBuild(form) {
+    const requested = form?.querySelector("[data-reference-build]")?.value ??
+      DEFAULT_REFERENCE_BUILD_ID;
+    const build = referenceBuild(requested);
+    if (!build) {
+      ui.notifications.error(
+        `No bundled reference build is registered as '${requested}'.`,
+      );
+      return;
+    }
     try {
       const denial = getRefitDenial(this.actor);
       if (denial) throw new Error(denial);
       if (
         !await foundry.applications.api.DialogV2.confirm({
-          window: { title: "Reset to Canadensis?" },
+          window: { title: `Reset to ${build.label}?` },
           content:
-            "<p>Replace the hull configuration, installed component copies, and crew definitions with the Canadensis defaults? Only still-compatible roster assignments are retained.</p><p>Component-local state (including shields, readiness, sensor tracks, and recovery work) is replaced. Hull damage, heat, velocity, and ship-wide hazards are retained; this is not a full combat reset.</p>",
+            `<p>Replace the hull configuration, installed component copies, and crew definitions with the ${build.label} defaults? Only still-compatible roster assignments are retained.</p><p>Component-local state (including shields, readiness, sensor tracks, and recovery work) is replaced. Hull damage, heat, velocity, and ship-wide hazards are retained; this is not a full combat reset.</p>`,
           defaultYes: false,
           rejectClose: false,
         })
       ) return;
-      await resetShipToCanadensis(this.actor);
+      await resetShipToReferenceBuild(this.actor, build.id);
       this.#hullDraft = null;
       ui.notifications.info(
-        "Canadensis hull and fresh component copies restored.",
+        `${build.label} hull and fresh component copies restored.`,
       );
       await this.render();
     } catch (error) {

@@ -205,7 +205,22 @@ function componentForTarget(config, componentId) {
   return componentList(config).find((component) => component.id === componentId) ?? null;
 }
 
+/**
+ * A Bubble Shield has one shared emitter, so the struck region only selects which critical pool
+ * fires: the Fault itself must name the emitter that exists. Storing the directional region would
+ * leave the Fault unable to degrade, block, or recover that emitter.
+ */
+function bubbleEmitterSector(config) {
+  const shield = config?.components?.shield;
+  if (shield?.topology !== "bubble") return null;
+  return shield.sectors?.[0] ?? "bubble";
+}
+
 function targetSector(config, entry) {
+  const bubble = entry.channelId === "shieldEmitterDamage"
+    ? bubbleEmitterSector(config)
+    : null;
+  if (bubble) return bubble;
   if (SECTORS.includes(entry.sector)) return entry.sector;
   if (entry.channelId === "shieldEmitterDamage" && SECTORS.includes(entry.componentId)) return entry.componentId;
   const shield = config?.components?.shield;

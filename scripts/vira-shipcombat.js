@@ -1,5 +1,10 @@
 import { MODULE_ID } from "./constants.js";
 import {
+  DEFAULT_REFERENCE_BUILD_ID,
+  referenceBuild,
+  referenceBuildChoices,
+} from "./data/reference-builds.js";
+import {
   createDefaultShipData,
   createInitialState,
 } from "./model/defaults.js";
@@ -29,6 +34,9 @@ const api = Object.freeze({
   submitShipOperation,
   setMovementPreview,
   clearMovementPreview,
+  defaultReferenceBuildId: DEFAULT_REFERENCE_BUILD_ID,
+  referenceBuild,
+  referenceBuildChoices,
 });
 
 let initComplete = false;

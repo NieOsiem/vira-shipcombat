@@ -5,8 +5,10 @@ import {
   RuleViolation,
   SECTORS,
 } from "../constants.js";
-import { CANADENSIS_HULL_CONFIG } from "../data/canadensis.js";
-import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../data/canadensis-components.js";
+import {
+  DEFAULT_REFERENCE_BUILD_ID,
+  referenceBuild,
+} from "../data/reference-builds.js";
 import { createInitialState } from "../model/defaults.js";
 import {
   materializeShipConfig,
@@ -355,7 +357,12 @@ function changedHardware(beforeHull, afterHull) {
       resetClasses.add(newMount.componentClass);
     }
   }
-  return { removedIds, replacements, resetClasses };
+  return {
+    removedIds,
+    replacements,
+    resetClasses,
+    previousMaxHull: Number(beforeHull?.maxHull),
+  };
 }
 
 function stringReferences(value, ids) {
@@ -566,6 +573,19 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
   const initial = createInitialState(config);
   const { removedIds, replacements, resetClasses } = hardware;
 
+  // Refit preserves Hull damage, not an absolute Hull value: a hull whose Maximum Hull changed
+  // keeps the damage it had, clamped into the new maximum. An unchanged maximum is a no-op.
+  const previousMaxHull = Number.isFinite(hardware?.previousMaxHull)
+    ? hardware.previousMaxHull
+    : Number(config.maxHull);
+  const currentHull = Number(state.hull);
+  if (Number.isFinite(currentHull) && Number.isFinite(Number(config.maxHull))) {
+    state.hull = Math.max(
+      0,
+      Number(config.maxHull) - Math.max(0, previousMaxHull - currentHull),
+    );
+  }
+
   const profiles = new Map(
     config.operators.map((operator) => [operator.id, operator]),
   );
@@ -750,33 +770,47 @@ async function deleteReplacedItems(actor, ids) {
   }
 }
 
+/** Fresh 16-character Item ID, so a replaced copy never inherits the removed component's identity. */
+function freshItemId() {
+  const randomId = globalThis.foundry?.utils?.randomID;
+  if (typeof randomId !== "function") {
+    throw new Error(
+      "Foundry's randomID utility is unavailable, so component copies cannot be created.",
+    );
+  }
+  return randomId();
+}
+
+/**
+ * Create one independent copy per prepared component source. Foundry returns created embedded
+ * documents in completion order rather than input order, so every copy is created under an ID
+ * this code chose (`keepId`) and resolved by that ID instead of by array position.
+ */
 async function createFreshItems(actor, prepared) {
+  const planned = prepared.map((entry) => ({ ...entry, freshId: freshItemId() }));
   const created = await actor.createEmbeddedDocuments(
     "Item",
-    prepared.map(({ source }) => source),
-    refitOptions(),
+    planned.map(({ source, freshId }) => ({ ...source, _id: freshId })),
+    refitOptions({ keepId: true }),
   );
-  if (!Array.isArray(created) || created.length !== prepared.length) {
-    const ids = values(created).map(itemId).filter(Boolean);
-    await deleteItems(actor, ids);
+  const byId = new Map(values(created).map((item) => [itemId(item), item]));
+  const ids = planned.map(({ freshId }) => freshId);
+  const incomplete = !Array.isArray(created) ||
+    created.length !== planned.length ||
+    byId.size !== ids.length ||
+    ids.some((id) => !byId.has(id));
+  const stale = new Set(ids).size !== ids.length ||
+    planned.some(({ catalogId, freshId }) => catalogId === freshId);
+  if (incomplete || stale) {
+    await deleteItems(actor, [...byId.keys()]);
     fail(
-      "COMPONENT_COPY_FAILED",
-      "Foundry did not create every requested component copy.",
+      incomplete ? "COMPONENT_COPY_FAILED" : "COMPONENT_COPY_NOT_FRESH",
+      incomplete
+        ? "Foundry did not create every requested component copy."
+        : "Installed components must receive fresh independent IDs.",
     );
   }
-  const ids = created.map(itemId);
-  if (
-    ids.some((id) => typeof id !== "string" || !id) ||
-    new Set(ids).size !== ids.length ||
-    ids.some((id, index) => id === prepared[index].catalogId)
-  ) {
-    await deleteItems(actor, ids);
-    fail(
-      "COMPONENT_COPY_NOT_FRESH",
-      "Installed components must receive fresh independent IDs.",
-    );
-  }
-  return { created, prepared };
+  return { created: ids.map((id) => byId.get(id)), prepared: planned };
 }
 
 async function updateShip(
@@ -1027,22 +1061,27 @@ export function saveInstalledShipComponent(
   });
 }
 
-/** Replace every mount with fresh copies of the twelve bundled Canadensis component sources. */
-export function resetShipToCanadensis(actor) {
+/** Replace every mount with fresh copies of one bundled reference build's component sources. */
+export function resetShipToReferenceBuild(actor, buildId = DEFAULT_REFERENCE_BUILD_ID) {
   return serializeActor(actor, async () => {
+    const build = referenceBuild(buildId);
+    if (!build) {
+      fail(
+        "UNKNOWN_REFERENCE_BUILD",
+        `No bundled reference build is registered as '${buildId}'.`,
+        { buildId },
+      );
+    }
     const observed = requireRefit(actor);
     const beforeHull = clone(actor.system.shipCombat.config);
     const { created, prepared } = await createFreshItems(
       actor,
-      CANADENSIS_DEFAULT_COMPONENT_SOURCES.map(componentSourceForCopy),
+      build.componentSources.map(componentSourceForCopy),
     );
     const freshIds = new Map(
-      prepared.map((
-        { catalogId },
-        index,
-      ) => [catalogId, itemId(created[index])]),
+      prepared.map(({ catalogId, freshId }) => [catalogId, freshId]),
     );
-    const hull = clone(CANADENSIS_HULL_CONFIG);
+    const hull = clone(build.hull);
     for (const slot of hull.slots) slot.itemId = freshIds.get(slot.itemId);
     for (const hardpoint of hull.hardpoints) {
       hardpoint.weaponId = freshIds.get(hardpoint.weaponId);

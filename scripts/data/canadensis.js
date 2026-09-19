@@ -1,12 +1,7 @@
 import { SCHEMA_VERSION, SECTORS } from "../constants.js";
 import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "./canadensis-components.js";
+import { deepFreeze } from "./component-source.js";
 import { materializeShipConfig } from "../model/equipment.js";
-
-function deepFreeze(value) {
-  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
-  for (const child of Object.values(value)) deepFreeze(child);
-  return Object.freeze(value);
-}
 
 const slots = Object.freeze({
   reactor: "canadensis-slot-reactor",

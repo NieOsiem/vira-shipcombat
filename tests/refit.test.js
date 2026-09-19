@@ -11,6 +11,11 @@ import {
   CANADENSIS_LATERAL_DRIVE_SOURCE,
   CANADENSIS_SHIELD_SOURCE,
 } from "../scripts/data/canadensis-components.js";
+import {
+  PEREGRINUS_CONFIG,
+  PEREGRINUS_HULL_CONFIG,
+} from "../scripts/data/peregrinus.js";
+import { PEREGRINUS_DEFAULT_COMPONENT_SOURCES } from "../scripts/data/peregrinus-components.js";
 import { createDefaultShipData } from "../scripts/model/defaults.js";
 import * as refit from "../scripts/foundry/refit.js";
 import { registerShipHooks } from "../scripts/foundry/hooks.js";
@@ -81,12 +86,12 @@ class FakeActor {
   async createEmbeddedDocuments(documentName, sources, options) {
     expect(documentName).toBe("Item");
     const created = sources.map((source) => {
-      expect(source._id).toBeUndefined();
-      expect(source.id).toBeUndefined();
-      const item = new FakeItem({
-        ...clone(source),
-        _id: `fresh-${String(this.nextId++).padStart(4, "0")}`,
-      });
+      const keepId = options?.keepId === true;
+      // Live Foundry assigns the ID itself unless keepId is set, and returns the created
+      // documents in completion order rather than input order.
+      const id = keepId ? source._id : `fresh-${String(this.nextId++).padStart(4, "0")}`;
+      expect(typeof id).toBe("string");
+      const item = new FakeItem({ ...clone(source), _id: id });
       this.items.set(item.id, item);
       return item;
     });
@@ -95,7 +100,7 @@ class FakeActor {
       ids: created.map((item) => item.id),
       options: clone(options),
     });
-    return created;
+    return [...created].reverse();
   }
 
   async update(changes, options) {
@@ -197,7 +202,10 @@ beforeEach(() => {
       apps: { DocumentSheetConfig: { registerSheet() {} } },
     },
     data: { operators: { ForcedReplacement: FakeForcedReplacement } },
-    utils: { deepClone: clone },
+    utils: {
+      deepClone: clone,
+      randomID: () => `fresh-${String(actor.nextId++).padStart(4, "0")}`,
+    },
   };
   actor = new FakeActor();
 });
@@ -368,7 +376,7 @@ describe("refit API", () => {
           ship.system.shipCombat.config.hardpoints[1].id,
         ),
     ],
-    ["reset", (ship) => refit.resetShipToCanadensis(ship)],
+    ["reset", (ship) => refit.resetShipToReferenceBuild(ship, CANADENSIS_HULL_CONFIG.id)],
   ])(
     "a canceled %s retains mounted components and discards fresh copies",
     async (_operation, refitShip) => {
@@ -463,7 +471,7 @@ describe("refit API", () => {
     const oldIds = new Set(actor.items.keys());
     const revision = actor.system.shipCombat.state.revision;
 
-    const effective = await refit.resetShipToCanadensis(actor);
+    const effective = await refit.resetShipToReferenceBuild(actor, CANADENSIS_HULL_CONFIG.id);
     const hull = actor.system.shipCombat.config;
     const mountedIds = references(hull);
 
@@ -511,6 +519,75 @@ describe("refit API", () => {
     });
   });
 
+  test("resetting to another bundled build swaps hull, kit, and sheet capacity together", async () => {
+    const oldIds = new Set(actor.items.keys());
+    // 20 points of damage on the Canadensis (50 max) must survive as damage, not as an
+    // absolute Hull value above the fighter's own 25 maximum.
+    actor.system.shipCombat.state.hull = 30;
+
+    const effective = await refit.resetShipToReferenceBuild(
+      actor,
+      PEREGRINUS_HULL_CONFIG.id,
+    );
+    const hull = actor.system.shipCombat.config;
+    const mountedIds = references(hull);
+
+    expect(hull).toMatchObject({
+      id: PEREGRINUS_HULL_CONFIG.id,
+      size: "small",
+      commandCapacity: 1,
+      crewCapacity: 0,
+    });
+    expect(mountedIds).toHaveLength(11);
+    expect(new Set(mountedIds).size).toBe(11);
+    expect(mountedIds.every((id) => !oldIds.has(id))).toBe(true);
+    expect(actor.items.size).toBe(11);
+    const expectedHull = clone(PEREGRINUS_HULL_CONFIG);
+    expectedHull.slots.forEach((slot) => {
+      slot.itemId = expect.any(String);
+    });
+    expectedHull.hardpoints.forEach((hardpoint) => {
+      hardpoint.weaponId = expect.any(String);
+    });
+    expect(hull).toEqual(expectedHull);
+    expect(effective).toEqual(refit.materializeActorConfig(actor));
+    expect(effective.label).toBe(PEREGRINUS_CONFIG.label);
+    expect(effective.components.weapons).toHaveLength(2);
+    expect(effective.components.shield.topology).toBe("bubble");
+    expect(
+      mountedIds.map((id) => withoutId(actor.items.get(id).toObject())),
+    ).toEqual(PEREGRINUS_DEFAULT_COMPONENT_SOURCES.map(withoutId));
+    // Power allocation is state, not build data: the previous allocation survives only where the
+    // smaller fighter still defines that tier, and it never exceeds the new reactor's ceiling.
+    const power = getPowerState(effective, actor.system.shipCombat.state);
+    expect(power.legal).toBe(true);
+    expect(power.committed).toBeLessThanOrEqual(power.ceilings.maximum);
+    expect(actor.system.shipCombat.state).toMatchObject({
+      hull: 5,
+      shields: { hp: { bubble: 30 }, allocation: { bubble: 30 } },
+      // Both freshly installed cannons start loaded and Online on the reference allocation.
+      weapons: Object.fromEntries(
+        hull.hardpoints.map(({ weaponId }) => [
+          weaponId,
+          { status: "online", readiness: 2 },
+        ]),
+      ),
+      // Foreign operator assignments never survive a build swap: the single seat waits for the
+      // GM to drop a character onto it.
+      roster: { command: [], crew: [], lockedTurnKey: null },
+    });
+  });
+
+  test("rejects an unregistered reference build before touching the ship", async () => {
+    const before = clone(actor.system.shipCombat);
+
+    await expect(refit.resetShipToReferenceBuild(actor, "not-a-build"))
+      .rejects.toMatchObject({ code: "UNKNOWN_REFERENCE_BUILD" });
+
+    expect(actor.system.shipCombat).toEqual(before);
+    expect(actor.events).toEqual([]);
+  });
+
   test("rejects invalid hull scalars with every actionable field error before persistence", async () => {
     const hull = clone(actor.system.shipCombat.config);
     hull.maxHull = -1;
@@ -556,7 +633,7 @@ describe("refit API", () => {
       });
     await expect(refit.removeShipComponent(actor, mount.id)).rejects
       .toMatchObject({ code: "INVALID_SHIP_CONFIG" });
-    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({
+    await expect(refit.resetShipToReferenceBuild(actor, CANADENSIS_HULL_CONFIG.id)).rejects.toMatchObject({
       code: "INVALID_SHIP_CONFIG",
     });
     expect(actor.system.shipCombat).toEqual(before);
@@ -677,7 +754,7 @@ describe("refit API", () => {
       return created;
     };
 
-    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({
+    await expect(refit.resetShipToReferenceBuild(actor, CANADENSIS_HULL_CONFIG.id)).rejects.toMatchObject({
       code: "REFIT_DENIED",
     });
 
@@ -1112,7 +1189,7 @@ describe("refit API", () => {
     actor.system.shipCombat.state.phase = "outsideCombat";
     globalThis.game.user = { id: "gm-inactive", isGM: true, active: true };
     expect(refit.getRefitDenial(actor)).toContain("active GM");
-    await expect(refit.resetShipToCanadensis(actor)).rejects.toMatchObject({
+    await expect(refit.resetShipToReferenceBuild(actor, CANADENSIS_HULL_CONFIG.id)).rejects.toMatchObject({
       code: "REFIT_DENIED",
     });
     expect(actor.events).toEqual([]);

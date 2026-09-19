@@ -1,41 +1,10 @@
+import { SECTORS, TRAIT_IDS } from "../constants.js";
 import {
-  COMPONENT_ITEM_TYPE,
-  SCHEMA_VERSION,
-  SECTORS,
-  TRAIT_IDS,
-} from "../constants.js";
-
-function deepFreeze(value) {
-  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
-  for (const child of Object.values(value)) deepFreeze(child);
-  return Object.freeze(value);
-}
-
-function componentSource({ _id, name, componentClass, driveRole = "", definition }) {
-  return deepFreeze({
-    _id,
-    name,
-    type: COMPONENT_ITEM_TYPE,
-    img: "icons/svg/item-bag.svg",
-    system: {
-      schemaVersion: SCHEMA_VERSION,
-      componentClass,
-      size: "medium",
-      driveRole,
-      definition,
-    },
-  });
-}
-
-function driveTiers(overclockHeat) {
-  return [
-    { power: 0, multiplier: 0, online: false },
-    { power: 1, multiplier: 0.5, online: true },
-    { power: 2, multiplier: 0.75, online: true },
-    { power: 3, multiplier: 1, online: true },
-    { power: 4, multiplier: 1.25, online: true, overclock: true, overclockHeat },
-  ];
-}
+  componentSource,
+  deepFreeze,
+  driveTiers,
+  installationSource,
+} from "./component-source.js";
 
 const BARRAGE_PROFILES = deepFreeze([
   { rounds: 1, attackPenalty: 0, maxEffectiveHits: 1 },
@@ -325,10 +294,6 @@ export const CANADENSIS_COMPONENT_SOURCES = deepFreeze([
   CANADENSIS_INERTIA_SOURCE,
   CANADENSIS_INERTIA_HEAVY_SOURCE,
 ]);
-
-function installationSource(source, _id) {
-  return deepFreeze({ ...structuredClone(source), _id });
-}
 
 export const CANADENSIS_DEFAULT_COMPONENT_SOURCES = deepFreeze([
   CANADENSIS_REACTOR_SOURCE,

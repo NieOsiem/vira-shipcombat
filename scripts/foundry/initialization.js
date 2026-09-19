@@ -7,8 +7,7 @@ import {
   SCHEMA_VERSION,
   SHIP_TYPE,
 } from "../constants.js";
-import { CANADENSIS_HULL_CONFIG } from "../data/canadensis.js";
-import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../data/canadensis-components.js";
+import { referenceBuild } from "../data/reference-builds.js";
 import {
   createDefaultShipSystemData,
   createInitialState,
@@ -83,7 +82,8 @@ function initializationOptions(extra = {}) {
 }
 
 async function installReferencedDefaults(actor, config) {
-  if (config.id !== CANADENSIS_HULL_CONFIG.id) return false;
+  const build = referenceBuild(config.id);
+  if (!build) return false;
   const references = new Set([
     ...(config.slots ?? []).map((slot) => slot.itemId),
     ...(config.hardpoints ?? []).map((hardpoint) => hardpoint.weaponId),
@@ -91,7 +91,7 @@ async function installReferencedDefaults(actor, config) {
   const existing = values(actor.items);
   const byId = new Map(existing.map((item) => [itemId(item), item]));
   const missing = [];
-  for (const source of CANADENSIS_DEFAULT_COMPONENT_SOURCES) {
+  for (const source of build.componentSources) {
     if (!references.has(source._id)) continue;
     const item = byId.get(source._id);
     if (item) {
