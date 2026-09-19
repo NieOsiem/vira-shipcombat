@@ -20,6 +20,12 @@ class FakeForcedReplacement {
   }
 }
 
+class FakeForcedDeletion {
+  static create() {
+    return new FakeForcedDeletion();
+  }
+}
+
 function setPath(object, path, value) {
   const parts = path.split(".");
   let cursor = object;
@@ -81,7 +87,12 @@ beforeEach(() => {
   globalThis.game = { user: gm, users: { activeGM: gm } };
   globalThis.foundry = {
     applications: { apps: { DocumentSheetConfig: { registerSheet() {} } } },
-    data: { operators: { ForcedReplacement: FakeForcedReplacement } },
+    data: {
+      operators: {
+        ForcedReplacement: FakeForcedReplacement,
+        ForcedDeletion: FakeForcedDeletion,
+      },
+    },
   };
 });
 afterEach(() => {
@@ -258,6 +269,7 @@ describe("native vehicle edits through registered Actor hooks", () => {
   let errors;
   let previousGlobals;
   let updateOptions;
+  let updateChanges;
 
   // Hook work is queued on promises; yielding to a timer drains that queue and
   // the console-refresh timer before assertions or restoration of Foundry globals.
@@ -312,8 +324,10 @@ describe("native vehicle edits through registered Actor hooks", () => {
     actor.system.details = { type: "space" };
     actor._source.system = clone(actor.system);
     updateOptions = [];
+    updateChanges = [];
     actor.onUpdate = (changes, options) => {
       updateOptions.push(options);
+      updateChanges.push(changes);
       Hooks.callAll("updateActor", actor, changes, options, game.user.id);
     };
     // The module owns a registration guard and queue; isolate them from other
@@ -441,5 +455,72 @@ describe("native vehicle edits through registered Actor hooks", () => {
     expect(actor.updates).toBe(1);
     expect(updateOptions[0][INTERNAL_UPDATE_OPTION]).toBe(true);
     expect(notifications).toEqual([]);
+  });
+
+  test("drops state keys a delta-backed token no longer carries", async () => {
+    const state = clone(actor.system.shipCombat.state);
+    // Stored delta carries a Work entry the new state has dropped (a finished recovery job).
+    actor.system.shipCombat.state.work = {
+      "recovery:cooling": { current: 2, required: 2 },
+    };
+    actor._source.system = clone(actor.system);
+
+    // A TokenDocument delta merges deeply, so a key the incoming payload omits survives; the harness's
+    // FakeActor replaces the path outright, which would hide the bug this test pins.
+    const mergeDeep = (base, patch) => {
+      const out = { ...base };
+      for (const [key, value] of Object.entries(patch ?? {})) {
+        const nested = value && typeof value === "object" && !Array.isArray(value)
+          && base?.[key] && typeof base[key] === "object" && !Array.isArray(base[key]);
+        out[key] = nested ? mergeDeep(base[key], value) : clone(value);
+      }
+      return out;
+    };
+    actor.update = async (changes, options = {}) => {
+      actor.updates += 1;
+      updateChanges.push(changes);
+      updateOptions.push(options);
+      for (const [path, supplied] of Object.entries(changes)) {
+        if (supplied instanceof FakeForcedDeletion) {
+          const parts = path.split(".");
+          const key = parts.pop();
+          let parent = actor;
+          for (const part of parts) parent = parent?.[part];
+          if (parent) delete parent[key];
+        } else if (path === "system.shipCombat.state") {
+          actor.system.shipCombat.state = mergeDeep(
+            actor.system.shipCombat.state,
+            supplied.value,
+          );
+        } else {
+          const parts = path.split(".");
+          let cursor = actor;
+          for (const part of parts.slice(0, -1)) cursor = cursor[part] ??= {};
+          cursor[parts.at(-1)] = clone(supplied);
+        }
+      }
+      actor._source.system = clone(actor.system);
+      return actor;
+    };
+
+    await writeShipState({ actor, actorLink: false }, state);
+    await settleHooks();
+
+    expect(updateChanges).toHaveLength(2);
+    expect(actor.system.shipCombat.state.work).toEqual({});
+  });
+
+  test("writes once for a linked actor whose path is replaced outright", async () => {
+    const state = clone(actor.system.shipCombat.state);
+    actor.system.shipCombat.state.work = {
+      "recovery:cooling": { current: 2, required: 2 },
+    };
+    actor._source.system = clone(actor.system);
+
+    await writeShipState({ actor, actorLink: true }, state);
+    await settleHooks();
+
+    expect(updateChanges).toHaveLength(1);
+    expect(actor.system.shipCombat.state).toEqual(state);
   });
 });

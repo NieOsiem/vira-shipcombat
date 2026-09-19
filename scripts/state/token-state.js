@@ -96,16 +96,55 @@ export function snapshotTokenTransform(tokenDocument) {
   return transform;
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Leaf paths present in `stored` but absent from `next`. Arrays and primitives count as leaves:
+ * their value is replaced wholesale, so only disappearing keys need an explicit deletion.
+ */
+function removedStatePaths(stored, next, prefix = []) {
+  if (!isPlainObject(stored)) return [];
+  const paths = [];
+  for (const [key, value] of Object.entries(stored)) {
+    const path = [...prefix, key];
+    if (!isPlainObject(value)) {
+      if (!isPlainObject(next) || !Object.hasOwn(next, key)) paths.push(path);
+      continue;
+    }
+    if (!isPlainObject(next?.[key])) {
+      paths.push(path);
+      continue;
+    }
+    paths.push(...removedStatePaths(value, next[key], path));
+  }
+  return paths;
+}
+
 export async function writeShipState(tokenDocument, state) {
   // Synthetic actors persist into TokenDocument delta data; linked actors persist into
   // their world Actor. Both paths intentionally use the token's actor context.
   const actor = tokenDocument.actor;
   const config = materializeShipConfig(actor.system.shipCombat.config, componentItems(actor));
   const replacement = globalThis.foundry.data.operators.ForcedReplacement.create(cloneDocumentData(state));
-  return actor.update({
+  await actor.update({
     "system.shipCombat.state": replacement,
     ...nativeVehicleFieldValues(config, state),
   }, { viraShipCombatInternal: true, diff: false });
+  // A delta-backed token merges into its stored delta, which keeps every key the new state no longer
+  // carries, so a finished Recovery Work entry, an expired jam or a dropped track would come back on the
+  // next load. Linked actors replace the path outright and need none of this.
+  if (tokenDocument.actorLink !== false) return tokenDocument;
+  const removals = removedStatePaths(actor._source?.system?.shipCombat?.state, state);
+  if (!removals.length) return tokenDocument;
+  const deletions = {};
+  for (const path of removals) {
+    // Track and condition keys are URL-encoded by the engine, so a key never contains a path dot.
+    deletions[`system.shipCombat.state.${path.join(".")}`] =
+      globalThis.foundry.data.operators.ForcedDeletion.create();
+  }
+  return actor.update(deletions, { viraShipCombatInternal: true });
 }
 
 export async function writeTokenTransform(tokenDocument, transform) {
