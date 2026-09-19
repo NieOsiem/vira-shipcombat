@@ -365,15 +365,15 @@
             </div>
             <p class="ship-preview-line" data-preview aria-live="polite"></p>
           </div>
-        </div>
 
-        <div class="ship-helm-actions">
-          <button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-play" aria-hidden="true"></i> <span>Commit maneuver<small>Spend allocated time</small></span></button>
-          <button type="button" data-coast-remaining="true" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span>Coast remaining<small>Use remaining time</small></span></button>
-          <button type="button" data-helm-reset {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span>Reset sliders<small>Clear current inputs</small></span></button>
-          {{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Disarm evasion<small>Release reserve</small></span></button>{{else}}<button type="button" data-ui-operation="armEvasion" data-tier="standard" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield" aria-hidden="true"></i> <span>Arm evasion<small>Reserve timeline</small></span></button>{{#if view.movement.evasionHardAvailable}}<button type="button" data-ui-operation="armEvasion" data-tier="hard" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield-heart" aria-hidden="true"></i> <span>Arm hard evasion<small>Larger reserve, higher cap</small></span></button>{{/if}}{{/if}}
+          <div class="ship-helm-actions">
+            <button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-play" aria-hidden="true"></i> <span>Commit maneuver<small>Spend allocated time</small></span></button>
+            <button type="button" data-coast-remaining="true" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span>Coast remaining<small>Use remaining time</small></span></button>
+            <button type="button" data-helm-reset {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span>Reset sliders<small>Clear current inputs</small></span></button>
+            {{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Disarm evasion<small>Release reserve</small></span></button>{{else}}<button type="button" data-ui-operation="armEvasion" data-tier="standard" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield" aria-hidden="true"></i> <span>Arm evasion<small>Reserve timeline</small></span></button>{{#if view.movement.evasionHardAvailable}}<button type="button" data-ui-operation="armEvasion" data-tier="hard" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield-heart" aria-hidden="true"></i> <span>Arm hard evasion<small>Larger reserve, higher cap</small></span></button>{{/if}}{{/if}}
+          </div>
+          <p class="ship-muted"><span class="ship-readout" data-evasion-ceiling title="Current evasion AC bonus / protocol ceiling">Evasion AC {{view.movement.evasionCeiling}}</span> <span data-evasion-reason role="status"></span></p>
         </div>
-        <p class="ship-muted"><span class="ship-readout" data-evasion-ceiling title="Current evasion AC bonus / protocol ceiling">Evasion AC {{view.movement.evasionCeiling}}</span> <span data-evasion-reason role="status"></span></p>
       </form>
       {{#if view.status.overspeed}}<p class="ship-warning">Overspeed damage risk</p>{{/if}}
     </section>

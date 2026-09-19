@@ -4253,11 +4253,6 @@
     grid-row: 1;
     grid-column: 2;
   }
-
-  .ship-helm-actions {
-    grid-row: 2;
-    grid-column: 1 / -1;
-  }
 }
 
 .ship-helm-sidebar {
@@ -4265,6 +4260,12 @@
   flex-direction: column;
   gap: 0.55rem;
   min-width: 0;
+}
+
+.ship-helm-sidebar > .ship-muted {
+  margin: 0;
+  font-size: 0.62rem;
+  line-height: 1.3;
 }
 
 /* Controls fieldset */
@@ -4708,38 +4709,47 @@
 /* Action bar */
 .ship-helm-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-  gap: 0.3rem;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
   min-width: 0;
+}
+
+.ship-helm-actions > button[type="submit"],
+.ship-helm-actions > button[data-ui-operation="disarmEvasion"],
+.ship-helm-actions:not(:has(button[data-tier="hard"]:not([hidden]))) > button[data-tier="standard"] {
+  grid-column: 1 / -1;
+  justify-content: center;
 }
 
 .ship-helm-actions > button {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  min-height: 2.6rem;
-  padding: 0.35rem 0.6rem;
+  min-height: 2.3rem;
+  padding: 0.3rem 0.5rem;
   text-align: left;
 }
 
 .ship-helm-actions > button > i {
   flex: 0 0 auto;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .ship-helm-actions > button > span {
   display: grid;
   gap: 0.05rem;
   min-width: 0;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
+  line-height: 1.15;
 }
 
 .ship-helm-actions > button > span > small {
   color: inherit;
   opacity: 0.7;
-  font-size: 0.56rem;
+  font-size: 0.54rem;
   font-weight: 600;
+  line-height: 1.15;
 }
 
 .ship-helm-actions > button.ship-primary > span > small {
