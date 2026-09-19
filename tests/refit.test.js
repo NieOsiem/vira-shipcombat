@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import {
   CANADENSIS_CONFIG,
   CANADENSIS_HULL_CONFIG,
+  CANADENSIS_IDS,
   CANADENSIS_SLOT_IDS,
 } from "../scripts/data/canadensis.js";
 import {
@@ -215,7 +216,11 @@ describe("refit API", () => {
     const wrongSize = clone(CANADENSIS_LATERAL_DRIVE_SOURCE);
     wrongSize._id = "catalog-wrong-size";
     wrongSize.system.size = "large";
-    const specialWeapon = clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES[8]);
+    const specialWeapon = clone(
+      CANADENSIS_DEFAULT_COMPONENT_SOURCES.find(({ _id }) =>
+        _id === CANADENSIS_IDS.railgun
+      ),
+    );
     specialWeapon._id = "catalog-special-weapon";
     specialWeapon.system.definition.category = "spinal";
     const hardpointId = actor.system.shipCombat.config.hardpoints[0].id;
@@ -283,7 +288,11 @@ describe("refit API", () => {
       },
     });
     actor.system.shipCombat.state.weapons[oldId].readiness = 0;
-    const catalog = clone(CANADENSIS_DEFAULT_COMPONENT_SOURCES[9]);
+    const catalog = clone(
+      CANADENSIS_DEFAULT_COMPONENT_SOURCES.find(({ _id }) =>
+        _id === CANADENSIS_IDS.laser
+      ),
+    );
     catalog._id = "catalog-laser-template";
 
     const created = await refit.installShipComponent(actor, mount.id, catalog);
@@ -446,7 +455,7 @@ describe("refit API", () => {
     expect(actor.items.has(sensorId)).toBe(true);
   });
 
-  test("reset creates twelve independent fresh Items and exact bundled hull/component data", async () => {
+  test("reset creates thirteen independent fresh Items and exact bundled hull/component data", async () => {
     actor.system.shipCombat.state.hull = 11;
     actor.system.shipCombat.state.heat = 7;
     actor.system.shipCombat.state.velocity = { x: 3, y: 6 };
@@ -458,16 +467,16 @@ describe("refit API", () => {
     const hull = actor.system.shipCombat.config;
     const mountedIds = references(hull);
 
-    expect(mountedIds).toHaveLength(12);
-    expect(new Set(mountedIds).size).toBe(12);
+    expect(mountedIds).toHaveLength(13);
+    expect(new Set(mountedIds).size).toBe(13);
     expect(mountedIds.every((id) => !oldIds.has(id))).toBe(true);
-    expect(actor.items.size).toBe(12);
+    expect(actor.items.size).toBe(13);
     expect(actor.events.map(({ type }) => type)).toEqual([
       "create",
       "update",
       "delete",
     ]);
-    expect(actor.events[0].ids).toHaveLength(12);
+    expect(actor.events[0].ids).toHaveLength(13);
     expect(actor.events[2].visibleReferences.some((id) => oldIds.has(id))).toBe(
       false,
     );
@@ -853,7 +862,7 @@ describe("refit API", () => {
       config.slots.find(({ id }) => id === CANADENSIS_SLOT_IDS.shield).itemId,
     ).toBe(itemId);
     expect(actor.items.has(itemId)).toBe(true);
-    expect(actor.items.size).toBe(12);
+    expect(actor.items.size).toBe(13);
     expect(actor.items.get(itemId).system.definition.topology).toBe(
       "directional",
     );
@@ -918,7 +927,7 @@ describe("refit API", () => {
 
     const bubbleState = actor.system.shipCombat.state;
     expect(actor.items.has(itemId)).toBe(true);
-    expect(actor.items.size).toBe(12);
+    expect(actor.items.size).toBe(13);
     expect(actor.items.get(itemId).system.definition.topology).toBe("bubble");
     expect(bubbleState.shields.allocation).toEqual({ bubble: 20 });
     expect(bubbleState.shields.hp).toEqual({ bubble: 20 });
@@ -986,7 +995,7 @@ describe("refit API", () => {
     await refit.saveInstalledShipComponent(actor, weaponId, lower, revision);
 
     expect(actor.items.has(weaponId)).toBe(true);
-    expect(actor.items.size).toBe(12);
+    expect(actor.items.size).toBe(13);
     expect(actor.items.get(weaponId).system.definition.readiness.capacity).toBe(
       5,
     );

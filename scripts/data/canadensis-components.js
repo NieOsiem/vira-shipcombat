@@ -49,7 +49,7 @@ function macrocannonDefinition() {
   return {
     category: "hardpoint",
     accuracy: 0,
-    damage: { shield: 6, hull: 8, heat: 0 },
+    damage: { shield: 7, hull: 9, heat: 0 },
     armorPiercing: 1,
     projectileClass: "medium",
     range: { optimal: 30, maximum: 60 },
@@ -84,8 +84,8 @@ export const CANADENSIS_REACTOR_SOURCE = componentSource({
   name: "Academy Reactor",
   componentClass: "reactor",
   definition: {
-    nominalOutput: 12,
-    redlineOutput: 14,
+    nominalOutput: 14,
+    redlineOutput: 16,
     overclockHeat: 4,
     recoveryWork: 6,
   },
@@ -187,6 +187,48 @@ export const CANADENSIS_LATERAL_DRIVE_SOURCE = componentSource({
   },
 });
 
+export const CANADENSIS_INERTIA_LIGHT_SOURCE = componentSource({
+  _id: "CanadInertiaLt01",
+  name: "Inertial Anchor Mk I",
+  componentClass: "inertia",
+  definition: {
+    tiers: [
+      { power: 0, online: false, pivot: 0 },
+      { power: 1, online: true, pivot: 45 },
+    ],
+    recoveryWork: 3,
+  },
+});
+
+export const CANADENSIS_INERTIA_SOURCE = componentSource({
+  _id: "CanadInertia0001",
+  name: "Inertial Anchor Mk II",
+  componentClass: "inertia",
+  definition: {
+    tiers: [
+      { power: 0, online: false, pivot: 0 },
+      { power: 1, online: true, pivot: 30 },
+      { power: 2, online: true, pivot: 60 },
+    ],
+    recoveryWork: 3,
+  },
+});
+
+export const CANADENSIS_INERTIA_HEAVY_SOURCE = componentSource({
+  _id: "CanadInertiaHv01",
+  name: "Inertial Anchor Mk III",
+  componentClass: "inertia",
+  definition: {
+    tiers: [
+      { power: 0, online: false, pivot: 0 },
+      { power: 1, online: true, pivot: 10 },
+      { power: 2, online: true, pivot: 40 },
+      { power: 3, online: true, pivot: 75 },
+    ],
+    recoveryWork: 3,
+  },
+});
+
 export const CANADENSIS_RAILGUN_SOURCE = componentSource({
   _id: "CanadRailgun0001",
   name: "Twin Railgun",
@@ -194,7 +236,7 @@ export const CANADENSIS_RAILGUN_SOURCE = componentSource({
   definition: {
     category: "hardpoint",
     accuracy: -1,
-    damage: { shield: 4, hull: 12, heat: 0 },
+    damage: { shield: 6, hull: 12, heat: 0 },
     armorPiercing: 3,
     projectileClass: "fast",
     range: { optimal: 60, maximum: 120 },
@@ -216,7 +258,7 @@ export const CANADENSIS_RAILGUN_SOURCE = componentSource({
       overclock: {
         overrides: {
           powerRating: 3,
-          damage: { hull: 15 },
+          damage: { hull: 16 },
           firingHeat: { amount: 5, per: "shot" },
         },
       },
@@ -231,7 +273,7 @@ export const CANADENSIS_LASER_SOURCE = componentSource({
   definition: {
     category: "hardpoint",
     accuracy: 2,
-    damage: { shield: 10, hull: 5, heat: 2 },
+    damage: { shield: 12, hull: 6, heat: 2 },
     armorPiercing: 0,
     projectileClass: "instant",
     range: { optimal: 40, maximum: 80 },
@@ -253,7 +295,7 @@ export const CANADENSIS_LASER_SOURCE = componentSource({
       overclock: {
         overrides: {
           powerRating: 3,
-          damage: { shield: 13, heat: 3 },
+          damage: { shield: 15, heat: 3 },
           firingHeat: { amount: 3, per: "shot" },
         },
       },
@@ -279,6 +321,9 @@ export const CANADENSIS_COMPONENT_SOURCES = deepFreeze([
   CANADENSIS_RAILGUN_SOURCE,
   CANADENSIS_LASER_SOURCE,
   CANADENSIS_MACROCANNON_SOURCE,
+  CANADENSIS_INERTIA_LIGHT_SOURCE,
+  CANADENSIS_INERTIA_SOURCE,
+  CANADENSIS_INERTIA_HEAVY_SOURCE,
 ]);
 
 function installationSource(source, _id) {
@@ -294,6 +339,7 @@ export const CANADENSIS_DEFAULT_COMPONENT_SOURCES = deepFreeze([
   CANADENSIS_REVERSE_DRIVE_SOURCE,
   installationSource(CANADENSIS_LATERAL_DRIVE_SOURCE, "CanadLateralA001"),
   installationSource(CANADENSIS_LATERAL_DRIVE_SOURCE, "CanadLateralB001"),
+  CANADENSIS_INERTIA_SOURCE,
   CANADENSIS_RAILGUN_SOURCE,
   CANADENSIS_LASER_SOURCE,
   installationSource(CANADENSIS_MACROCANNON_SOURCE, "CanadMacrocanA01"),

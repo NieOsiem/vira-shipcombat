@@ -5,6 +5,10 @@ import {
   CANADENSIS_IDS,
 } from "../scripts/data/canadensis.js";
 import {
+  CANADENSIS_COMPONENT_SOURCES,
+  CANADENSIS_DEFAULT_COMPONENT_SOURCES,
+} from "../scripts/data/canadensis-components.js";
+import {
   createDefaultShipData,
   createDefaultShipSystemData,
   normalizeShipData,
@@ -22,6 +26,18 @@ import {
 import { buildShipConsoleView } from "../scripts/foundry/ship-view-model.js";
 
 const clone = (value) => structuredClone(value);
+
+test("bundled ship documents use Foundry-legal document ids", () => {
+  // Foundry (through the dnd5e Item model) rejects ids that are not 16 alphanumeric characters, so a
+  // malformed bundled blueprint id can only fail at install time, on a live world.
+  const ids = [
+    ...CANADENSIS_COMPONENT_SOURCES.map((source) => source._id),
+    ...CANADENSIS_DEFAULT_COMPONENT_SOURCES.map((source) => source._id),
+  ];
+  for (const id of ids) {
+    expect(String(id)).toMatch(/^[A-Za-z0-9]{16}$/);
+  }
+});
 
 function expectValidationErrors(config, expectedErrors) {
   const result = validateShipConfig(config, { tokenWidth: 1 });

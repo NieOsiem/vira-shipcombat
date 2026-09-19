@@ -372,6 +372,24 @@ describe("authority invariants", () => {
     }
   });
 
+  test("the Start Phase clears per-activation maneuver budgets", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "start";
+    source.state.timeline = 0.5;
+    source.state.rotationSpent = 30;
+    source.state.pivotSpent = 45;
+
+    const result = executeShipOperation(
+      request("startPhase", SOURCE),
+      context([[SOURCE, source]]),
+    );
+
+    const state = result.shipStates[SOURCE];
+    expect(state.timeline).toBe(0);
+    expect(state.rotationSpent).toBe(0);
+    expect(state.pivotSpent).toBe(0);
+  });
+
   test("Start reports a bound actor already assigned to another participating ship", () => {
     const source = ship(SOURCE);
     const target = ship(TARGET_A);

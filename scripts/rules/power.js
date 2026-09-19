@@ -103,6 +103,7 @@ function componentForSystem(config, system) {
   if (system === "shields") return components.shield;
   if (system === "sensors") return components.sensor;
   if (system === "cooling") return components.cooling;
+  if (system === "inertia") return components.inertia;
   return null;
 }
 
@@ -112,6 +113,7 @@ function systemInstalled(config, system) {
   if (system === "shields") return Boolean(components.shield);
   if (system === "sensors") return Boolean(components.sensor);
   if (system === "cooling") return Boolean(components.cooling);
+  if (system === "inertia") return Boolean(components.inertia);
   return true;
 }
 
@@ -122,6 +124,7 @@ function missingSystem(config, system, power) {
     shields: "MISSING_SHIELD",
     sensors: "MISSING_SENSOR",
     cooling: "MISSING_COOLING",
+    inertia: "MISSING_INERTIA",
   }[system];
   violation(code, `Ship has no installed ${system} hardware`, { system, power });
 }

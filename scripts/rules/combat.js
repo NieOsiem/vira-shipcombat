@@ -1,7 +1,7 @@
 import { RuleViolation } from "../constants.js";
 import { resolveAttack } from "./damage.js";
 import { stableCoincidentNormal } from "./geometry.js";
-import { bearingDegrees } from "./math.js";
+import { bearingDegrees, magnitude } from "./math.js";
 import { trackKey } from "./sensors.js";
 
 const PROJECTILE_MULTIPLIERS = Object.freeze({
@@ -11,6 +11,17 @@ const PROJECTILE_MULTIPLIERS = Object.freeze({
   slow: 1.25,
   veryslow: 1.5,
 });
+
+/** Inside Optimal Range a shot is worth +2: winning the positioning fight is a positive reward. */
+const OPTIMAL_RANGE_BONUS = 2;
+
+/** Kinetic evasion: a fast, actively jinking hull is harder to track (see getEvasionBonus). */
+const EVASION_SPEED_STEPS = Object.freeze([
+  Object.freeze({ min: 15, bonus: 1 }),
+  Object.freeze({ min: 30, bonus: 1 }),
+]);
+const EVASION_JINK_THRESHOLD = 30;
+const EVASION_JINK_BONUS = 1;
 
 const BARRAGE_PROFILES = Object.freeze({
   1: Object.freeze({ rounds: 1, penalty: 0, maximumEffectiveHits: 1 }),
@@ -251,11 +262,30 @@ function barrageProfile(profile, declaration) {
   return selected;
 }
 
+/**
+ * Kinetic evasion stack (decision: "go big, capped +4").
+ * The Evasive Protocol's base +AC, plus one point per speed step reached, plus a jink point when the
+ * ship actually spent Vector Authority this activation. The hull's tier selects the cap: the standard
+ * protocol caps at `evasionAcBonus`, the hard protocol at `evasionHardAcCap`.
+ * @param {object} config @param {object} state @returns {number}
+ */
+export function getEvasionBonus(config, state) {
+  if (state?.evasion?.armed !== true) return 0;
+  const base = finite(config?.evasionAcBonus, 2);
+  const hard = state.evasion.tier === "hard";
+  const cap = hard ? finite(config?.evasionHardAcCap, 4) : base;
+  let bonus = base;
+  const speed = magnitude(vector(state?.velocity));
+  for (const step of EVASION_SPEED_STEPS) {
+    if (speed >= step.min) bonus += step.bonus;
+  }
+  if (finite(state?.pivotSpent, 0) >= EVASION_JINK_THRESHOLD) bonus += EVASION_JINK_BONUS;
+  return Math.min(cap, Math.max(0, bonus));
+}
+
 /** @param {object} config @param {object} state @returns {number} */
 export function getEffectiveAttackAC(config, state) {
-  const base = finite(config?.ac);
-  return base +
-    (state?.evasion?.armed === true ? finite(config?.evasionAcBonus, 2) : 0);
+  return finite(config?.ac) + getEvasionBonus(config, state);
 }
 
 function knownTargetAC(track, actual) {
@@ -693,7 +723,7 @@ export function calculateRangeBand(distance, optimal, maximum) {
     );
   }
   if (distance <= optimal) {
-    return { valid: true, band: "optimal", modifier: 0, fraction: 0 };
+    return { valid: true, band: "optimal", modifier: OPTIMAL_RANGE_BONUS, fraction: 0 };
   }
   if (distance > maximum) {
     return {
@@ -754,10 +784,12 @@ export function calculateRelativeMotion(input) {
   }
   const rawMotion = transverseSpeed + 0.25 * radialSpeed;
   const effectiveMotion = rawMotion * multiplier;
+  // Standing still is neutral, not rewarded: the low bands carry no bonus, and penalties only
+  // start once a target is genuinely crossing (decision: "kinetic evasion" rework).
   let modifier;
   let band;
-  if (effectiveMotion <= 2 + EPSILON) [modifier, band] = [2, "0-2"];
-  else if (effectiveMotion <= 4 + EPSILON) [modifier, band] = [1, ">2-4"];
+  if (effectiveMotion <= 2 + EPSILON) [modifier, band] = [0, "0-2"];
+  else if (effectiveMotion <= 4 + EPSILON) [modifier, band] = [0, ">2-4"];
   else if (effectiveMotion <= 6 + EPSILON) [modifier, band] = [0, ">4-6"];
   else if (effectiveMotion <= 8 + EPSILON) [modifier, band] = [-2, ">6-8"];
   else if (effectiveMotion <= 10 + EPSILON) [modifier, band] = [-4, ">8-10"];

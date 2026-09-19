@@ -179,6 +179,33 @@
     </fieldset>
   {{/if}}
 
+  {{#if isInertia}}
+    <fieldset {{#unless editable}}disabled{{/unless}}>
+      <legend>Inertia</legend>
+      <p>
+        <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+      </p>
+      <h3>Power tiers</h3>
+      <table>
+        <caption>Inertia power tiers</caption>
+        <thead><tr><th scope="col">Power</th><th scope="col">Online</th><th scope="col">Pivot</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col">Actions</th></tr></thead>
+        <tbody>
+          {{#each definition.tiers as |tier|}}
+            <tr data-tier-row>
+              <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
+              <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
+              <td><input type="number" min="0" step="any" data-tier-field="pivot" value="{{tier.pivot}}" aria-label="Pivot"></td>
+              <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
+              <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
+              <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove inertia power tier {{tier.power}}"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Remove</span></button></td>
+            </tr>
+          {{/each}}
+        </tbody>
+      </table>
+      <button type="button" data-row-action="add-tier">Add tier</button>
+    </fieldset>
+  {{/if}}
+
   {{#if isWeapon}}
     <fieldset {{#unless editable}}disabled{{/unless}}>
       <legend>Weapon profile</legend>

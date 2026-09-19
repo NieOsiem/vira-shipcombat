@@ -28,6 +28,7 @@ import {
   enforceEvasionEligibility,
   getCollisionSeverity,
   getDriveCapabilities,
+  getPivotCapability,
 } from "./movement.js";
 import {
   MODULE_CONTROLS,
@@ -538,7 +539,10 @@ function tokenTransform(ship, position, facing, context) {
 }
 
 function driveCapabilities(ship) {
-  return getDriveCapabilities(ship.config, ship.state);
+  return {
+    ...getDriveCapabilities(ship.config, ship.state),
+    pivot: getPivotCapability(ship.config, ship.state),
+  };
 }
 function installedComponents(config) {
   const components = config?.components ?? {};
@@ -776,12 +780,7 @@ function evasionEligibility(ship) {
       Math.max(capabilities.forward, capabilities.retro) > 0 &&
       capabilities.rotation > 0 &&
       Math.max(capabilities.port, capabilities.starboard) > 0,
-    maneuverCapability: Math.max(
-      capabilities.forward,
-      capabilities.retro,
-      capabilities.port,
-      capabilities.starboard,
-    ),
+    pivotCapability: capabilities.pivot,
     evasionAcBonus: ship.config?.evasionAcBonus,
   });
 }
@@ -1195,13 +1194,11 @@ export function executeShipOperation(operation, context) {
           Math.max(capabilities.forward, capabilities.retro) > 0 &&
           capabilities.rotation > 0 &&
           Math.max(capabilities.port, capabilities.starboard) > 0,
-        maneuverCapability: Math.max(
-          capabilities.forward,
-          capabilities.retro,
-          capabilities.port,
-          capabilities.starboard,
-        ),
-        evasionReserve: reserve > 1 ? reserve / 100 : reserve,
+        pivotCapability: capabilities.pivot,
+        tier: request.payload.tier === "hard" ? "hard" : "standard",
+        evasionReserve: request.payload.reserve != null && Number(request.payload.reserve) <= 1
+          ? Number(request.payload.reserve)
+          : reserve > 1 ? reserve / 100 : reserve,
         evasionAcBonus: source.config?.evasionAcBonus,
       });
       break;

@@ -139,15 +139,20 @@ function validateWeights(config, weights) {
   const shield = shieldConfig(config);
   const sectors = sectorsFor(config);
   if (shield.topology === "bubble") return { [sectors[0]]: 100 };
+  // Decision: a hull caps how much of the regeneration budget one sector may claim, so a
+  // single-sector funnel can no longer out-heal sustained fire. 100 = uncapped.
+  const cap = config?.regenerationWeightCap ?? 100;
+  requireNonnegativeInteger(cap, "INVALID_REGENERATION_CAP", "regenerationWeightCap");
   const result = {};
   let total = 0;
   for (const sector of sectors) {
     const weight = weights?.[sector];
     requireNonnegativeInteger(weight, "INVALID_REGENERATION_ALLOCATION", `${sector}.weight`);
-    if (weight > 100) {
-      violation("INVALID_REGENERATION_ALLOCATION", `${sector}.weight cannot exceed 100`, {
+    if (weight > cap) {
+      violation("INVALID_REGENERATION_ALLOCATION", `${sector}.weight cannot exceed ${cap}`, {
         sector,
         weight,
+        cap,
       });
     }
     result[sector] = weight;

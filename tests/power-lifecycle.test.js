@@ -122,6 +122,7 @@ describe("Power routing and weapon lifecycle", () => {
       shields: 0,
       sensors: 0,
       cooling: 0,
+      inertia: 0,
       weapons: 0,
     };
     const weaponStates = Object.fromEntries(
@@ -323,21 +324,31 @@ describe("Power routing and weapon lifecycle", () => {
     const result = applyPowerShedding(config, state);
 
     expect(result.ceilings).toMatchObject({
-      nominal: 9,
-      maximum: 11,
+      nominal: 11,
+      maximum: 12,
       fault: "minor",
     });
-    expect(result.committed).toBe(11);
+    expect(result.committed).toBe(12);
     expect(result.events).toEqual([
       { type: "tierShed", system: "weapons", from: 3, to: 2 },
+      { type: "tierShed", system: "weapons", from: 2, to: 1 },
       {
         type: "weaponShed",
         weaponId: CANADENSIS_IDS.portMacrocannon,
         released: 1,
       },
+      {
+        type: "weaponShed",
+        weaponId: CANADENSIS_IDS.railgun,
+        released: 2,
+      },
     ]);
-    expect(result.weaponReserved).toBe(2);
-    expect(state.weapons[CANADENSIS_IDS.railgun].status).toBe("online");
+    expect(result.weaponReserved).toBe(0);
+    expect(state.weapons[CANADENSIS_IDS.railgun]).toMatchObject({
+      status: "off",
+      mode: "nominal",
+      bootCounter: 0,
+    });
     expect(state.weapons[CANADENSIS_IDS.portMacrocannon]).toMatchObject({
       status: "off",
       mode: "nominal",
@@ -511,10 +522,18 @@ describe("Power routing and weapon lifecycle", () => {
 
 test("Power commits persist allocations and validated shedding priorities", () => {
   const { config, state } = freshShip();
-  const allocation = { engines: 4, shields: 1, sensors: 2, cooling: 1, weapons: 4 };
+  const allocation = {
+    engines: 4,
+    shields: 1,
+    sensors: 2,
+    cooling: 1,
+    inertia: 2,
+    weapons: 4,
+  };
   const sheddingPriority = [
     "weapons",
     "cooling",
+    "inertia",
     "shields",
     "sensors",
     "engines",
@@ -548,6 +567,7 @@ test("Power commits persist allocations and validated shedding priorities", () =
             "engines",
             "sensors",
             "cooling",
+            "inertia",
             "weapons",
           ],
         }),
@@ -901,9 +921,12 @@ describe("shield allocation, collapse, and recovery", () => {
       { sector: "port", from: 1, to: 0, reactivated: true },
     ]);
 
+    // Port's funnel stays legal: the hull caps one sector at 50 %, and Shields Power 3 doubles the
+    // budget so the same 50 % share still hands port its four assigned points.
+    state.power.shields = 3;
     state.shields.regenerationAllocation = {
       fore: 0,
-      port: 100,
+      port: 50,
       starboard: 0,
       aft: 0,
     };
@@ -914,6 +937,32 @@ describe("shield allocation, collapse, and recovery", () => {
     expect(restored.gains.port).toBe(1);
     expect(state.shields.hp.port).toBe(1);
     expect(state.shields.allocation.port).toBe(6);
+  });
+
+  // The contract: the hull caps how much regeneration one sector may claim, so a single funnel
+  // cannot out-heal sustained fire. The cap is inclusive, and 100 opts back out of it.
+  test("the hull's regeneration weight cap is an inclusive per-sector ceiling", () => {
+    const { config, state } = freshShip();
+    expect(config.regenerationWeightCap).toBe(50);
+
+    const atCap = previewDefenseRoute(config, state, {
+      regenerationAllocation: { fore: 50, port: 50, starboard: 0, aft: 0 },
+    });
+    expect(atCap.regenerationAllocation).toEqual({ fore: 50, port: 50, starboard: 0, aft: 0 });
+
+    const overCap = captureViolation(
+      () =>
+        previewDefenseRoute(config, state, {
+          regenerationAllocation: { fore: 51, port: 49, starboard: 0, aft: 0 },
+        }),
+      "INVALID_REGENERATION_ALLOCATION",
+    );
+    expect(overCap.details).toEqual({ sector: "fore", weight: 51, cap: 50 });
+
+    const uncapped = previewDefenseRoute({ ...config, regenerationWeightCap: 100 }, state, {
+      regenerationAllocation: { fore: 100, port: 0, starboard: 0, aft: 0 },
+    });
+    expect(uncapped.regenerationAllocation).toEqual({ fore: 100, port: 0, starboard: 0, aft: 0 });
   });
 
   test("a bubble maps directional impacts to one field, then recharges and regenerates", () => {

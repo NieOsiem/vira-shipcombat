@@ -8,6 +8,7 @@ import {
   localToWorld,
   magnitude,
   normalizeHeading,
+  rotateVector,
   roundHalfAwayFromZero,
   roundTo,
   scale,
@@ -84,6 +85,17 @@ export function getDriveCapabilities(config, state) {
   };
 }
 
+/** @param {object} config @param {object} state @returns {number} */
+export function getPivotCapability(config, state) {
+  const component = config?.components?.inertia;
+  if (!component) return 0;
+  const tier = tierAt(component, Number(state?.power?.inertia ?? 0));
+  if (!tier?.online) return 0;
+  const fault = getFaultEffects(config, state, { componentId: component.id, channel: "inertiaFailure" });
+  const multiplier = Number(fault?.pivotMultiplier ?? fault?.capabilityMultiplier ?? 0);
+  return Math.max(0, Number(tier.pivot ?? 0) * multiplier);
+}
+
 function violation(code, message, details = undefined) {
   throw new RuleViolation(code, message, details);
 }
@@ -117,6 +129,7 @@ function directionalCapabilities(input = {}) {
     port: capabilities.port ?? capabilities.portDeltaV ?? 0,
     starboard: capabilities.starboard ?? capabilities.starboardDeltaV ?? 0,
     rotation: capabilities.rotation ?? capabilities.rotationDegrees ?? 0,
+    pivot: capabilities.pivot ?? capabilities.pivotDegrees ?? 0,
   };
 }
 
@@ -214,6 +227,24 @@ export function validateManeuverTime(input) {
     });
   }
 
+  const pivot = finiteNumber(input.pivot ?? 0, "MOVEMENT_INVALID_PIVOT", "pivot");
+  const pivotSpent = finiteNumber(input.pivotSpent ?? input.state?.pivotSpent ?? 0, "MOVEMENT_INVALID_PIVOT_SPENT", "pivotSpent");
+  if (pivotSpent < -EPSILON) violation("MOVEMENT_INVALID_PIVOT_SPENT", "Spent pivot cannot be negative", { pivotSpent });
+  const pivotRemaining = Math.max(0, capabilities.pivot - pivotSpent);
+  if (Math.abs(pivot) > EPSILON && capabilities.pivot <= EPSILON) {
+    violation("MOVEMENT_PIVOT_UNAVAILABLE", "Requested pivot has no available capability", { requested: Math.abs(pivot) });
+  }
+  if (Math.abs(pivot) > pivotRemaining + EPSILON) {
+    violation("MOVEMENT_PIVOT_EXCEEDED", "Maneuver exceeds remaining absolute pivot", {
+      requested: Math.abs(pivot),
+      pivotSpent,
+      capability: capabilities.pivot,
+    });
+  }
+  if (Math.abs(pivot) > EPSILON && maneuver.duration <= EPSILON) {
+    violation("MOVEMENT_ZERO_DURATION_PIVOT", "Nonzero pivot requires positive maneuver time");
+  }
+
   return {
     ...maneuver,
     timelineUsed,
@@ -223,22 +254,30 @@ export function validateManeuverTime(input) {
     rotation,
     rotationSpent,
     rotationRemaining,
+    pivot,
+    pivotSpent,
+    pivotRemaining,
+    pivotRemainingAfter: Math.max(0, pivotRemaining - Math.abs(pivot)),
   };
 }
 
-/** @param {{position:{x:number,y:number},velocity:{x:number,y:number},facing:number,duration:number,deltaV?:object,rotation?:number,collisionRadius?:number}} input @returns {object} */
+/** @param {{position:{x:number,y:number},velocity:{x:number,y:number},facing:number,duration:number,deltaV?:object,rotation?:number,pivot?:number,collisionRadius?:number}} input @returns {object} */
 export function integrateBurn(input) {
   const position = finiteVector(input.position, "MOVEMENT_INVALID_POSITION", "position");
   const velocity = finiteVector(input.velocity, "MOVEMENT_INVALID_VELOCITY", "velocity");
   const facing = finiteNumber(input.facing, "MOVEMENT_INVALID_FACING", "facing");
   const duration = finiteNumber(input.duration, "MOVEMENT_INVALID_DURATION", "duration");
   const rotation = finiteNumber(input.rotation ?? 0, "MOVEMENT_INVALID_ROTATION", "rotation");
+  const pivot = finiteNumber(input.pivot ?? 0, "MOVEMENT_INVALID_PIVOT", "pivot");
   const deltaV = requestedAxes(input);
   const collisionRadius = finiteNumber(input.collisionRadius ?? 0, "MOVEMENT_INVALID_RADIUS", "collisionRadius");
   if (duration < 0 || duration > 1 + EPSILON) violation("MOVEMENT_INVALID_DURATION", "Integration duration must be between 0 and 1", { duration });
   if (collisionRadius < 0) violation("MOVEMENT_INVALID_RADIUS", "Collision radius cannot be negative", { collisionRadius });
   if (duration <= EPSILON && (Math.abs(deltaV.forward) > EPSILON || Math.abs(deltaV.lateral) > EPSILON)) {
     violation("MOVEMENT_ZERO_DURATION_THRUST", "Nonzero thrust requires positive maneuver time");
+  }
+  if (duration <= EPSILON && Math.abs(pivot) > EPSILON) {
+    violation("MOVEMENT_ZERO_DURATION_PIVOT", "Nonzero pivot requires positive maneuver time");
   }
 
   const first = {
@@ -258,7 +297,7 @@ export function integrateBurn(input) {
     if (Math.abs(rotation) > EPSILON) {
       path.push({ ...first, facing: finalFacing, unwrappedFacing: facing + rotation, fraction: 1 });
     }
-    return { path, position: { ...position }, velocity: { ...velocity }, facing: finalFacing, duration: 0, rotation, deltaV };
+    return { path, position: { ...position }, velocity: { ...velocity }, facing: finalFacing, duration: 0, rotation, pivot, deltaV };
   }
 
   const stepsPerInterval = input.stepsPerInterval ?? INTEGRATION_STEPS_PER_INTERVAL;
@@ -268,6 +307,7 @@ export function integrateBurn(input) {
   const steps = Math.max(1, Math.ceil((duration * stepsPerInterval) - EPSILON));
   const stepTime = duration / steps;
   const angularRate = rotation / duration;
+  const pivotRate = pivot / duration;
   const localAcceleration = { x: deltaV.lateral / duration, y: deltaV.forward / duration };
   let currentPosition = position;
   let currentVelocity = velocity;
@@ -276,6 +316,7 @@ export function integrateBurn(input) {
     const startTime = step * stepTime;
     const midpointFacing = facing + (angularRate * (startTime + (stepTime / 2)));
     const acceleration = localToWorld(localAcceleration, midpointFacing);
+    if (Math.abs(pivot) > EPSILON) currentVelocity = rotateVector(currentVelocity, pivotRate * stepTime);
     currentPosition = add(currentPosition, add(scale(currentVelocity, stepTime), scale(acceleration, 0.5 * stepTime * stepTime)));
     currentVelocity = add(currentVelocity, scale(acceleration, stepTime));
     const time = (step + 1) * stepTime;
@@ -300,6 +341,7 @@ export function integrateBurn(input) {
     facing: normalizeHeading(facing + rotation),
     duration,
     rotation,
+    pivot,
     deltaV,
   };
 }
@@ -651,7 +693,7 @@ function simulateAutomaticCoast(input) {
 
   while (remaining > EPSILON && iteration <= MAX_COAST_COLLISIONS) {
     const obstacles = (input.obstacles ?? []).filter((obstacle) => !ignored.has(obstacleSortId(obstacle)));
-    const segment = simulateSingleSegment({ ...input, position, velocity, duration: remaining, deltaV: { forward: 0, lateral: 0 }, rotation: 0, obstacles }, "coast");
+    const segment = simulateSingleSegment({ ...input, position, velocity, duration: remaining, deltaV: { forward: 0, lateral: 0 }, rotation: 0, pivot: 0, obstacles }, "coast");
     const shifted = segment.path.map((point) => ({ ...point, time: point.time + elapsed }));
     if (path.length > 0) shifted.shift();
     path.push(...shifted);
@@ -671,7 +713,7 @@ function simulateAutomaticCoast(input) {
     ignored.add(segment.collision.obstacleId);
     iteration += 1;
     if (spent <= EPSILON && remaining > EPSILON && ignored.size >= (input.obstacles ?? []).length) {
-      const tail = integrateBurn({ ...input, position, velocity, duration: remaining, deltaV: { forward: 0, lateral: 0 }, rotation: 0 });
+      const tail = integrateBurn({ ...input, position, velocity, duration: remaining, deltaV: { forward: 0, lateral: 0 }, rotation: 0, pivot: 0 });
       const shiftedTail = tail.path.slice(1).map((point) => ({ ...point, phase: "coast", time: point.time + elapsed }));
       path.push(...shiftedTail);
       position = tail.position;
@@ -684,7 +726,20 @@ function simulateAutomaticCoast(input) {
   return { path, position, velocity, facing: normalizeHeading(input.facing), duration: elapsed, collisions };
 }
 
-/** @param {object} input @returns {{path:Array<object>,poweredEnd:object,coastEnd:object,finalVelocity:object,finalFacing:number,timelineUsed:number,timelineRemaining:number,rotationRemaining:number,collisions:Array<object>,warnings:Array<object>}} */
+function simulateDeliberateCoast(input) {
+  const segment = simulateSingleSegment(input, "deliberateCoast");
+  const collision = segment.collision;
+  return {
+    path: segment.path,
+    position: { ...segment.end.position },
+    velocity: { ...segment.end.velocity },
+    facing: segment.end.facing,
+    duration: collision ? collision.time : input.duration,
+    collisions: collision ? [collision] : [],
+  };
+}
+
+/** @param {object} input @returns {{path:Array<object>,poweredEnd:object,coastEnd:object,finalVelocity:object,finalFacing:number,timelineUsed:number,timelineRemaining:number,rotationRemaining:number,pivotSpent:number,pivotRemaining:number,collisions:Array<object>,warnings:Array<object>}} */
 export function previewManeuver(input) {
   const validated = validateManeuverTime(input);
   const position = finiteVector(input.position, "MOVEMENT_INVALID_POSITION", "position");
@@ -700,12 +755,16 @@ export function previewManeuver(input) {
     duration: validated.duration,
     deltaV: validated.deltaV,
     rotation: validated.rotation,
+    pivot: validated.pivot,
   }, validated.coast ? "deliberateCoast" : "powered");
   const elapsedDuration = powered.collision ? powered.collision.time : validated.duration;
   const elapsedRatio = validated.duration > EPSILON ? elapsedDuration / validated.duration : 1;
   const timelineUsed = Math.min(1, validated.timelineUsed + elapsedDuration);
+  const capabilities = directionalCapabilities(input.capabilities ?? {});
   const rotationSpent = validated.rotationSpent + (Math.abs(validated.rotation) * elapsedRatio);
-  const rotationRemaining = Math.max(0, directionalCapabilities(input.capabilities ?? {}).rotation - rotationSpent);
+  const rotationRemaining = Math.max(0, capabilities.rotation - rotationSpent);
+  const pivotSpent = validated.pivotSpent + (Math.abs(validated.pivot) * elapsedRatio);
+  const pivotRemaining = Math.max(0, capabilities.pivot - pivotSpent);
   const coastDuration = Math.max(0, 1 - timelineUsed);
   const coast = simulateAutomaticCoast({
     ...input,
@@ -747,6 +806,8 @@ export function previewManeuver(input) {
     timelineUsed: roundTo(timelineUsed, 12),
     timelineRemaining: roundTo(Math.max(0, 1 - timelineUsed), 12),
     rotationRemaining: roundTo(rotationRemaining, 12),
+    pivotSpent: roundTo(pivotSpent, 12),
+    pivotRemaining: roundTo(pivotRemaining, 12),
     collisions,
     warnings,
   };
@@ -761,15 +822,19 @@ export function applyManeuver(state, input) {
     velocity: state.velocity,
     timelineUsed: state.timeline,
     rotationSpent: state.rotationSpent,
+    pivotSpent: state.pivotSpent,
     evasionReserved: reservedEvasion(state),
   });
   const requestedRotation = input.rotation ?? 0;
+  const requestedPivot = input.pivot ?? 0;
   const requestedDuration = getManeuverTime(input).duration;
   const elapsedRatio = requestedDuration > EPSILON ? preview.poweredEnd.time / requestedDuration : 1;
   const nextRotationSpent = roundTo((state.rotationSpent ?? 0) + (Math.abs(requestedRotation) * elapsedRatio), 12);
+  const nextPivotSpent = roundTo((state.pivotSpent ?? 0) + (Math.abs(requestedPivot) * elapsedRatio), 12);
   state.velocity = { ...preview.poweredEnd.velocity };
   state.timeline = preview.timelineUsed;
   state.rotationSpent = nextRotationSpent;
+  state.pivotSpent = nextPivotSpent;
   return {
     ...preview,
     position: { ...preview.poweredEnd.position },
@@ -786,32 +851,48 @@ export function resolveCoast(state, input) {
   const timelineUsed = timelineValue(state);
   const reserve = reservedEvasion(state);
   const duration = automatic ? Math.max(0, 1 - timelineUsed) : input.duration;
+  let validated = null;
   if (!automatic) {
-    validateManeuverTime({
+    validated = validateManeuverTime({
       ...input,
       state,
       timelineUsed,
       rotationSpent: state.rotationSpent,
+      pivotSpent: state.pivotSpent,
       duration,
       deltaV: { forward: 0, lateral: 0 },
-      capabilities: input.capabilities ?? { forward: 0, retro: 0, port: 0, starboard: 0, rotation: 0 },
+      capabilities: input.capabilities ?? { forward: 0, retro: 0, port: 0, starboard: 0, rotation: 0, pivot: 0 },
       evasionReserved: reserve,
     });
   }
   finiteNumber(duration, "MOVEMENT_INVALID_DURATION", "duration");
   if (!automatic && duration <= EPSILON) violation("MOVEMENT_INVALID_DURATION", "Deliberate coast requires positive duration", { duration });
-  const result = simulateAutomaticCoast({
-    ...input,
-    position: finiteVector(input.position, "MOVEMENT_INVALID_POSITION", "position"),
-    velocity: finiteVector(state.velocity, "MOVEMENT_INVALID_VELOCITY", "velocity"),
-    facing: finiteNumber(input.facing, "MOVEMENT_INVALID_FACING", "facing"),
-    duration,
-    collisionRadius: input.collisionRadius ?? input.ship?.radius ?? input.ship?.collisionRadius ?? 0,
-  });
+  const position = finiteVector(input.position, "MOVEMENT_INVALID_POSITION", "position");
+  const velocity = finiteVector(state.velocity, "MOVEMENT_INVALID_VELOCITY", "velocity");
+  const facing = finiteNumber(input.facing, "MOVEMENT_INVALID_FACING", "facing");
+  const collisionRadius = input.collisionRadius ?? input.ship?.radius ?? input.ship?.collisionRadius ?? 0;
+  const result = automatic
+    ? simulateAutomaticCoast({ ...input, position, velocity, facing, duration, collisionRadius, pivot: 0 })
+    : simulateDeliberateCoast({
+      ...input,
+      position,
+      velocity,
+      facing,
+      duration,
+      collisionRadius,
+      deltaV: { forward: 0, lateral: 0 },
+      rotation: 0,
+      pivot: validated.pivot,
+    });
   state.velocity = { ...result.velocity };
   state.timeline = roundTo(Math.min(1, timelineUsed + duration), 12);
+  if (!automatic) {
+    const elapsedRatio = duration > EPSILON ? result.duration / duration : 1;
+    state.pivotSpent = roundTo((state.pivotSpent ?? 0) + (Math.abs(validated.pivot) * elapsedRatio), 12);
+  }
   return {
     ...result,
+    pivotSpent: roundTo(state.pivotSpent ?? 0, 12),
     timelineUsed: state.timeline,
     timelineRemaining: Math.max(0, 1 - state.timeline),
     automatic,
@@ -834,50 +915,61 @@ export function getOverspeedDamage(velocity, safeVelocity) {
   return { speed, safeVelocity: resolvedSafeVelocity, overspeed, hullDamage: 2 * overspeed };
 }
 
-/** @param {object} state @param {{phase:string,hasHelm:boolean,enginesPower:number,hardwareOperational:boolean,maneuverCapability:number,evasionReserve:number,evasionAcBonus?:number}} input @returns {object} */
+/** @param {object} state @param {{phase:string,hasHelm:boolean,enginesPower:number,hardwareOperational:boolean,pivotCapability:number,tier?:string,evasionReserve?:number,config?:object}} input @returns {object} */
 export function armEvasion(state, input) {
   if (!state || typeof state !== "object") violation("MOVEMENT_INVALID_STATE", "A caller-owned state draft is required");
   const phase = input.phase ?? state.phase;
   if (phase !== "active") violation("EVASION_WRONG_PHASE", "Evasion can only be armed during the Active Phase", { phase });
   if (!input.hasHelm) violation("EVASION_HELM_REQUIRED", "Arming Evasion requires held Helm control");
   if (!(input.enginesPower > 0)) violation("EVASION_ENGINES_UNPOWERED", "Arming Evasion requires Engines Power above zero");
-  if (!input.hardwareOperational || !(input.maneuverCapability > 0)) {
+  if (!input.hardwareOperational || !(input.pivotCapability > 0)) {
     violation("EVASION_HARDWARE_UNAVAILABLE", "Evasion-capable maneuvering hardware is unavailable");
   }
-  const evasionReserve = finiteNumber(input.evasionReserve ?? input.config?.evasionReserve, "EVASION_INVALID_RESERVE", "evasionReserve");
+  const tier = input.tier === "hard" ? "hard" : "standard";
+  // Hull data stores reserve percentages (20 = 20 %); the API works in fractions.
+  const rawConfigured = tier === "hard" ? input.config?.evasionHardReserve : input.config?.evasionReserve;
+  const configured = Number.isFinite(Number(rawConfigured))
+    ? (Number(rawConfigured) > 1 ? Number(rawConfigured) / 100 : Number(rawConfigured))
+    : undefined;
+  if (tier === "hard" && configured === undefined) {
+    violation("EVASION_TIER_UNAVAILABLE", "This hull has no Hard Evasive Protocol tier", { tier });
+  }
+  const evasionReserve = finiteNumber(input.evasionReserve ?? configured, "EVASION_INVALID_RESERVE", "evasionReserve");
   if (evasionReserve < 0 || evasionReserve > 1) violation("EVASION_INVALID_RESERVE", "Evasion reserve must be between 0 and 1", { evasionReserve });
-  const existing = state.evasion && typeof state.evasion === "object" ? state.evasion : { armed: false, reserved: 0 };
+  const existing = state.evasion && typeof state.evasion === "object" ? state.evasion : { armed: false, reserved: 0, tier: null };
   const reserved = Math.max(existing.reserved ?? 0, evasionReserve);
   if (timelineValue(state) > 1 - reserved + EPSILON) {
     violation("EVASION_TIMELINE_UNAVAILABLE", "Insufficient unspent timeline remains to reserve Evasion", { timeline: timelineValue(state), evasionReserve });
   }
-  state.evasion = { armed: true, reserved };
-  return { armed: true, reserved, acBonus: input.evasionAcBonus ?? input.config?.evasionAcBonus ?? 2 };
+  state.evasion = { armed: true, reserved, tier };
+  return { armed: true, reserved, tier, acBonus: input.evasionAcBonus ?? input.config?.evasionAcBonus ?? 2 };
 }
 
 /** @param {object} state @returns {object} */
 export function disarmEvasion(state) {
   if (!state || typeof state !== "object") violation("MOVEMENT_INVALID_STATE", "A caller-owned state draft is required");
   const reserved = reservedEvasion(state);
-  state.evasion = { armed: false, reserved };
-  return { armed: false, reserved, acBonus: 0 };
+  const tier = state.evasion?.tier ?? null;
+  state.evasion = { armed: false, reserved, tier };
+  return { armed: false, reserved, tier, acBonus: 0 };
 }
 
-/** @param {object} state @returns {{armed:false,reserved:0}} */
+/** @param {object} state @returns {{armed:false,reserved:0,tier:null}} */
 export function resetEvasionAtStart(state) {
   if (!state || typeof state !== "object") violation("MOVEMENT_INVALID_STATE", "A caller-owned state draft is required");
-  state.evasion = { armed: false, reserved: 0 };
+  state.evasion = { armed: false, reserved: 0, tier: null };
   return { ...state.evasion };
 }
 
-/** @param {object} state @param {{enginesPower:number,hardwareOperational:boolean,maneuverCapability:number,evasionAcBonus?:number}} input @returns {object} */
+/** @param {object} state @param {{enginesPower:number,hardwareOperational:boolean,pivotCapability:number,evasionAcBonus?:number}} input @returns {object} */
 export function enforceEvasionEligibility(state, input) {
   if (!state || typeof state !== "object") violation("MOVEMENT_INVALID_STATE", "A caller-owned state draft is required");
-  const eligible = input.enginesPower > 0 && input.hardwareOperational && input.maneuverCapability > 0;
+  const eligible = input.enginesPower > 0 && input.hardwareOperational && input.pivotCapability > 0;
   if (!eligible && state.evasion?.armed) return { ...disarmEvasion(state), removed: true };
   return {
     armed: Boolean(state.evasion?.armed),
     reserved: reservedEvasion(state),
+    tier: state.evasion?.tier ?? null,
     acBonus: state.evasion?.armed ? (input.evasionAcBonus ?? input.config?.evasionAcBonus ?? 2) : 0,
     removed: false,
   };

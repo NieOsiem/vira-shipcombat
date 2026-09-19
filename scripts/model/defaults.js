@@ -1,4 +1,4 @@
-import { SCHEMA_VERSION, SECTORS } from "../constants.js";
+import { POWER_SYSTEMS, SCHEMA_VERSION, SECTORS } from "../constants.js";
 import { CANADENSIS_HULL_CONFIG } from "../data/canadensis.js";
 import { CANADENSIS_DEFAULT_COMPONENT_SOURCES } from "../data/canadensis-components.js";
 import { materializeShipConfig } from "./equipment.js";
@@ -50,19 +50,26 @@ function distribute(total, keys, cap = Infinity) {
   return values;
 }
 
+function powerInstalled(config, system) {
+  const components = config?.components ?? {};
+  if (system === "engines") return Object.values(components.drives ?? {}).some(Boolean);
+  if (system === "shields") return Boolean(components.shield);
+  if (system === "sensors") return Boolean(components.sensor);
+  if (system === "cooling") return Boolean(components.cooling);
+  if (system === "inertia") return Boolean(components.inertia);
+  if (system === "weapons") return (components.weapons?.length ?? 0) > 0;
+  return false;
+}
+
 function initialPower(config) {
   const allocations = config?.initialPower ?? config?.powerPresets?.[0]?.allocations ?? {};
-  const installed = {
-    engines: Object.values(config?.components?.drives ?? {}).some(Boolean),
-    shields: Boolean(config?.components?.shield),
-    sensors: Boolean(config?.components?.sensor),
-    cooling: Boolean(config?.components?.cooling),
-    weapons: (config?.components?.weapons?.length ?? 0) > 0,
-  };
   const power = Object.fromEntries(
-    Object.keys(installed).map((system) => [system, installed[system] ? (allocations[system] ?? 0) : 0]),
+    POWER_SYSTEMS.map((system) => [
+      system,
+      powerInstalled(config, system) ? (allocations[system] ?? 0) : 0,
+    ]),
   );
-  const committed = power.engines + power.shields + power.sensors + power.cooling + power.weapons;
+  const committed = POWER_SYSTEMS.reduce((total, system) => total + power[system], 0);
   const nominalOutput = config?.components?.reactor?.nominalOutput;
   power.redlining = Number.isFinite(nominalOutput) && committed > nominalOutput;
   return power;
@@ -147,6 +154,7 @@ export function createInitialState(config) {
     velocity: { x: 0, y: 0 },
     timeline: 0,
     rotationSpent: 0,
+    pivotSpent: 0,
     evasion: { armed: false, reserved: 0 },
     ventCooldown: 0,
     effects: [],

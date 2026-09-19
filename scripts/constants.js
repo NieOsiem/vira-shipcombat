@@ -12,6 +12,7 @@ export const COMPONENT_CLASSES = Object.freeze([
   "shield",
   "sensor",
   "cooling",
+  "inertia",
   "weapon",
 ]);
 export const DRIVE_ROLES = Object.freeze(["", "main", "reverse", "lateral"]);
@@ -21,12 +22,14 @@ export const CORE_COMPONENT_CLASSES = Object.freeze([
   "shield",
   "sensor",
   "cooling",
+  "inertia",
 ]);
 export const POWER_SYSTEMS = Object.freeze([
   "engines",
   "shields",
   "sensors",
   "cooling",
+  "inertia",
   "weapons",
 ]);
 export const WEAPON_CATEGORIES = Object.freeze(["hardpoint"]);

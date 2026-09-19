@@ -1,4 +1,8 @@
-import { BARRAGE_PROFILES, mergeProfile } from "../rules/combat.js";
+import {
+  BARRAGE_PROFILES,
+  getEvasionBonus,
+  mergeProfile,
+} from "../rules/combat.js";
 import { getPowerState, weaponPowerRating } from "../rules/power.js";
 import {
   FAULT_CHANNELS,
@@ -18,7 +22,10 @@ import {
   TRACK_STATUS,
 } from "../rules/sensors.js";
 import { previewDefenseRoute } from "../rules/shields.js";
-import { getDriveCapabilities } from "../rules/movement.js";
+import {
+  getDriveCapabilities,
+  getPivotCapability,
+} from "../rules/movement.js";
 import { sceneGridGeometry } from "./scene-geometry.js";
 import {
   autoScale,
@@ -41,6 +48,7 @@ const POWER_SYSTEMS = Object.freeze([
   ["shields", "Shields"],
   ["sensors", "Sensors"],
   ["cooling", "Cooling"],
+  ["inertia", "Inertia"],
   ["weapons", "Weapons"],
 ]);
 const SYSTEM_ICONS = Object.freeze({
@@ -48,6 +56,7 @@ const SYSTEM_ICONS = Object.freeze({
   shields: "fa-solid fa-shield-halved",
   sensors: "fa-solid fa-satellite-dish",
   cooling: "fa-solid fa-snowflake",
+  inertia: "fa-solid fa-arrows-spin",
   weapons: "fa-solid fa-crosshairs",
 });
 const SYSTEM_SHORT_LABELS = Object.freeze({
@@ -55,6 +64,7 @@ const SYSTEM_SHORT_LABELS = Object.freeze({
   shields: "SHD",
   sensors: "SNS",
   cooling: "COL",
+  inertia: "INR",
   weapons: "WPN",
 });
 const SECTORS = Object.freeze(["fore", "port", "starboard", "aft"]);
@@ -390,6 +400,7 @@ function componentForSystem(config, system) {
   if (system === "shields") return config?.components?.shield;
   if (system === "sensors") return config?.components?.sensor;
   if (system === "cooling") return config?.components?.cooling;
+  if (system === "inertia") return config?.components?.inertia;
   return null;
 }
 
@@ -416,6 +427,8 @@ function powerOptions(config, powerState, system) {
       ? `regen ${whole(tier.regeneration)}`
       : tier.cooling != null
       ? `cool ${whole(tier.cooling)}`
+      : tier.pivot != null
+      ? `pivot ${whole(tier.pivot)}`
       : tier.rangeMultiplier != null
       ? `${finite(tier.rangeMultiplier)}× range`
       : tier.online === false
@@ -472,6 +485,9 @@ function powerView(config, state) {
   const cooling = config?.components?.cooling?.tiers?.find((tier) =>
     tier.power === powerState.allocation.cooling
   )?.cooling ?? 0;
+  const pivot = config?.components?.inertia?.tiers?.find((tier) =>
+    tier.power === powerState.allocation.inertia
+  )?.pivot ?? 0;
   const reservingWeapons =
     Object.values(powerState.weaponReservations).filter((reservation) =>
       reservation > 0
@@ -486,6 +502,7 @@ function powerView(config, state) {
     sensors: sensor.online ? `${sensor.activeRange} active` : "Offline",
     weapons: reservation,
     cooling: `${cooling} cooling`,
+    inertia: `${pivot} pivot`,
   };
 
   return {
@@ -621,7 +638,9 @@ function shieldView(config, state) {
       totalHp: 0,
       totalAllocation: 0,
       unassigned: 0,
+      regenerationWeightCap: 100,
       regenPipsTotal: 20,
+      regenPipLimit: 20,
       unassignedRegen: 0,
       total: 0,
       meter: meter(0, 0, "shield"),
@@ -634,6 +653,13 @@ function shieldView(config, state) {
       ?.regeneration,
   );
   const budget = whole(shield.totalBudget);
+  // The hull caps how much regeneration weight one sector may claim (100 = uncapped). The pip
+  // track is one pip per 5 percent, so the cap simply shortens it. Bubble shields regenerate as
+  // one pool, which the rules leave uncapped.
+  const regenerationWeightCap = shield.topology === "bubble"
+    ? 100
+    : Math.min(100, whole(config?.regenerationWeightCap, 100));
+  const regenPipLimit = Math.round(regenerationWeightCap / 5);
   const totalHp = whole(route.totalHp);
   const totalAllocation = whole(route.totalAllocation);
   const sectors = Object.keys(route.hp).map((id) => {
@@ -654,7 +680,8 @@ function shieldView(config, state) {
       hpPercent: percent(hp, capacity),
       allocPercent: percent(allocation, capacity),
       weight,
-      pips: Math.max(0, Math.min(20, Math.round(weight / 5))),
+      weightCap: regenerationWeightCap,
+      pips: Math.max(0, Math.min(regenPipLimit, Math.round(weight / 5))),
       rate: ((regeneration * weight) / 100).toFixed(1),
       canReceive: collapse === 0 && capacity > 0,
       collapse,
@@ -671,7 +698,9 @@ function shieldView(config, state) {
     totalHp,
     totalAllocation,
     unassigned: budget - totalAllocation,
+    regenerationWeightCap,
     regenPipsTotal: 20,
+    regenPipLimit,
     unassignedRegen: Math.max(
       0,
       (shield.topology === "bubble" ? 0 : 20) -
@@ -1329,6 +1358,13 @@ export function buildShipConsoleView(
   );
   const driveCapabilities = getDriveCapabilities(config, state);
   const rotationCapacity = driveCapabilities.rotation;
+  const pivotMax = getPivotCapability(config, state);
+  // The armed protocol selects the ceiling: standard caps at the hull's base bonus, the hard
+  // protocol at `evasionHardAcCap`. Unarmed reports the standard ceiling against a +0 bonus.
+  const evasionBonus = getEvasionBonus(config, state);
+  const evasionCap = state?.evasion?.tier === "hard"
+    ? finite(config?.evasionHardAcCap, 4)
+    : finite(config?.evasionAcBonus, 2);
   const facing = finite(state?.facing ?? token?.rotation);
   const normalizedFacing = ((Math.round(facing) % 360) + 360) % 360;
   const headingLabel = `${String(normalizedFacing).padStart(3, "0")}°`;
@@ -1540,8 +1576,18 @@ export function buildShipConsoleView(
         0,
         rotationCapacity - finite(state?.rotationSpent),
       ).toFixed(2)),
+      pivotSpent: Number(finite(state?.pivotSpent).toFixed(2)),
+      pivotMax,
+      pivotRemaining: Number(Math.max(
+        0,
+        pivotMax - finite(state?.pivotSpent),
+      ).toFixed(2)),
       evasionArmed: state?.evasion?.armed === true,
       evasionReserved: Number(finite(state?.evasion?.reserved).toFixed(2)),
+      evasionBonus,
+      evasionCap,
+      evasionCeiling: `${signed(evasionBonus, 0)} / ${signed(evasionCap, 0)}`,
+      evasionHardAvailable: finite(config?.evasionHardReserve) > 0,
       safeVelocity: finite(config?.safeVelocity),
       forwardMax: driveCapabilities.forward,
       retroMax: driveCapabilities.retro,
@@ -1567,6 +1613,12 @@ export function buildShipConsoleView(
           Math.max(0, rotationCapacity - finite(state?.rotationSpent)),
           rotationCapacity,
         )
+        : 0,
+      pivotBudgetSpentPct: pivotMax > 0
+        ? percent(finite(state?.pivotSpent), pivotMax)
+        : 0,
+      pivotBudgetLeftPct: pivotMax > 0
+        ? percent(Math.max(0, pivotMax - finite(state?.pivotSpent)), pivotMax)
         : 0,
       forwardZeroPosition: driveCapabilities.forward + driveCapabilities.retro >
           0
@@ -1607,6 +1659,11 @@ export function buildShipConsoleView(
         rotationCapacity > 0
           ? finite(state?.rotationSpent) / rotationCapacity
           : 0,
+        0,
+      ),
+      pivotTrackStyle: helmTrackGradientStyle(
+        50,
+        pivotMax > 0 ? finite(state?.pivotSpent) / pivotMax : 0,
         0,
       ),
       timelineRemainingHalf: Number((Math.max(
@@ -1666,9 +1723,21 @@ export function buildShipConsoleView(
           {
             label: "Evasion",
             value:
-              `${percent(config?.evasion?.timelineReserve, 1)}% reserve · +${
-                whole(config?.evasion?.acBonus)
-              } AC`,
+              `${
+                Math.round(
+                  finite(config?.evasionReserve) *
+                    (finite(config?.evasionReserve) <= 1 ? 100 : 1),
+                )
+              }% reserve · +${whole(config?.evasionAcBonus)} AC${
+                finite(config?.evasionHardReserve) > 0
+                  ? ` · hard ${
+                    Math.round(
+                      finite(config?.evasionHardReserve) *
+                        (finite(config?.evasionHardReserve) <= 1 ? 100 : 1),
+                    )
+                  }% for +${whole(config?.evasionHardAcCap, 4)}`
+                  : ""
+              }`,
           },
           {
             label: "Armor",

@@ -183,8 +183,9 @@ export function runStartPhase(config, state, {
     const resources = refreshResources(config, draft, { turnKey: draft.turnKey, roster: draft.roster, occupiedIdentities, conflictPolicy });
     draft.timeline = 0;
     draft.rotationSpent = 0;
+    draft.pivotSpent = 0;
     resetEvasionAtStart(draft);
-    events.push(event(8, "turnReset", { resources, timeline: 0, rotationSpent: 0, evasion: clone(draft.evasion) }));
+    events.push(event(8, "turnReset", { resources, timeline: 0, rotationSpent: 0, pivotSpent: 0, evasion: clone(draft.evasion) }));
 
     const tracks = refreshObserverTracks({ observerConfig: config, observerState: draft, targets, atStart: true, startKey: draft.turnKey, nextStartKey, expiringJamSourceUuid });
     const deferredPassiveNotices = [

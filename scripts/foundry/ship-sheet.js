@@ -1,4 +1,4 @@
-import { COMPONENT_ITEM_TYPE, MODULE_ID, SHIP_TYPE } from "../constants.js";
+import { COMPONENT_ITEM_TYPE, MODULE_ID, POWER_SYSTEMS, SHIP_TYPE } from "../constants.js";
 import {
   buildShipConsoleView,
   helmCoastTrackGradientStyle,
@@ -26,6 +26,7 @@ import { previewDefenseRoute } from "../rules/shields.js";
 import {
   armEvasion,
   getDriveCapabilities,
+  getPivotCapability,
   previewManeuver,
   projectCoast,
 } from "../rules/movement.js";
@@ -83,7 +84,7 @@ const HELP = {
   maneuver:
     '{"operatorId":"…","deltaV":{"forward":0,"lateral":0},"rotation":0}',
   rotate: '{"operatorId":"…","rotation":0}',
-  armEvasion: '{"operatorId":"…"}',
+  armEvasion: '{"operatorId":"…","tier":"standard|hard"}',
   disarmEvasion: '{"operatorId":"…"}',
   routePower: '{"operatorId":"…","allocation":{}}',
   toggleWeapon: '{"operatorId":"…","weaponId":"…"}',
@@ -216,10 +217,11 @@ function uiOperation(type, data, config, state) {
       const forward = Number(numeric(data.forward).toFixed(2));
       const lateral = Number(numeric(data.lateral).toFixed(2));
       const rotation = Number(numeric(data.rotation).toFixed(1));
+      const pivot = Number(numeric(data.pivot).toFixed(1));
       const coast = Number(Math.max(0, numeric(data.coastDuration)).toFixed(2));
       if (coast > 0 && (forward !== 0 || lateral !== 0)) {
         throw new Error(
-          "Coast requires zero main and lateral thrust; rotation is allowed.",
+          "Coast requires zero main and lateral thrust; rotation and pivot are allowed.",
         );
       }
       return {
@@ -227,6 +229,7 @@ function uiOperation(type, data, config, state) {
           ...payload,
           deltaV: { forward, lateral },
           rotation,
+          pivot,
           ...(coast > 0 ? { duration: coast } : {}),
         },
         targetUuids: [],
@@ -238,6 +241,13 @@ function uiOperation(type, data, config, state) {
         targetUuids: [],
       };
     case "armEvasion":
+      return {
+        payload: {
+          ...payload,
+          tier: data.tier === "hard" ? "hard" : "standard",
+        },
+        targetUuids: [],
+      };
     case "disarmEvasion":
     case "fade":
     case "cooling":
@@ -249,8 +259,7 @@ function uiOperation(type, data, config, state) {
         payload: {
           ...payload,
           allocation: Object.fromEntries(
-            ["engines", "shields", "sensors", "cooling", "weapons"]
-              .map((system) => [system, numeric(data[system])]),
+            POWER_SYSTEMS.map((system) => [system, numeric(data[system])]),
           ),
           ...powerPriorities(config, state, {
             sheddingPriority: formPriority(data, "sheddingPriority"),
@@ -822,7 +831,10 @@ function tokenRadius(token) {
 }
 
 function driveCapabilities(config, state) {
-  return getDriveCapabilities(config, state);
+  return {
+    ...getDriveCapabilities(config, state),
+    pivot: getPivotCapability(config, state),
+  };
 }
 
 function collectionValues(collection) {
@@ -1134,6 +1146,7 @@ async function movementPreviewInput(payload, token, config, state) {
       velocity: clone(state.velocity ?? { x: 0, y: 0 }),
       timelineUsed: Number(state.timeline ?? 0),
       rotationSpent: Number(state.rotationSpent ?? 0),
+      pivotSpent: Number(state.pivotSpent ?? 0),
       evasionReserved: Number(state.evasion?.reserved ?? 0),
       state,
       capabilities: driveCapabilities(config, state),
@@ -2280,11 +2293,17 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   #attachHelm(html) {
     const state = this.actor.system.shipCombat.state;
     const capabilities = getDriveCapabilities(this.#config, state);
+    const pivotMax = getPivotCapability(this.#config, state);
     const limits = {
       forward: [-capabilities.retro, capabilities.forward],
       lateral: [-capabilities.port, capabilities.starboard],
       rotation: [-capabilities.rotation, capabilities.rotation],
+      pivot: [-pivotMax, pivotMax],
     };
+    const emptyReason = (name) =>
+      name === "pivot"
+        ? "No pivot authority; bring the inertial anchor online"
+        : "No operational thruster capability";
     const form = html.querySelector("form[data-ui-operation='maneuver']");
     if (!form) return;
     const denial = state.phase !== "active"
@@ -2293,9 +2312,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     for (const [name, [min, max]] of Object.entries(limits)) {
       const input = form.elements.namedItem(name);
       if (!input) continue;
+      const degrees = name === "rotation" || name === "pivot";
       input.min = String(min);
       input.max = String(max);
-      input.step = name === "rotation" ? "1" : "0.05";
+      input.step = degrees ? "1" : "0.05";
       const draft = this.#uiDrafts.get("maneuver:");
       if (draft) {
         input.value = String(numeric(draft.values[name]));
@@ -2304,13 +2324,13 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       input.title = !this.#canAct
         ? denial
         : max - min <= 0
-        ? "No operational thruster capability"
+        ? emptyReason(name)
         : "Full capability range; insufficient remaining budget rejects the maneuver.";
       const zeroPos = `${max > min ? -min / (max - min) * 100 : 50}%`;
       input.style.setProperty("--zero-position", zeroPos);
       input.closest(".ship-helm-slider-track")?.style.setProperty("--zero-position", zeroPos);
       input.closest(".ship-helm-axis")?.style.setProperty("--zero-position", zeroPos);
-      const digits = name === "rotation" ? 1 : 2;
+      const digits = degrees ? 1 : 2;
       const refresh = () => {
         const value = Number(numeric(input.value).toFixed(digits));
         if (value !== 0 && (name === "forward" || name === "lateral")) {
@@ -2324,13 +2344,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         }
         input.setAttribute(
           "aria-valuetext",
-          `${signed(value, digits)}${name === "rotation" ? " degrees" : " thrust"}`,
+          `${signed(value, digits)}${degrees ? " degrees" : " thrust"}`,
         );
         form.querySelectorAll(`[data-slider-value='${name}']`).forEach(
           (output) => {
-            output.textContent = `${signed(value, digits)}${
-              name === "rotation" ? "°" : ""
-            }`;
+            output.textContent = `${signed(value, digits)}${degrees ? "°" : ""}`;
           },
         );
       };
@@ -2396,13 +2414,17 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 
     this.#on(form.querySelector("[data-helm-reset]"), "click", (event) => {
       event.preventDefault();
-      for (const name of ["forward", "lateral", "rotation"]) {
+      for (const name of ["forward", "lateral", "rotation", "pivot"]) {
         const input = form.elements.namedItem(name);
         if (input) {
           input.value = "0";
           input.dispatchEvent(new Event("input", { bubbles: false }));
           form.querySelectorAll(`[data-slider-value='${name}']`).forEach(
-            (o) => { o.textContent = name === "rotation" ? "0°" : "+0"; },
+            (o) => {
+              o.textContent = name === "rotation" || name === "pivot"
+                ? "0°"
+                : "+0";
+            },
           );
         }
       }
@@ -2456,17 +2478,34 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             Math.max(capabilities.forward, capabilities.retro) > 0 &&
             capabilities.rotation > 0 &&
             Math.max(capabilities.port, capabilities.starboard) > 0,
-          maneuverCapability: Math.max(
-            capabilities.forward,
-            capabilities.retro,
-            capabilities.port,
-            capabilities.starboard,
-          ),
+          pivotCapability: capabilities.pivot,
           evasionReserve: reserve > 1 ? reserve / 100 : reserve,
         });
         if (!this.#canAct) reason = denial;
       } catch (error) {
         reason = errorText(error);
+      }
+      const hardReserve = numeric(this.#config.evasionHardReserve);
+      const hardArm = form.querySelector("[data-ui-operation='armEvasion'][data-tier='hard']");
+      if (hardArm) {
+        let hardReason = "";
+        try {
+          armEvasion(clone(state), {
+            phase: state.phase,
+            hasHelm: held,
+            enginesPower: numeric(state.power?.engines),
+            hardwareOperational: capabilities.pivot > 0,
+            pivotCapability: capabilities.pivot,
+            tier: "hard",
+            evasionReserve: hardReserve > 1 ? hardReserve / 100 : hardReserve,
+          });
+          if (!this.#canAct) hardReason = denial;
+        } catch (error) {
+          hardReason = errorText(error);
+        }
+        hardArm.hidden = Boolean(state.evasion?.armed || hardReason);
+        hardArm.disabled = !this.#canAct;
+        hardArm.title = !this.#canAct ? denial : "Hard protocol: larger reserve, higher AC ceiling.";
       }
       const arm = form.querySelector("[data-ui-operation='armEvasion']");
       if (arm) {
@@ -2699,6 +2738,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       ? "Active Phase required."
       : "Operational access required.";
     const pool = shields.regenPipsTotal ?? 20;
+    const limit = shields.regenPipLimit ?? pool;
+    const cap = shields.regenerationWeightCap ?? 100;
     const draft = this.#uiDrafts.get("routeDefense:");
     const inputs = new Map();
     for (const sector of shields.sectors) {
@@ -2714,7 +2755,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       allocation.value = String(
         Math.max(0, Math.min(seededAllocation, sector.capacity)),
       );
-      regen.value = String(Math.max(0, Math.min(seededWeight, 100)));
+      regen.value = String(Math.max(0, Math.min(seededWeight, cap)));
       inputs.set(sector.id, { allocation, regen });
     }
     const submit = form.querySelector("button[type='submit']");
@@ -2728,7 +2769,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         ),
       );
     const stagedWeight = (sector) =>
-      Math.max(0, Math.min(numeric(inputs.get(sector.id).regen.value), 100));
+      Math.max(0, Math.min(numeric(inputs.get(sector.id).regen.value), cap));
     let unassignedRegen = 0;
     form.querySelectorAll("[data-distribute]").forEach((button) => {
       button.disabled = !this.#canAct || !shields.directional;
@@ -2784,7 +2825,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         write(`[data-shield-hp='${sector.id}']`, String(hp));
         write(`[data-shield-alloc-value='${sector.id}']`, String(allocation));
         write(`[data-shield-max='${sector.id}']`, String(sector.capacity));
-        write(`[data-regen-value='${sector.id}']`, `${weight}%`);
+        write(`[data-regen-value='${sector.id}']`, `${weight}% / ${cap}%`);
         write(
           `[data-regen-rate='${sector.id}']`,
           `${((shields.regeneration * weight) / 100).toFixed(1)} / round`,
@@ -2837,7 +2878,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         if (strip) {
           const reachable = pips + unassignedRegen;
           strip.replaceChildren();
-          for (let index = 1; index <= pool; index++) {
+          for (let index = 1; index <= limit; index++) {
             const pip = document.createElement("button");
             pip.type = "button";
             pip.className = `ship-shield-pip ${
@@ -2847,7 +2888,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             pip.setAttribute("aria-pressed", String(index <= pips));
             pip.setAttribute(
               "aria-label",
-              `${sector.label} regeneration pip ${index} of ${pool}`,
+              `${sector.label} regeneration pip ${index} of ${limit}`,
             );
             pip.disabled = !this.#canAct ||
               !shields.directional ||
@@ -2913,7 +2954,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           : !shields.directional
           ? "Bubble shields regenerate as one pool."
           : adding
-          ? weight >= 100
+          ? weight >= cap
             ? "Regeneration policy is already fully assigned."
             : unassignedRegen <= 0
             ? "Redistribute: remove pips from another sector first"
@@ -2974,7 +3015,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         const current = stagedWeight(sector);
         const next = Math.max(
           0,
-          Math.min(current + numeric(button.dataset.delta) * 5, 100),
+          Math.min(current + numeric(button.dataset.delta) * 5, cap),
         );
         if (next === current) return;
         if (next > current && (next - current) / 5 > unassignedRegen) return;
@@ -4100,7 +4141,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     if (!inputs.length) return;
     const step = prefix === "regen" ? 5 : 1;
     const caps = inputs.map((input) => {
-      if (prefix === "regen") return Infinity;
+      if (prefix === "regen") return this.#view.shields.regenPipLimit ?? 20;
       const sector = this.#view.shields.sectors.find((entry) =>
         `allocation-${entry.id}` === input.name
       );
@@ -4178,7 +4219,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         );
         const budgetText = ` · Remaining timeline ${
           timelineRemaining.toFixed(2)
-        } · Rotation ${result.rotationRemaining.toFixed(1)}°`;
+        } · Rotation ${result.rotationRemaining.toFixed(1)}° · Pivot ${
+          result.pivotRemaining.toFixed(1)
+        }°`;
         const timelineMeter = form.querySelector("[data-timeline-projected]");
         if (timelineMeter) {
           timelineMeter.value = 1 - timelineRemaining;
@@ -4211,6 +4254,20 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         const rotCurrentPct = rotCapacity > 0 ? Math.round((currentRotUsed / rotCapacity) * 100) : 0;
         const rotLeftPct = Math.max(0, 100 - rotSpentPct - rotCurrentPct);
 
+        const pivotCapacity = getPivotCapability(config, state);
+        const pivotSpent = numeric(state.pivotSpent);
+        const currentPivotUsed = Math.max(
+          0,
+          pivotCapacity - pivotSpent - result.pivotRemaining,
+        );
+        const pivotSpentPct = pivotCapacity > 0
+          ? Math.round((pivotSpent / pivotCapacity) * 100)
+          : 0;
+        const pivotCurrentPct = pivotCapacity > 0
+          ? Math.round((currentPivotUsed / pivotCapacity) * 100)
+          : 0;
+        const pivotLeftPct = Math.max(0, 100 - pivotSpentPct - pivotCurrentPct);
+
         form.querySelectorAll('[data-budget="translation"]').forEach((el) => {
           const spent = el.querySelector(".ship-budget-spent");
           const curr = el.querySelector(".ship-budget-current");
@@ -4227,6 +4284,15 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           if (spent) spent.textContent = `${rotSpentPct}% spent`;
           if (curr) curr.textContent = `${rotCurrentPct}% current`;
           if (left) left.textContent = `${rotLeftPct}% left`;
+        });
+
+        form.querySelectorAll('[data-budget="pivot"]').forEach((el) => {
+          const spent = el.querySelector(".ship-budget-spent");
+          const curr = el.querySelector(".ship-budget-current");
+          const left = el.querySelector(".ship-budget-left");
+          if (spent) spent.textContent = `${pivotSpentPct}% spent`;
+          if (curr) curr.textContent = `${pivotCurrentPct}% current`;
+          if (left) left.textContent = `${pivotLeftPct}% left`;
         });
 
         const fwdTrack = form.querySelector('[data-helm-track="forward"]');
@@ -4250,6 +4316,13 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           const style = `--zero-position: 50%; ${helmTrackGradientStyle(50, rotCapacity > 0 ? rotSpent / rotCapacity : 0, rotCapacity > 0 ? currentRotUsed / rotCapacity : 0)}`;
           rotTrack.style.cssText = style;
           const input = rotTrack.querySelector("input");
+          if (input) input.style.cssText = style;
+        }
+        const pivotTrack = form.querySelector('[data-helm-track="pivot"]');
+        if (pivotTrack) {
+          const style = `--zero-position: 50%; ${helmTrackGradientStyle(50, pivotCapacity > 0 ? pivotSpent / pivotCapacity : 0, pivotCapacity > 0 ? currentPivotUsed / pivotCapacity : 0)}`;
+          pivotTrack.style.cssText = style;
+          const input = pivotTrack.querySelector("input");
           if (input) input.style.cssText = style;
         }
         const coastTrack = form.querySelector('[data-helm-track="coast"]');
@@ -4290,7 +4363,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           output.textContent =
             `Coast ${coastTime} turn fraction · Projected displacement ${
               displacement.toFixed(2)
-            } scene units · ${signed(operation.payload.rotation, 1)}° · Speed ${
+            } scene units · Rotation ${
+              signed(operation.payload.rotation, 1)
+            }° · Pivot ${signed(operation.payload.pivot ?? 0, 1)}° · Speed ${
               speed.toFixed(2)
             } / safe ${config.safeVelocity}${warning}${budgetText}`;
         } else {
@@ -4298,7 +4373,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             signed(operation.payload.deltaV?.forward ?? 0, 2)
           } forward · ${
             signed(operation.payload.deltaV?.lateral ?? 0, 2)
-          } starboard · ${signed(operation.payload.rotation, 1)}° · Speed ${
+          } starboard · Rotation ${
+            signed(operation.payload.rotation, 1)
+          }° · Pivot ${signed(operation.payload.pivot ?? 0, 1)}° · Speed ${
             speed.toFixed(2)
           } / safe ${config.safeVelocity}${warning}${budgetText}`;
         }

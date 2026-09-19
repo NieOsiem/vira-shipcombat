@@ -22,8 +22,12 @@ import {
   advanceWeaponRecovery,
   beginWeaponReload,
   calculateEffectiveHits,
+  calculateRangeBand,
+  calculateRelativeMotion,
   commitAttack,
   contributeWeaponReload,
+  getEffectiveAttackAC,
+  getEvasionBonus,
   previewAttack,
 } from "../scripts/rules/combat.js";
 import { resolveAttack, resolveProjectile } from "../scripts/rules/damage.js";
@@ -570,14 +574,14 @@ describe("attack previews, commitment, and damage", () => {
       arcValid: true,
       rangeValid: true,
       struckSector: "aft",
-      range: { band: "optimal", modifier: 0 },
-      relativeMotion: { transverseSpeed: 4, radialSpeed: 0, effectiveMotion: 3, band: ">2-4", modifier: 1 },
+      range: { band: "optimal", modifier: 2 },
+      relativeMotion: { transverseSpeed: 4, radialSpeed: 0, effectiveMotion: 3, band: ">2-4", modifier: 0 },
     });
     expect(Object.hasOwn(preview.public, "geometry")).toBe(false);
     expect(Object.hasOwn(preview.public, "actualTargetAc")).toBe(false);
     expect(Object.hasOwn(preview.public, "damageProfile")).toBe(false);
     expect(preview.gm).toMatchObject({ actualTargetAc: 14, geometry: { distance: 60, arcValid: true, rangeValid: true } });
-    expect(preview.gm.attack.profile.damage).toEqual({ shield: 4, hull: 12, heat: 0 });
+    expect(preview.gm.attack.profile.damage).toEqual({ shield: 6, hull: 12, heat: 0 });
 
     const outOfArc = previewAttack({
       attackerConfig: attacker.config,
@@ -777,7 +781,7 @@ describe("attack previews, commitment, and damage", () => {
 
   test("armed Evasion applies the configured AC bonus to attack previews", () => {
     const { attacker, target, declaration } = prepareAttack();
-    target.state.evasion = { armed: true, reserved: 0.2 };
+    target.state.evasion = { armed: true, reserved: 0.2, tier: "standard" };
     target.config.evasionAcBonus = 3;
 
     const preview = previewAttack({
@@ -906,18 +910,18 @@ describe("attack previews, commitment, and damage", () => {
     expect(attacker.state.tracks.target.firingSolution).toBe(false);
     expect(result.gm.damage.projectiles).toHaveLength(2);
     expect(result.gm.damage.projectiles[0]).toMatchObject({
-      shield: { activeBefore: 8, after: 2, collapsed: false },
+      shield: { activeBefore: 8, after: 1, collapsed: false },
       hull: { transmitted: 0, taken: 0 },
     });
     expect(result.gm.damage.projectiles[1]).toMatchObject({
-      shield: { activeBefore: 2, after: 0, collapsed: true },
+      shield: { activeBefore: 1, after: 0, collapsed: true },
       armor: { base: 3, piercing: 1, effective: 2 },
-      hull: { listed: 8, transmitted: 5, taken: 3, before: 50, after: 47 },
+      hull: { listed: 9, transmitted: 8, taken: 6, before: 50, after: 44 },
     });
-    expect(target.state.hull).toBe(47);
+    expect(target.state.hull).toBe(44);
     expect(Object.hasOwn(result.public.damage, "projectiles")).toBe(false);
     expect(Object.hasOwn(result.public.damage, "totals")).toBe(false);
-    expect(result.gm.damage.totals).toEqual({ hullDamage: 3, heatDamage: 0 });
+    expect(result.gm.damage.totals).toEqual({ hullDamage: 6, heatDamage: 0 });
   });
 
   test("projectile resolution refuses to run without the shared shield implementation", () => {
@@ -1145,5 +1149,102 @@ describe("attack previews, commitment, and damage", () => {
     expect(result.gm.fate).toEqual(target.state.pendingFate);
     expect(Object.hasOwn(result.public, "projectiles")).toBe(false);
     expect(result.gm.projectiles).toHaveLength(1);
+  });
+});
+
+describe("range, motion, and evasion modifiers", () => {
+  // The contract: winning the positioning fight is worth +2, and the extended envelope is
+  // split into four equal quarters worth one point each.
+  test("optimal range pays +2 and each extended quarter costs one more point", () => {
+    expect(calculateRangeBand(0, 10, 50)).toEqual({ valid: true, band: "optimal", modifier: 2, fraction: 0 });
+    expect(calculateRangeBand(10, 10, 50)).toEqual({ valid: true, band: "optimal", modifier: 2, fraction: 0 });
+
+    const bandOf = (distance) => {
+      const { band, modifier } = calculateRangeBand(distance, 10, 50);
+      return { band, modifier };
+    };
+    // Bands are half-open at their far edge: 20 belongs to extended1, 20.01 to extended2.
+    expect(bandOf(10.01)).toEqual({ band: "extended1", modifier: -1 });
+    expect(bandOf(20)).toEqual({ band: "extended1", modifier: -1 });
+    expect(bandOf(20.01)).toEqual({ band: "extended2", modifier: -2 });
+    expect(bandOf(30)).toEqual({ band: "extended2", modifier: -2 });
+    expect(bandOf(30.01)).toEqual({ band: "extended3", modifier: -3 });
+    expect(bandOf(40)).toEqual({ band: "extended3", modifier: -3 });
+    expect(bandOf(40.01)).toEqual({ band: "extended4", modifier: -4 });
+    // Maximum range itself is still a legal extended4 shot; one step beyond is not a shot at all.
+    expect(bandOf(50)).toEqual({ band: "extended4", modifier: -4 });
+    expect(calculateRangeBand(50.01, 10, 50)).toEqual({
+      valid: false,
+      band: "beyondMaximum",
+      modifier: null,
+      fraction: null,
+    });
+  });
+
+  // The contract: crossed motion is neutral until the target is genuinely crossing, then each
+  // two points of effective motion costs two points of accuracy.
+  test("relative motion is neutral to 6 and then penalized in two-point steps", () => {
+    // Shooter parked at the origin, target 60 out: the target's +x velocity is pure transverse motion.
+    const bandAt = (transverseSpeed, projectileClass = "medium") => {
+      const { band, modifier, effectiveMotion } = calculateRelativeMotion({
+        shooterPosition: { x: 0, y: 0 },
+        targetPosition: { x: 0, y: -60 },
+        shooterVelocity: { x: 0, y: 0 },
+        targetVelocity: { x: transverseSpeed, y: 0 },
+        projectileClass,
+      });
+      return { band, modifier, effectiveMotion };
+    };
+
+    expect(bandAt(0)).toEqual({ band: "0-2", modifier: 0, effectiveMotion: 0 });
+    expect(bandAt(4)).toEqual({ band: ">2-4", modifier: 0, effectiveMotion: 4 });
+    expect(bandAt(6)).toEqual({ band: ">4-6", modifier: 0, effectiveMotion: 6 });
+    expect(bandAt(6.5)).toEqual({ band: ">6-8", modifier: -2, effectiveMotion: 6.5 });
+    expect(bandAt(8)).toEqual({ band: ">6-8", modifier: -2, effectiveMotion: 8 });
+    expect(bandAt(8.5)).toEqual({ band: ">8-10", modifier: -4, effectiveMotion: 8.5 });
+    expect(bandAt(10)).toEqual({ band: ">8-10", modifier: -4, effectiveMotion: 10 });
+    expect(bandAt(10.5)).toEqual({ band: ">10-12", modifier: -6, effectiveMotion: 10.5 });
+    expect(bandAt(12)).toEqual({ band: ">10-12", modifier: -6, effectiveMotion: 12 });
+    expect(bandAt(12.5)).toEqual({ band: ">12", modifier: -8, effectiveMotion: 12.5 });
+
+    // A medium projectile carries a 1.0 multiplier; faster ones scale the same crossing down:
+    // 8 × 0.75 = 6 effective motion stays neutral.
+    expect(bandAt(8, "fast")).toEqual({ band: ">4-6", modifier: 0, effectiveMotion: 6 });
+  });
+
+  // The contract: Evasion pays its protocol base plus live speed and jink steps, and the hull's
+  // tier decides how high that stack may climb.
+  test("kinetic Evasion stacks speed steps and a pivot jink under the hull's tier cap", () => {
+    const { config } = freshShip();
+    const armed = (tier, changes = {}) => ({
+      evasion: { armed: true, reserved: 0.2, tier },
+      velocity: { x: 0, y: 0 },
+      pivotSpent: 0,
+      ...changes,
+    });
+
+    // A hull that never armed the protocol defends at its printed AC.
+    expect(getEvasionBonus(config, armed("standard", { evasion: { armed: false, reserved: 0, tier: null } }))).toBe(0);
+    expect(getEffectiveAttackAC(config, armed("standard"))).toBe(config.ac + config.evasionAcBonus);
+
+    // The standard protocol is flat: speed and jinking add nothing above its base.
+    const fastJink = armed("standard", { velocity: { x: 40, y: 0 }, pivotSpent: 60 });
+    expect(getEvasionBonus(config, fastJink)).toBe(config.evasionAcBonus);
+    expect(getEffectiveAttackAC(config, fastJink)).toBe(config.ac + config.evasionAcBonus);
+
+    // The hard protocol adds one point per speed step reached (15, then 30) ...
+    expect(getEvasionBonus(config, armed("hard", { velocity: { x: 14, y: 0 } }))).toBe(config.evasionAcBonus);
+    expect(getEvasionBonus(config, armed("hard", { velocity: { x: 15, y: 0 } }))).toBe(config.evasionAcBonus + 1);
+    // ... and one more only once Vector Authority has actually spent 30° this activation.
+    expect(getEvasionBonus(config, armed("hard", { velocity: { x: 15, y: 0 }, pivotSpent: 29 }))).toBe(config.evasionAcBonus + 1);
+    expect(getEvasionBonus(config, armed("hard", { velocity: { x: 15, y: 0 }, pivotSpent: 30 }))).toBe(config.evasionAcBonus + 2);
+
+    // The cap binds: the second speed step alone already reaches it, and the jink point on top of
+    // the full stack (2 base + 2 speed + 1 jink = 5) is clamped to the hull's hard cap.
+    expect(getEvasionBonus(config, armed("hard", { velocity: { x: 30, y: 0 } }))).toBe(config.evasionHardAcCap);
+    expect(getEvasionBonus(config, armed("hard", { velocity: { x: 30, y: 0 }, pivotSpent: 30 }))).toBe(config.evasionHardAcCap);
+    expect(getEvasionBonus({ ...config, evasionHardAcCap: 3 }, armed("hard", { velocity: { x: 30, y: 0 }, pivotSpent: 30 }))).toBe(3);
+    expect(getEffectiveAttackAC(config, armed("hard", { velocity: { x: 30, y: 0 }, pivotSpent: 30 })))
+      .toBe(config.ac + config.evasionHardAcCap);
   });
 });

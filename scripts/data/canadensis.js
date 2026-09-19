@@ -17,6 +17,7 @@ const slots = Object.freeze({
   reverseDrive: "canadensis-slot-reverse-drive",
   portLateralDrive: "canadensis-slot-port-lateral-drive",
   starboardLateralDrive: "canadensis-slot-starboard-lateral-drive",
+  inertia: "canadensis-slot-inertia",
 });
 
 const ids = Object.freeze({
@@ -29,6 +30,7 @@ const ids = Object.freeze({
   reverseDrive: "CanadRevDrive001",
   portLateralDrive: "CanadLateralA001",
   starboardLateralDrive: "CanadLateralB001",
+  inertia: "CanadInertia0001",
   railgun: "CanadRailgun0001",
   laser: "CanadLaser000001",
   portMacrocannon: "CanadMacrocanA01",
@@ -61,6 +63,7 @@ const criticalPools = {
     fault(`sensorFault:${slots.sensor}`, { slotId: slots.sensor }, "sensorFault"),
     fault(`driveFailure:${slots.reverseDrive}`, { slotId: slots.reverseDrive }, "driveFailure"),
     fault(`shieldEmitterDamage:${slots.shield}:fore`, { slotId: slots.shield }, "shieldEmitterDamage", "fore"),
+    fault(`inertiaFailure:${slots.inertia}`, { slotId: slots.inertia }, "inertiaFailure"),
     hazard("fire", "fore"),
     hazard("breach", "fore"),
   ],
@@ -68,6 +71,7 @@ const criticalPools = {
     fault(`weaponMalfunction:${ids.portHardpoint}`, { hardpointId: ids.portHardpoint }, "weaponMalfunction"),
     fault(`shieldEmitterDamage:${slots.shield}:port`, { slotId: slots.shield }, "shieldEmitterDamage", "port"),
     fault(`maneuveringThrusterFailure:${slots.portLateralDrive}`, { slotId: slots.portLateralDrive }, "maneuveringThrusterFailure"),
+    fault(`inertiaFailure:${slots.inertia}`, { slotId: slots.inertia }, "inertiaFailure"),
     hazard("electricalCascade"),
     hazard("fire", "port"),
     hazard("breach", "port"),
@@ -76,6 +80,7 @@ const criticalPools = {
     fault(`weaponMalfunction:${ids.starboardHardpoint}`, { hardpointId: ids.starboardHardpoint }, "weaponMalfunction"),
     fault(`shieldEmitterDamage:${slots.shield}:starboard`, { slotId: slots.shield }, "shieldEmitterDamage", "starboard"),
     fault(`maneuveringThrusterFailure:${slots.starboardLateralDrive}`, { slotId: slots.starboardLateralDrive }, "maneuveringThrusterFailure"),
+    fault(`inertiaFailure:${slots.inertia}`, { slotId: slots.inertia }, "inertiaFailure"),
     hazard("electricalCascade"),
     hazard("fire", "starboard"),
     hazard("breach", "starboard"),
@@ -85,6 +90,7 @@ const criticalPools = {
     fault(`reactorFault:${slots.reactor}`, { slotId: slots.reactor }, "reactorFault"),
     fault(`coolingFailure:${slots.cooling}`, { slotId: slots.cooling }, "coolingFailure"),
     fault(`shieldEmitterDamage:${slots.shield}:aft`, { slotId: slots.shield }, "shieldEmitterDamage", "aft"),
+    fault(`inertiaFailure:${slots.inertia}`, { slotId: slots.inertia }, "inertiaFailure"),
     hazard("reactorInstability"),
     hazard("fire", "aft"),
     hazard("breach", "aft"),
@@ -110,15 +116,16 @@ export const CANADENSIS_HULL_CONFIG = deepFreeze({
   safeVelocity: 30,
   evasionReserve: 20,
   evasionAcBonus: 2,
+  evasionHardReserve: 30,
+  evasionHardAcCap: 4,
+  regenerationWeightCap: 50,
   fatePolicy: "important",
   capabilityProfile: {
     hazards: true,
     physicalRepair: true,
     work: true,
     evasionHardware: [
-      { slotId: slots.mainDrive, channel: "drive" },
-      { slotId: slots.portLateralDrive, channel: "maneuveringThrusters" },
-      { slotId: slots.starboardLateralDrive, channel: "maneuveringThrusters" },
+      { slotId: slots.inertia, channel: "inertiaFailure" },
     ],
   },
   armor: { fore: 3, port: 2, starboard: 2, aft: 2 },
@@ -131,6 +138,7 @@ export const CANADENSIS_HULL_CONFIG = deepFreeze({
     { id: slots.reverseDrive, label: "Reverse Drive", class: "drive", driveRole: "reverse", size: "medium", regions: ["fore"], orientation: 180, itemId: ids.reverseDrive },
     { id: slots.portLateralDrive, label: "Port Lateral Drive", class: "drive", driveRole: "portLateral", size: "medium", regions: ["port", "aft"], orientation: -90, itemId: ids.portLateralDrive },
     { id: slots.starboardLateralDrive, label: "Starboard Lateral Drive", class: "drive", driveRole: "starboardLateral", size: "medium", regions: ["starboard", "aft"], orientation: 90, itemId: ids.starboardLateralDrive },
+    { id: slots.inertia, label: "Inertial Anchor", class: "inertia", size: "medium", regions: [...SECTORS], orientation: 0, itemId: ids.inertia },
   ],
   hardpoints: [
     { id: ids.prowHardpoint, label: "Prow", category: "hardpoint", mountSize: "medium", regions: ["fore"], orientation: 0, traverse: "fixed", weaponId: ids.railgun },
@@ -138,8 +146,8 @@ export const CANADENSIS_HULL_CONFIG = deepFreeze({
     { id: ids.portHardpoint, label: "Port", category: "hardpoint", mountSize: "medium", regions: ["port"], orientation: -90, traverse: "fixed", weaponId: ids.portMacrocannon },
     { id: ids.starboardHardpoint, label: "Starboard", category: "hardpoint", mountSize: "medium", regions: ["starboard"], orientation: 90, traverse: "fixed", weaponId: ids.starboardMacrocannon },
   ],
-  initialPower: { engines: 3, shields: 3, sensors: 2, cooling: 1, weapons: 3 },
-  sheddingPriority: ["sensors", "engines", "shields", "cooling", "weapons"],
+  initialPower: { engines: 3, shields: 3, sensors: 2, cooling: 1, inertia: 2, weapons: 3 },
+  sheddingPriority: ["sensors", "engines", "inertia", "shields", "cooling", "weapons"],
   weaponPriority: [ids.prowHardpoint, ids.dorsalHardpoint, ids.portHardpoint, ids.starboardHardpoint],
   operators,
   criticalPools,
@@ -154,7 +162,7 @@ export const CANADENSIS_CONFIG = deepFreeze(materializeShipConfig(
 export const CANADENSIS_ENCOUNTER_DEFAULTS = deepFreeze({
   hull: 50,
   heat: 0,
-  power: { engines: 3, shields: 3, sensors: 2, cooling: 1, weapons: 3 },
+  power: { engines: 3, shields: 3, sensors: 2, cooling: 1, inertia: 2, weapons: 3 },
   shields: {
     hp: { fore: 15, port: 15, starboard: 15, aft: 15 },
     allocation: { fore: 15, port: 15, starboard: 15, aft: 15 },
@@ -168,6 +176,6 @@ export const CANADENSIS_ENCOUNTER_DEFAULTS = deepFreeze({
     [ids.portMacrocannon]: { status: "online", mode: "nominal", bootCounter: 0, readiness: 20, reloadProgress: 0, reloadWork: null },
     [ids.starboardMacrocannon]: { status: "off", mode: "nominal", bootCounter: 0, readiness: 20, reloadProgress: 0, reloadWork: null },
   },
-  work: {}, conditions: {}, timeline: 0, rotationSpent: 0,
+  work: {}, conditions: {}, timeline: 0, rotationSpent: 0, pivotSpent: 0,
   velocity: { x: 0, y: 0 }, evasion: { armed: false, reserved: 0 }, ventCooldown: 0,
 });

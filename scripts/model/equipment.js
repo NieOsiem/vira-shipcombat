@@ -84,7 +84,7 @@ function assertSlot(slot, seen) {
   if (typeof slot.id !== "string" || !slot.id.trim()) fail("HULL_SLOT_ID_REQUIRED", "Hull slot requires an ID.");
   if (seen.has(slot.id)) fail("DUPLICATE_HULL_SLOT", `Hull slot ID '${slot.id}' is duplicated.`);
   seen.add(slot.id);
-  if (!["reactor", "drive", "shield", "sensor", "cooling"].includes(slot.class)) {
+  if (!["reactor", "drive", "shield", "sensor", "cooling", "inertia"].includes(slot.class)) {
     fail("INVALID_HULL_SLOT_CLASS", `Hull slot '${slot.id}' has unsupported class '${slot.class}'.`);
   }
   if (!MOUNT_SIZES.includes(slot.size)) fail("INVALID_HULL_SLOT_SIZE", `Hull slot '${slot.id}' has an invalid size.`);

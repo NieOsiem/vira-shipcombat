@@ -7,13 +7,15 @@ import {
   sweptCircleVsCircle,
   sweptCircleVsSegment,
 } from "../scripts/rules/geometry.js";
-import { bearingDegrees } from "../scripts/rules/math.js";
+import { bearingDegrees, rotateVector } from "../scripts/rules/math.js";
 import {
   applyManeuver,
   armEvasion,
+  enforceEvasionEligibility,
   getCollisionSizeMultiplier,
   getDriveCapabilities,
   getOverspeedDamage,
+  getPivotCapability,
   integrateBurn,
   isInFiringArc,
   previewManeuver,
@@ -166,7 +168,7 @@ describe("movement integration and budgets", () => {
       hasHelm: true,
       enginesPower: 1,
       hardwareOperational: true,
-      maneuverCapability: 1,
+      pivotCapability: 60,
       evasionReserve: 0.2,
       evasionAcBonus: 3,
     });
@@ -175,8 +177,8 @@ describe("movement integration and budgets", () => {
     boundaryState.timeline = 0.8;
 
     const armed = armEvasion(boundaryState, deepClone(eligibility));
-    expect(armed).toEqual({ armed: true, reserved: 0.2, acBonus: 3 });
-    expect(boundaryState.evasion).toEqual({ armed: true, reserved: 0.2 });
+    expect(armed).toEqual({ armed: true, reserved: 0.2, tier: "standard", acBonus: 3 });
+    expect(boundaryState.evasion).toEqual({ armed: true, reserved: 0.2, tier: "standard" });
 
     const rejectedState = freshShip().state;
     rejectedState.phase = "active";
@@ -717,6 +719,340 @@ describe("arcs, sectors, and impact consequences", () => {
       expect(view.movement.coastTrackStyle).toBe("--coast-green-end: 100.0%; --coast-yellow-end: 100.0%;");
       expect(view.movement.timelineRemainingHalf).toBe(0.5);
     });
+
+    test("buildShipConsoleView exposes the pivot budget and a spent-sensitive track", () => {
+      const { config, state } = freshShip();
+      state.power.inertia = 2;
+
+      const fresh = buildShipConsoleView(config, state).movement;
+      expect(fresh.pivotMax).toBe(60);
+      expect(fresh.pivotSpent).toBe(0);
+      expect(fresh.pivotRemaining).toBe(60);
+      expect(fresh.pivotBudgetSpentPct).toBe(0);
+      expect(fresh.pivotBudgetLeftPct).toBe(100);
+      expect(fresh.pivotTrackStyle).toBe(helmTrackGradientStyle(50, 0, 0));
+
+      state.pivotSpent = 30;
+      const spent = buildShipConsoleView(config, state).movement;
+      expect(spent.pivotSpent).toBe(30);
+      expect(spent.pivotRemaining).toBe(30);
+      expect(spent.pivotBudgetSpentPct).toBe(50);
+      expect(spent.pivotBudgetLeftPct).toBe(50);
+      expect(spent.pivotTrackStyle).not.toBe(fresh.pivotTrackStyle);
+      expect(spent.pivotTrackStyle).toBe(helmTrackGradientStyle(50, 0.5, 0));
+
+      state.power.inertia = 0;
+      const offline = buildShipConsoleView(config, state).movement;
+      expect(offline.pivotMax).toBe(0);
+      expect(offline.pivotSpent).toBe(30);
+      expect(offline.pivotRemaining).toBe(0);
+      expect(offline.pivotBudgetSpentPct).toBe(0);
+      expect(offline.pivotBudgetLeftPct).toBe(0);
+      expect(offline.pivotTrackStyle).toBe(helmTrackGradientStyle(50, 0, 0));
+    });
+  });
+});
+
+describe("Vector Authority pivot", () => {
+  function pivotCapabilities(pivot = 60) {
+    return { forward: 0, retro: 0, port: 0, starboard: 0, rotation: 0, pivot };
+  }
+
+  test("pivot capability follows the inertia power tier and its fault multiplier", () => {
+    const { config, state } = freshShip();
+    expect(config.components.inertia).toBeTruthy();
+
+    state.power.inertia = 2;
+    expect(getPivotCapability(config, state)).toBe(60);
+    state.power.inertia = 1;
+    expect(getPivotCapability(config, state)).toBe(30);
+    state.power.inertia = 0;
+    expect(getPivotCapability(config, state)).toBe(0);
+
+    state.power.inertia = 2;
+    state.conditions.inertiaFailure = {
+      kind: "fault",
+      channelId: "inertiaFailure",
+      componentId: config.components.inertia.id,
+      severity: "major",
+    };
+    expect(getPivotCapability(config, state)).toBe(30);
+
+    state.conditions.inertiaFailure.severity = "destroyed";
+    expect(getPivotCapability(config, state)).toBe(0);
+
+    expect(getPivotCapability({ ...config, components: { ...config.components, inertia: null } }, state)).toBe(0);
+  });
+
+  test("a full-turn pivot rotates the velocity heading while preserving speed without thrust", () => {
+    const start = { x: 0, y: -10 };
+    const integrated = integrateBurn({
+      position: { x: 3, y: -4 },
+      velocity: start,
+      facing: 0,
+      duration: 1,
+      deltaV: { forward: 0, lateral: 0 },
+      rotation: 0,
+      pivot: 60,
+      collisionRadius: 0,
+    });
+
+    expectNear(Math.hypot(integrated.velocity.x, integrated.velocity.y), 10, 1e-6);
+    expectVectorNear(integrated.velocity, rotateVector(start, 60), 1e-6);
+    expectVectorNear(integrated.path[0].velocity, start);
+    expectVectorNear(integrated.path.at(-1).velocity, integrated.velocity);
+    expectNear(integrated.pivot, 60);
+  });
+
+  test("a pivoting path is curved: its displacement is shorter than the traversed arc", () => {
+    const speed = 10;
+    const integrated = integrateBurn({
+      position: { x: 0, y: 0 },
+      velocity: { x: 0, y: -speed },
+      facing: 0,
+      duration: 1,
+      deltaV: { forward: 0, lateral: 0 },
+      rotation: 0,
+      pivot: 90,
+      collisionRadius: 0,
+    });
+
+    let polyline = 0;
+    for (let index = 1; index < integrated.path.length; index += 1) {
+      const previous = integrated.path[index - 1].position;
+      const current = integrated.path[index].position;
+      polyline += Math.hypot(current.x - previous.x, current.y - previous.y);
+    }
+    const displacement = Math.hypot(integrated.position.x, integrated.position.y);
+
+    expect(displacement).toBeGreaterThan(0);
+    expect(polyline).toBeLessThanOrEqual(speed * 1 + 1e-9);
+    expect(displacement).toBeLessThan(polyline);
+
+    const straight = integrateBurn({
+      position: { x: 0, y: 0 },
+      velocity: { x: 0, y: -speed },
+      facing: 0,
+      duration: 1,
+      deltaV: { forward: 0, lateral: 0 },
+      rotation: 0,
+      pivot: 0,
+      collisionRadius: 0,
+    });
+    expectNear(Math.hypot(straight.position.x, straight.position.y), speed);
+  });
+
+  test("pivot validation rejects unavailable, over-budget, zero-duration, and invalid spent budgets", () => {
+    const base = {
+      capabilities: pivotCapabilities(),
+      duration: 0.5,
+      deltaV: { forward: 0, lateral: 0 },
+      rotation: 0,
+      pivot: 0,
+    };
+
+    const unavailable = captureViolation(() => validateManeuverTime({
+      ...base,
+      capabilities: pivotCapabilities(0),
+      pivot: 10,
+    }));
+    expect(unavailable).toMatchObject({ name: "RuleViolation", code: "MOVEMENT_PIVOT_UNAVAILABLE" });
+
+    const exceeded = captureViolation(() => validateManeuverTime({ ...base, pivotSpent: 40, pivot: 30 }));
+    expect(exceeded).toMatchObject({ name: "RuleViolation", code: "MOVEMENT_PIVOT_EXCEEDED" });
+
+    const zeroDuration = captureViolation(() => validateManeuverTime({ ...base, duration: 0, pivot: 30 }));
+    expect(zeroDuration).toMatchObject({ name: "RuleViolation", code: "MOVEMENT_ZERO_DURATION_PIVOT" });
+
+    const invalidSpent = captureViolation(() => validateManeuverTime({ ...base, pivotSpent: -1 }));
+    expect(invalidSpent).toMatchObject({ name: "RuleViolation", code: "MOVEMENT_INVALID_PIVOT_SPENT" });
+
+    const boundary = validateManeuverTime({ ...base, pivotSpent: 40, pivot: 20 });
+    expectNear(boundary.pivotRemaining, 20);
+    expectNear(boundary.pivotRemainingAfter, 0);
+  });
+
+  test("preview and execution agree for the same pivot input and persist the spent budget", () => {
+    const { state } = freshShip();
+    state.phase = "active";
+    state.velocity = { x: 0, y: -8 };
+    const input = {
+      position: { x: 2, y: 3 },
+      velocity: { x: 0, y: -8 },
+      facing: 0,
+      duration: 1,
+      deltaV: { forward: 0, lateral: 0 },
+      rotation: 0,
+      pivot: 60,
+      capabilities: pivotCapabilities(),
+      collisionRadius: 1,
+      obstacles: [],
+    };
+
+    const preview = previewManeuver(deepClone(input));
+    expectNear(preview.pivotSpent, 60);
+    expectNear(preview.pivotRemaining, 0);
+    expectVectorNear(preview.finalVelocity, rotateVector({ x: 0, y: -8 }, 60), 1e-6);
+
+    const applied = applyManeuver(state, deepClone(input));
+    expectVectorNear(applied.poweredEnd.velocity, preview.poweredEnd.velocity);
+    expectVectorNear(applied.position, preview.poweredEnd.position);
+    expectVectorNear(applied.finalVelocity, preview.finalVelocity);
+    expectNear(state.pivotSpent, 60);
+    expectNear(state.timeline, 1);
+    expectVectorNear(state.velocity, applied.poweredEnd.velocity);
+  });
+
+  test("a collision-truncated pivot spends only the elapsed share of its budget", () => {
+    const { state } = freshShip();
+    state.phase = "active";
+    state.velocity = { x: 0, y: -10 };
+    const input = {
+      position: { x: 0, y: 0 },
+      velocity: { x: 0, y: -10 },
+      facing: 0,
+      duration: 1,
+      deltaV: { forward: 0, lateral: 0 },
+      rotation: 0,
+      pivot: 60,
+      capabilities: pivotCapabilities(),
+      collisionRadius: 1,
+      obstacles: [{ id: "rock", position: { x: 0, y: -4 }, velocity: { x: 0, y: 0 }, radius: 1, size: "medium", mass: 4 }],
+    };
+
+    const preview = previewManeuver(deepClone(input));
+    expect(preview.collisions).toHaveLength(1);
+    const collisionTime = preview.collisions[0].time;
+    expect(collisionTime).toBeGreaterThan(0);
+    expect(collisionTime).toBeLessThan(1);
+    expectNear(preview.pivotSpent, 60 * collisionTime);
+
+    const applied = applyManeuver(state, deepClone(input));
+    expect(state.pivotSpent).toBeGreaterThan(0);
+    expect(state.pivotSpent).toBeLessThan(60);
+    expectNear(state.pivotSpent, 60 * collisionTime);
+    expectNear(applied.pivotSpent, state.pivotSpent);
+  });
+
+  test("the automatic end-of-turn coast never pivots the velocity", () => {
+    const { state } = freshShip();
+    state.phase = "active";
+    state.timeline = 0;
+    state.velocity = { x: 0, y: -10 };
+    const coast = resolveCoast(state, {
+      position: { x: 0, y: 0 },
+      facing: 0,
+      pivot: 60,
+      capabilities: pivotCapabilities(),
+      collisionRadius: 0,
+      obstacles: [],
+    });
+    expect(coast.automatic).toBe(true);
+    expectVectorNear(coast.velocity, { x: 0, y: -10 });
+    expectNear(state.pivotSpent, 0);
+
+    const preview = previewManeuver({
+      position: { x: 0, y: 0 },
+      velocity: { x: 0, y: -10 },
+      facing: 0,
+      duration: 0.5,
+      deltaV: { forward: 0, lateral: 0 },
+      rotation: 0,
+      pivot: 60,
+      capabilities: pivotCapabilities(),
+      collisionRadius: 0,
+      obstacles: [],
+    });
+    expectVectorNear(preview.poweredEnd.velocity, rotateVector({ x: 0, y: -10 }, 60), 1e-6);
+    expectVectorNear(preview.coastEnd.velocity, preview.poweredEnd.velocity);
+    expectVectorNear(preview.finalVelocity, preview.poweredEnd.velocity);
+  });
+});
+
+describe("Evasive Protocol arming and eligibility", () => {
+  function armInput(overrides = {}) {
+    return {
+      phase: "active",
+      hasHelm: true,
+      enginesPower: 1,
+      hardwareOperational: true,
+      pivotCapability: 60,
+      evasionReserve: 0.2,
+      ...overrides,
+    };
+  }
+
+  // The contract: arming is gated on live pivot capability, and each tier must be one the hull
+  // actually carries. A rejected arm leaves the draft exactly as it found it.
+  test("arming requires a live pivot capability and a tier the hull actually carries", () => {
+    const { config, state } = freshShip();
+    state.phase = "active";
+    expect(state.evasion).toEqual({ armed: false, reserved: 0 });
+
+    state.power.inertia = 0;
+    expect(getPivotCapability(config, state)).toBe(0);
+    const unavailable = captureViolation(() => armEvasion(state, armInput({
+      pivotCapability: getPivotCapability(config, state),
+    })));
+    expect(unavailable).toMatchObject({ name: "RuleViolation", code: "EVASION_HARDWARE_UNAVAILABLE" });
+    expect(state.evasion).toEqual({ armed: false, reserved: 0 });
+
+    state.power.inertia = 2;
+    const hullWithoutHardTier = { ...config, evasionHardReserve: undefined };
+    const noTier = captureViolation(() => armEvasion(state, armInput({
+      config: hullWithoutHardTier,
+      tier: "hard",
+      pivotCapability: getPivotCapability(config, state),
+    })));
+    expect(noTier).toMatchObject({
+      name: "RuleViolation",
+      code: "EVASION_TIER_UNAVAILABLE",
+      details: { tier: "hard" },
+    });
+    expect(state.evasion).toEqual({ armed: false, reserved: 0 });
+
+    // The same hull still carries the standard protocol, so the rejection was tier-specific.
+    const armed = armEvasion(state, armInput({
+      config: hullWithoutHardTier,
+      tier: "standard",
+      pivotCapability: getPivotCapability(config, state),
+    }));
+    expect(armed).toEqual({ armed: true, reserved: 0.2, tier: "standard", acBonus: 2 });
+    expect(state.evasion).toEqual({ armed: true, reserved: 0.2, tier: "standard" });
+  });
+
+  // The contract: losing the hardware that makes jinking possible drops the protocol rather than
+  // leaving an unearned AC bonus standing.
+  test("dropping the pivot capability to zero disarms a committed Evasive Protocol", () => {
+    const { config, state } = freshShip();
+    state.phase = "active";
+    state.power.inertia = 2;
+    const armed = armEvasion(state, armInput({
+      config,
+      tier: "hard",
+      evasionReserve: 0.3,
+      pivotCapability: getPivotCapability(config, state),
+    }));
+    expect(armed).toMatchObject({ armed: true, reserved: 0.3, tier: "hard" });
+
+    const held = enforceEvasionEligibility(state, {
+      enginesPower: 1,
+      hardwareOperational: true,
+      pivotCapability: getPivotCapability(config, state),
+    });
+    expect(held).toMatchObject({ armed: true, removed: false });
+    expect(state.evasion).toEqual({ armed: true, reserved: 0.3, tier: "hard" });
+
+    state.power.inertia = 0;
+    expect(getPivotCapability(config, state)).toBe(0);
+    const dropped = enforceEvasionEligibility(state, {
+      enginesPower: 1,
+      hardwareOperational: true,
+      pivotCapability: getPivotCapability(config, state),
+    });
+    expect(dropped).toEqual({ armed: false, reserved: 0.3, tier: "hard", acBonus: 0, removed: true });
+    // The reservation is retained for the remainder of the activation; only the bonus is gone.
+    expect(state.evasion).toEqual({ armed: false, reserved: 0.3, tier: "hard" });
   });
 });
 

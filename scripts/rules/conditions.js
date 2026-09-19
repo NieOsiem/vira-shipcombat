@@ -8,6 +8,7 @@ export const FAULT_CHANNELS = Object.freeze([
   "weaponMalfunction",
   "coolingFailure",
   "reactorFault",
+  "inertiaFailure",
 ]);
 
 export const HAZARD_CHANNELS = Object.freeze([
@@ -71,6 +72,13 @@ const FAULT_EFFECTS = Object.freeze({
     major: { outputMultiplier: 0.5, nominalMultiplier: 0.5, redlineMultiplier: 0.5, redlineAvailable: false, redlineUsesNominal: true, operational: true },
     critical: { outputMultiplier: 0.2, nominalMultiplier: 0.2, redlineMultiplier: 0.2, redlineAvailable: false, redlineUsesNominal: true, operational: true },
     destroyed: { outputMultiplier: 0, nominalMultiplier: 0, redlineMultiplier: 0, redlineAvailable: false, redlineUsesNominal: true, operational: false },
+  }),
+  inertiaFailure: Object.freeze({
+    healthy: { capabilityMultiplier: 1, pivotMultiplier: 1, operational: true },
+    minor: { capabilityMultiplier: 0.75, pivotMultiplier: 0.75, operational: true },
+    major: { capabilityMultiplier: 0.5, pivotMultiplier: 0.5, operational: true },
+    critical: { capabilityMultiplier: 0.25, pivotMultiplier: 0.25, operational: true },
+    destroyed: { capabilityMultiplier: 0, pivotMultiplier: 0, operational: false },
   }),
 });
 

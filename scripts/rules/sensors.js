@@ -1,4 +1,4 @@
-import { RuleViolation } from "../constants.js";
+import { POWER_SYSTEMS, RuleViolation } from "../constants.js";
 
 export const TRACK_STATUS = Object.freeze({
   UNDETECTED: "undetected",
@@ -113,7 +113,7 @@ function committedPower(state) {
     return total;
   }
   let total = 0;
-  for (const key of ["engines", "shields", "sensors", "cooling", "weapons"]) {
+  for (const key of POWER_SYSTEMS) {
     const value = power[key];
     if (typeof value === "number") total += Math.max(0, value);
     else if (value && typeof value === "object") {

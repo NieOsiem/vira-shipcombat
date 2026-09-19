@@ -307,6 +307,19 @@
             <div class="ship-helm-slider-labels"><span>Left {{view.movement.rotationMax}}°</span><span>0</span><span>Right {{view.movement.rotationMax}}°</span></div>
           </section>
 
+          <section class="ship-helm-axis" aria-label="Pivot" style="--zero-position: 50%;">
+            <div class="ship-helm-axis-header">
+              <i class="fa-solid fa-anchor" aria-hidden="true"></i>
+              <h3>Pivot</h3>
+              <span class="ship-helm-budget" data-budget="pivot">Pivot budget: <span class="ship-budget-spent">{{view.movement.pivotBudgetSpentPct}}% spent</span> · <span class="ship-budget-current" data-budget-current>0% current</span> · <span class="ship-budget-left">{{view.movement.pivotBudgetLeftPct}}% left</span></span>
+            </div>
+            <output class="ship-helm-value-chip" data-slider-value="pivot">0°</output>
+            <div class="ship-helm-slider-track" data-helm-track="pivot" style="--zero-position: 50%; {{view.movement.pivotTrackStyle}}">
+              <input name="pivot" type="range" value="0" aria-label="Pivot: counterclockwise to clockwise" style="{{view.movement.pivotTrackStyle}}">
+            </div>
+            <div class="ship-helm-slider-labels"><span>Left {{view.movement.pivotMax}}°</span><span>0</span><span>Right {{view.movement.pivotMax}}°</span></div>
+          </section>
+
           <section class="ship-helm-axis" aria-label="Coast" style="--zero-position: 50%;">
             <div class="ship-helm-axis-header">
               <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
@@ -358,9 +371,9 @@
           <button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-play" aria-hidden="true"></i> <span>Commit maneuver<small>Spend allocated time</small></span></button>
           <button type="button" data-coast-remaining="true" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-rotate-right" aria-hidden="true"></i> <span>Coast remaining<small>Use remaining time</small></span></button>
           <button type="button" data-helm-reset {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> <span>Reset sliders<small>Clear current inputs</small></span></button>
-          {{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Disarm evasion<small>Release reserve</small></span></button>{{else}}<button type="button" data-ui-operation="armEvasion" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield" aria-hidden="true"></i> <span>Arm evasion<small>Reserve timeline</small></span></button>{{/if}}
+          {{#if view.movement.evasionArmed}}<button type="button" data-ui-operation="disarmEvasion" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> <span>Disarm evasion<small>Release reserve</small></span></button>{{else}}<button type="button" data-ui-operation="armEvasion" data-tier="standard" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield" aria-hidden="true"></i> <span>Arm evasion<small>Reserve timeline</small></span></button>{{#if view.movement.evasionHardAvailable}}<button type="button" data-ui-operation="armEvasion" data-tier="hard" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-shield-heart" aria-hidden="true"></i> <span>Arm hard evasion<small>Larger reserve, higher cap</small></span></button>{{/if}}{{/if}}
         </div>
-        <p class="ship-muted" data-evasion-reason role="status"></p>
+        <p class="ship-muted"><span class="ship-readout" data-evasion-ceiling title="Current evasion AC bonus / protocol ceiling">Evasion AC {{view.movement.evasionCeiling}}</span> <span data-evasion-reason role="status"></span></p>
       </form>
       {{#if view.status.overspeed}}<p class="ship-warning">Overspeed damage risk</p>{{/if}}
     </section>
@@ -476,7 +489,7 @@
                       <div class="ship-shield-regen-middle">
                         <div class="ship-shield-regen-topline">
                           <span class="ship-shield-row-label">Regen</span>
-                          <span class="ship-shield-regen-readout"><output data-regen-value="{{id}}">{{weight}}%</output><span aria-hidden="true">·</span><output data-regen-rate="{{id}}">{{rate}} / round</output></span>
+                          <span class="ship-shield-regen-readout"><output data-regen-value="{{id}}">{{weight}}% / {{weightCap}}%</output><span aria-hidden="true">·</span><output data-regen-rate="{{id}}">{{rate}} / round</output></span>
                         </div>
                         <div class="ship-shield-pips" data-shield-regen-pips="{{id}}" role="group" aria-label="{{label}} regeneration weight, one pip per 5 percent"></div>
                       </div>

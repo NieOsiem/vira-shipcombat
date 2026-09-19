@@ -666,14 +666,16 @@ function reconcileState(beforeState, config, hardware, previousConfig = null) {
     shields: Boolean(config.components?.shield),
     sensors: Boolean(config.components?.sensor),
     cooling: Boolean(config.components?.cooling),
+    inertia: Boolean(config.components?.inertia),
   };
   const tierSources = {
     engines: config.powerSystems?.engines,
     shields: config.components?.shield,
     sensors: config.components?.sensor,
     cooling: config.components?.cooling,
+    inertia: config.components?.inertia,
   };
-  for (const system of ["engines", "shields", "sensors", "cooling"]) {
+  for (const system of ["engines", "shields", "sensors", "cooling", "inertia"]) {
     const current = state.power[system];
     const tiers = tierSources[system]?.tiers ?? [];
     const valid = installed[system] &&

@@ -25,6 +25,7 @@ const FAULT_CHANNELS = Object.freeze({
   shield: new Set(["shieldEmitterDamage"]),
   sensor: new Set(["sensorFault"]),
   cooling: new Set(["coolingFailure"]),
+  inertia: new Set(["inertiaFailure"]),
   weapon: new Set(["weaponMalfunction"]),
 });
 const HAZARD_CHANNELS = new Set(["fire", "breach", "electricalCascade", "reactorInstability"]);
@@ -93,6 +94,21 @@ export function validateEffectiveLoadout(config, { tokenWidth } = {}) {
     error("INVALID_EVASION_RESERVE", "evasionReserve", "Evasion reserve must not exceed 100 percent.");
   }
   requireNumber(config.evasionAcBonus, "evasionAcBonus");
+  if (config.evasionHardReserve !== undefined) {
+    requireNumber(config.evasionHardReserve, "evasionHardReserve", { min: 0 });
+    if (isFiniteNumber(config.evasionHardReserve) && config.evasionHardReserve > 100) {
+      error("INVALID_EVASION_RESERVE", "evasionHardReserve", "Evasion reserve must not exceed 100 percent.");
+    }
+  }
+  if (config.evasionHardAcCap !== undefined) {
+    requireNumber(config.evasionHardAcCap, "evasionHardAcCap", { min: 0 });
+  }
+  if (config.regenerationWeightCap !== undefined) {
+    requireNumber(config.regenerationWeightCap, "regenerationWeightCap", { min: 0, strict: true, integer: true });
+    if (isFiniteNumber(config.regenerationWeightCap) && config.regenerationWeightCap > 100) {
+      error("INVALID_REGENERATION_CAP", "regenerationWeightCap", "Regeneration weight cap must not exceed 100.");
+    }
+  }
   if (!FATE_POLICIES.includes(config.fatePolicy)) {
     error("INVALID_FATE_POLICY", "fatePolicy", "Fate policy must be disposable or important.");
   }
@@ -330,6 +346,7 @@ function validateTiers(component, path, kind, error, { allowEmpty = false } = {}
       shield: ["regeneration"],
       sensor: ["rangeMultiplier", "passiveStrength", "activeModifier"],
       cooling: ["cooling"],
+      inertia: ["pivot"],
     }[kind];
     for (const key of numericByKind) {
       if (!isFiniteNumber(tier[key]) || (key !== "activeModifier" && tier[key] < 0)) {
@@ -844,6 +861,9 @@ export function validateComponentItem(value) {
   } else if (system.componentClass === "cooling") {
     requireNumber(definition.ventAmount, `${path}.ventAmount`, { min: 0, strict: true });
     requireNumber(definition.ventCooldown, `${path}.ventCooldown`, { min: 0, integer: true });
+    validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+  } else if (system.componentClass === "inertia") {
+    validateTiers(definition, path, "inertia", error);
     validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
   } else if (system.componentClass === "weapon") {
     const weapon = { ...definition, id: id ?? "", mountSize: system.size, hardpointId: "component-preview" };

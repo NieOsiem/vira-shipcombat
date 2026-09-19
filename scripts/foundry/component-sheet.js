@@ -165,6 +165,8 @@ function defaultDefinition(componentClass) {
       };
     case "cooling":
       return { tiers: [], ventAmount: 0, ventCooldown: 0, recoveryWork: 0 };
+    case "inertia":
+      return { tiers: [], recoveryWork: 0 };
     case "weapon":
       return {
         accuracy: 0,
@@ -209,6 +211,8 @@ function tierDefault(componentClass) {
       };
     case "cooling":
       return { power: 0, cooling: 0 };
+    case "inertia":
+      return { power: 0, online: false, pivot: 0 };
     default:
       return null;
   }
@@ -341,6 +345,10 @@ function normalizeTiers(form, componentClass, existingTiers = []) {
         tier.passiveStrength = read("passiveStrength");
         tier.activeModifier = read("activeModifier");
         tier.ewModifier = read("ewModifier");
+      } else if (componentClass === "inertia") {
+        tier.power = read("power");
+        tier.online = bool("online");
+        tier.pivot = read("pivot");
       } else {
         tier.power = read("power");
         tier.cooling = read("cooling");
@@ -574,6 +582,9 @@ function normalizeDefinition(form, componentClass, existingDefinition) {
     definition.ventAmount = number(form, "definition.ventAmount");
     definition.ventCooldown = number(form, "definition.ventCooldown");
     definition.recoveryWork = number(form, "definition.recoveryWork");
+  } else if (componentClass === "inertia") {
+    definition.tiers = normalizeTiers(form, componentClass, definition.tiers);
+    definition.recoveryWork = number(form, "definition.recoveryWork");
   } else if (componentClass === "weapon") {
     return normalizeWeapon(form, definition);
   }
@@ -730,6 +741,7 @@ export class ShipComponentSheet
       isShield: componentClass === "shield",
       isSensor: componentClass === "sensor",
       isCooling: componentClass === "cooling",
+      isInertia: componentClass === "inertia",
       isWeapon: componentClass === "weapon",
       componentClassOptions: optionList(COMPONENT_CLASSES, componentClass),
       sizeOptions: optionList(MOUNT_SIZES, system.size),
