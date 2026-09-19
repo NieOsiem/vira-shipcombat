@@ -129,6 +129,12 @@ const TARGETED = new Set([
   "attack",
 ]);
 const GM_ONLY = new Set(["resolveFate"]);
+/**
+ * Attributes the sheet owns rather than the template: ids and the aria references
+ * into them are rewritten to sheet-scoped values after a render, so carrying a
+ * structural node across renders must leave them alone.
+ */
+const PRIVATE_ATTRIBUTES = new Set(["id", "aria-controls", "aria-labelledby"]);
 const drafts = new Map();
 const selectedTabs = new Map();
 const radarScales = new Map();
@@ -1147,6 +1153,26 @@ async function movementPreviewInput(payload, token, config, state) {
   };
 }
 
+/**
+ * `HandlebarsApplicationMixin._renderHTML` parses each part's template output before
+ * `_replaceHTML` runs (`HandlebarsApplication.#parsePartHTML`), so a part arrives as
+ * the element it rendered — the very element the framework inserts. Anything else is
+ * a contract the diff does not understand, and the render falls back to the
+ * framework's own replacement.
+ */
+function renderedPart(value) {
+  return value instanceof Element ? value : null;
+}
+
+/** The element child of `root` that lies on the ancestor path to `node`. */
+function childTowards(root, node) {
+  let current = node;
+  while (current?.parentElement && current.parentElement !== root) {
+    current = current.parentElement;
+  }
+  return current?.parentElement === root ? current : null;
+}
+
 const { ActorSheetV2 } = foundry.applications.sheets;
 const { HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -1197,6 +1223,21 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   #tokenRefresh = null;
   #dragItem = null;
   #dragListeners = null;
+  /**
+   * Dirty-swap bookkeeping. `#panelMarkup` holds the *fresh template* markup
+   * installed for each panel — captured before any post-render pass touches the
+   * DOM — and `#panelVerified` the render serial at which that markup was last
+   * compared against a fresh render.
+   */
+  #panelMarkup = new Map();
+  #panelVerified = new Map();
+  #stalePanels = new Set();
+  /** Part element installed by the last render, plus the subtrees this render produced. */
+  #partRoot = null;
+  #freshRoots = new Set();
+  #freshAll = false;
+  #renderSerial = 0;
+  #setupParts = new Set();
 
   get title() {
     const state = this.actor?.system?.shipCombat?.state;
@@ -1377,6 +1418,13 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#hullDraft = null;
     this.#epoch++;
     this.#root = null;
+    this.#partRoot = null;
+    this.#panelMarkup.clear();
+    this.#panelVerified.clear();
+    this.#stalePanels.clear();
+    this.#freshRoots.clear();
+    this.#setupParts.clear();
+    this.#freshAll = false;
     if (this.#tokenRefresh) {
       clearTimeout(this.#tokenRefresh);
       this.#tokenRefresh = null;
@@ -1395,7 +1443,245 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     return super.close(options);
   }
 
+  /**
+   * Re-rendering swaps only the panels whose freshly rendered markup differs from
+   * the markup already installed: an unchanged panel keeps its node — and with it
+   * its listeners, focus, scroll offset and staged input — while a changed panel is
+   * replaced by an `importNode` of the fresh one. The small header/notice/nav chrome
+   * is refreshed on every render.
+   *
+   * Both sides of the comparison are raw template output: the cached markup comes
+   * from the render that installed the panel, the fresh markup from the part just
+   * rendered. Neither is ever read back off the live DOM, which the post-render
+   * passes (id prefixes, gating, previews, markers) have already mutated.
+   *
+   * Falls back to the framework's full replacement for the first render, whenever
+   * the installed part has left the document, and for shapes the diff cannot line
+   * up (more than one part, no panels, unfamiliar part payload).
+   */
+  _replaceHTML(result, content, options) {
+    const parts = Object.entries(result ?? {});
+    const fresh = parts.map(([partId, html]) => [partId, renderedPart(html)]);
+    const live = this.#partRoot;
+    this.#renderSerial++;
+    this.#freshRoots.clear();
+    this.#setupParts.clear();
+    if (
+      parts.length !== 1 ||
+      fresh.some(([, node]) => !node) ||
+      !live?.isConnected ||
+      !this.#panelMarkup.size
+    ) {
+      this.#freshAll = true;
+      this.#stalePanels.clear();
+      for (const [, node] of fresh) {
+        this.#partRoot = node;
+        this.#cachePanels(node);
+      }
+      return super._replaceHTML(result, content, options);
+    }
+    const [partId, node] = fresh[0];
+    this.#freshAll = false;
+    // Core's replacement syncs live focus, scroll offsets and disclosure state onto
+    // the nodes it inserts; the merge keeps the live tree instead, so it runs the
+    // same two hooks around it: preserved panels keep the focused element itself,
+    // and anything this render did replace gets focus back by the same selectors.
+    const state = {};
+    this._preSyncPartState(partId, node, live, state);
+    if (!this.#mergePanels(live, node)) {
+      this.#freshAll = true;
+      this.#stalePanels.clear();
+      this.#partRoot = node;
+      this.#cachePanels(node);
+      return super._replaceHTML(result, content, options);
+    }
+    this._syncPartState(partId, live, live, state);
+    this.#stalePanels.clear();
+    // The setup pass belongs to this render; core only runs its own from inside the
+    // replacement this override skipped, so it is driven here.
+    this._attachPartListeners(
+      partId,
+      this.#root?.isConnected ? this.#root : live,
+      options,
+    );
+    return undefined;
+  }
+
+  /** Seed the panel cache from a render that replaced the whole part. */
+  #cachePanels(node) {
+    node?.querySelectorAll("[data-tab-panel]").forEach((panel) => {
+      const id = panel.dataset.tabPanel;
+      this.#panelMarkup.set(id, panel.outerHTML);
+      this.#panelVerified.set(id, this.#renderSerial);
+    });
+  }
+
+  /**
+   * Swap the fresh render into the live part, panel by panel. Resolves the whole
+   * parent chain down to the panels container before touching the DOM, so a
+   * mismatch bails out to the full replacement with nothing half-applied.
+   */
+  #mergePanels(liveRoot, freshRoot) {
+    const layers = [];
+    let live = liveRoot;
+    let fresh = freshRoot;
+    let panelsFound = false;
+    for (let depth = 0; depth < 8; depth++) {
+      const liveContainer = live.querySelector("[data-tab-panel]")?.parentElement;
+      const freshContainer = fresh.querySelector("[data-tab-panel]")?.parentElement;
+      if (!liveContainer || !freshContainer) return false;
+      if (freshContainer === fresh) {
+        if (liveContainer !== live) return false;
+        layers.push([live, fresh]);
+        panelsFound = true;
+        break;
+      }
+      const liveNext = childTowards(live, liveContainer);
+      const freshNext = childTowards(fresh, freshContainer);
+      if (
+        !liveNext || !freshNext || liveNext.tagName !== freshNext.tagName
+      ) return false;
+      layers.push([live, fresh, liveNext, freshNext]);
+      live = liveNext;
+      fresh = freshNext;
+    }
+    if (!panelsFound) return false;
+    for (const [liveLayer, freshLayer, liveKeep, freshKeep] of layers) {
+      if (liveKeep) {
+        this.#syncAttributes(liveLayer, freshLayer);
+        this.#replaceChrome(liveLayer, freshLayer, liveKeep, freshKeep);
+        this.#syncAttributes(liveKeep, freshKeep);
+      } else {
+        this.#syncAttributes(liveLayer, freshLayer);
+        this.#installPanels(liveLayer, freshLayer);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Keep a retained structural node's attributes in step with the template without
+   * ever touching the ones `#attachNavigation` owns: ids and the aria references to
+   * them are prefixed on the nodes this render produced and must not be reset to the
+   * raw template values on a node that was carried over.
+   */
+  #syncAttributes(live, fresh) {
+    for (const { name } of Array.from(live.attributes)) {
+      if (
+        PRIVATE_ATTRIBUTES.has(name) || fresh.hasAttribute(name)
+      ) continue;
+      live.removeAttribute(name);
+    }
+    for (const { name, value } of Array.from(fresh.attributes)) {
+      if (PRIVATE_ATTRIBUTES.has(name) || live.getAttribute(name) === value) {
+        continue;
+      }
+      live.setAttribute(name, value);
+    }
+  }
+
+  /**
+   * Refresh every node around `keepLive` in place. The live child on the path to
+   * the panels is never detached — that is what keeps preserved panels (and the
+   * radar stage, and any focused input) alive — and every other child is taken
+   * from the fresh render.
+   */
+  #replaceChrome(live, fresh, keepLive, keepFresh) {
+    const freshNodes = Array.from(fresh.childNodes);
+    const pivot = freshNodes.indexOf(keepFresh);
+    const before = document.createDocumentFragment();
+    const after = document.createDocumentFragment();
+    for (const [index, child] of freshNodes.entries()) {
+      if (index === pivot) continue;
+      (index < pivot ? before : after).append(child);
+    }
+    for (const child of before.childNodes) {
+      if (child.nodeType === Node.ELEMENT_NODE) this.#freshRoots.add(child);
+    }
+    for (const child of after.childNodes) {
+      if (child.nodeType === Node.ELEMENT_NODE) this.#freshRoots.add(child);
+    }
+    for (const child of Array.from(live.childNodes)) {
+      if (child !== keepLive) child.remove();
+    }
+    live.insertBefore(before, keepLive);
+    live.insertBefore(after, keepLive.nextSibling);
+  }
+
+  /** Install the panels this render produced, skipping the ones that did not change. */
+  #installPanels(liveContainer, freshContainer) {
+    const panels = Array.from(freshContainer.querySelectorAll("[data-tab-panel]"));
+    const order = panels.map((panel) => panel.dataset.tabPanel);
+    for (const panel of panels) {
+      const id = panel.dataset.tabPanel;
+      // Captured from the fresh render, before the node is inserted and mutated.
+      const markup = panel.outerHTML;
+      const live = Array.from(liveContainer.children).find(
+        (child) => child.dataset?.tabPanel === id,
+      ) ?? null;
+      const forced = this.#stalePanels.delete(id);
+      if (live && !forced && this.#panelMarkup.get(id) === markup) {
+        this.#panelVerified.set(id, this.#renderSerial);
+        panel.remove();
+        continue;
+      }
+      const node = document.importNode(panel, true);
+      this.#installPanel(liveContainer, node, id, order);
+      panel.remove();
+      this.#panelMarkup.set(id, markup);
+      this.#panelVerified.set(id, this.#renderSerial);
+      this.#freshRoots.add(node);
+    }
+    for (const child of Array.from(liveContainer.children)) {
+      const id = child.dataset?.tabPanel;
+      if (!id || order.includes(id)) continue;
+      child.remove();
+      this.#panelMarkup.delete(id);
+      this.#panelVerified.delete(id);
+    }
+  }
+
+  /** Replace the panel in place, or insert a new one where the template puts it. */
+  #installPanel(liveContainer, node, id, order) {
+    const live = Array.from(liveContainer.children).find(
+      (child) => child.dataset?.tabPanel === id,
+    );
+    if (live) {
+      live.replaceWith(node);
+      return;
+    }
+    const index = order.indexOf(id);
+    const next = Array.from(liveContainer.children).find(
+      (child) => order.indexOf(child.dataset?.tabPanel) > index,
+    ) ?? null;
+    liveContainer.insertBefore(node, next);
+  }
+
+  /** True when `target` lives in markup this render produced. */
+  #markupOwned(target) {
+    if (this.#freshAll) return true;
+    for (let node = target; node; node = node.parentElement) {
+      if (this.#freshRoots.has(node)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Wire a listener onto markup-rendered DOM. A preserved panel keeps the listeners
+   * it was wired with, so the passes below — which must still re-derive gating and
+   * previews for every panel — only wire the nodes this render produced; nothing
+   * double-binds. Elements the passes build at runtime attach directly instead,
+   * because they are new on every render and cannot accumulate handlers.
+   */
+  #on(target, type, handler, options) {
+    if (target && this.#markupOwned(target)) {
+      target.addEventListener(type, handler, options);
+    }
+  }
+
   _attachPartListeners(partId, html, options) {
+    if (this.#setupParts.has(partId)) return;
+    this.#setupParts.add(partId);
     super._attachPartListeners(partId, html, options);
     this.#root = html;
     if (!this.#dragListeners) {
@@ -1481,8 +1767,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#attachHelm(html);
     this.#attachPower(html);
     this.#attachDefense(html);
-    html.querySelectorAll("[data-sensor-focus]").forEach((button) =>
-      button.addEventListener("click", () => {
+    html.querySelectorAll("[data-sensor-focus]").forEach((button) => {
+      this.#on(button, "click", () => {
         const uuid = button.dataset.sensorFocus;
         this.#sensorFocus = uuid;
         this.#refreshSensors(html);
@@ -1493,25 +1779,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             placeable.setTarget(true, { releaseOthers: true });
           }
         }
-      })
-    );
+      });
+    });
     this.#refreshSensors(html);
-    const stage = html.querySelector("[data-radar-stage]");
-    const sweepAngle = this.#radar?.sweepAngle ?? null;
-    this.#radar?.destroy();
-    this.#radar = null;
-    if (stage) {
-      this.#radar = new SensorRadar(stage);
-      if (sweepAngle !== null) this.#radar.sweepAngle = sweepAngle;
-      this.#radar.onScaleChange = (value) => {
-        const uuid = this.actor?.uuid;
-        if (!uuid) return;
-        if (value == null) radarScales.delete(uuid);
-        else radarScales.set(uuid, value);
-      };
-      this.#radar.attach();
-      this.#radar.setView(this.#view);
-    }
+    this.#attachRadar(html);
     html.querySelectorAll("form[data-ui-operation='attack']").forEach(
       (form) => {
         const weaponId = form.dataset.weaponId;
@@ -1529,29 +1800,24 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           this.#peekWeapon = "";
           this.#renderFirePanel();
         };
-        form.addEventListener("pointerenter", envelope);
-        form.addEventListener("focusin", envelope);
-        form.addEventListener("pointerleave", clearEnvelope);
-        form.addEventListener("focusout", clearEnvelope);
+        this.#on(form, "pointerenter", envelope);
+        this.#on(form, "focusin", envelope);
+        this.#on(form, "pointerleave", clearEnvelope);
+        this.#on(form, "focusout", clearEnvelope);
         // Clicking anywhere on the card pins it as the panel's subject.
-        form.addEventListener("pointerdown", () => {
+        this.#on(form, "pointerdown", () => {
           this.#panelWeapon = weaponId;
           this.#renderFirePanel();
         });
-        form.querySelector("[data-aim-enabled]")?.addEventListener(
-          "change",
-          () => {
-            this.#refreshAimed(form);
-            form.dispatchEvent(new Event("input", { bubbles: true }));
-          },
-        );
+        this.#on(form.querySelector("[data-aim-enabled]"), "change", () => {
+          this.#refreshAimed(form);
+          form.dispatchEvent(new Event("input", { bubbles: true }));
+        });
         this.#syncBarrage(form);
-        form.querySelector("[data-barrage-enabled]")?.addEventListener(
-          "change",
-          (event) => this.#toggleBarrage(form, event.currentTarget.checked),
-        );
+        this.#on(form.querySelector("[data-barrage-enabled]"), "change", (event) =>
+          this.#toggleBarrage(form, event.currentTarget.checked));
         form.querySelectorAll("[data-weapon-setting]").forEach((segment) => {
-          segment.addEventListener("click", (event) => {
+          this.#on(segment, "click", (event) => {
             event.stopPropagation();
             void this.#submitWeaponSetting(event, segment);
           });
@@ -1560,22 +1826,19 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     );
     this.#refreshTargets(html);
     html.querySelectorAll("form[data-ui-operation]").forEach((form) => {
-      form.addEventListener("submit", (event) => this.#submitUi(event, form));
+      this.#on(form, "submit", (event) => this.#submitUi(event, form));
     });
     html.querySelectorAll("button[data-ui-operation]").forEach((button) => {
-      button.addEventListener(
-        "click",
-        (event) => this.#submitUi(event, button),
-      );
+      this.#on(button, "click", (event) => this.#submitUi(event, button));
     });
     html.querySelectorAll("form[data-live-preview]").forEach((form) => {
       const refresh = () => void this.#previewUi(form);
-      form.addEventListener("input", refresh);
-      form.addEventListener("change", refresh);
+      this.#on(form, "input", refresh);
+      this.#on(form, "change", refresh);
       refresh();
     });
     html.querySelectorAll("[data-distribute]").forEach((button) => {
-      button.addEventListener("click", () => this.#distribute(button));
+      this.#on(button, "click", () => this.#distribute(button));
     });
     html.querySelectorAll("form[data-raw-operation]").forEach((form) => {
       const type = form.dataset.rawOperation;
@@ -1585,96 +1848,83 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         form.elements.payload.value = saved.payload;
         if (form.elements.targets) form.elements.targets.value = saved.targets;
       }
-      form.addEventListener("input", () => {
+      this.#on(form, "input", () => {
         drafts.set(key, {
           payload: form.elements.payload.value,
           targets: form.elements.targets?.value ?? "",
         });
         void this.#previewRaw(form);
       });
-      form.addEventListener("submit", (event) => this.#submitRaw(event, form));
+      this.#on(form, "submit", (event) => this.#submitRaw(event, form));
     });
     const configForm = html.querySelector("form[data-config]");
     const hullEditor = configForm?.closest("details");
-    hullEditor?.addEventListener("toggle", () => {
+    this.#on(hullEditor, "toggle", () => {
       if (hullEditor.open) this.#refreshHullDraft(configForm);
     });
     if (hullEditor?.open) this.#refreshHullDraft(configForm);
-    configForm?.addEventListener("input", () => {
+    this.#on(configForm, "input", () => {
       const json = configForm.elements.config.value;
       if (!this.#hullDraft) this.#refreshHullDraft();
       this.#hullDraft.json = json;
       this.#hullDraft.dirty = json !== this.#hullDraft.base;
       this.#refreshHullDraft(configForm);
     });
-    html.querySelector("[data-hull-reload]")?.addEventListener("click", () => {
+    this.#on(html.querySelector("[data-hull-reload]"), "click", () => {
       this.#refreshHullDraft(configForm, true);
       configForm.elements.config.focus();
     });
-    configForm?.addEventListener("submit", (event) => this.#saveConfig(event));
-    html.querySelector("[data-canadensis]")?.addEventListener(
-      "click",
+    this.#on(configForm, "submit", (event) => this.#saveConfig(event));
+    this.#on(html.querySelector("[data-canadensis]"), "click",
       () => this.#resetCanadensis(),
     );
     html.querySelectorAll("[data-refit-drop]").forEach((drop) => {
-      drop.addEventListener(
-        "dragover",
-        (event) => void this.#dragComponent(event, drop),
-      );
-      drop.addEventListener("dragleave", (event) => {
+      this.#on(drop, "dragover", (event) => void this.#dragComponent(event, drop));
+      this.#on(drop, "dragleave", (event) => {
         if (!drop.contains(event.relatedTarget)) {
           drop.classList.remove("is-dragover");
           drop.dataset.dragActive = "false";
         }
       });
-      drop.addEventListener(
-        "drop",
+      this.#on(
+        drop, "drop",
         (event) => void this.#dropComponent(event, drop),
         true,
       );
     });
     html.querySelectorAll("[data-roster-slot]").forEach((slotEl) => {
-      slotEl.addEventListener(
-        "dragover",
-        (event) => void this.#dragRoster(event, slotEl),
-      );
-      slotEl.addEventListener("dragleave", (event) => {
+      this.#on(slotEl, "dragover", (event) => void this.#dragRoster(event, slotEl));
+      this.#on(slotEl, "dragleave", (event) => {
         if (!slotEl.contains(event.relatedTarget)) {
           slotEl.classList.remove("is-dragover");
         }
       });
-      slotEl.addEventListener(
-        "drop",
+      this.#on(
+        slotEl, "drop",
         (event) => void this.#dropRoster(event, slotEl),
         true,
       );
     });
     html.querySelectorAll("[data-roster-remove]").forEach((button) => {
-      button.addEventListener(
-        "click",
+      this.#on(
+        button, "click",
         () => void this.#unassignRosterSlot(button.dataset.rosterRemove),
       );
     });
     html.querySelectorAll("[data-roster-edit]").forEach((button) => {
-      button.addEventListener(
-        "click",
-        () => void this.#editRosterActor(button.dataset.rosterEdit),
-      );
+      this.#on(button, "click", () => void this.#editRosterActor(button.dataset.rosterEdit));
     });
     html.querySelectorAll("form[data-assign-picker]").forEach((form) => {
-      form.addEventListener(
-        "submit",
-        (event) => void this.#submitAssignPicker(event, form),
-      );
+      this.#on(form, "submit", (event) => void this.#submitAssignPicker(event, form));
     });
     html.querySelectorAll("[data-release-control]").forEach((button) => {
-      button.addEventListener(
-        "click",
+      this.#on(
+        button, "click",
         (event) => void this.#submitUi(event, button, "releaseControl"),
       );
     });
     html.querySelectorAll("[data-roster-actor]").forEach((element) => {
-      element.addEventListener("click", (event) => {
+      this.#on(element, "click", (event) => {
         event.stopPropagation();
         const actorId = element.dataset.rosterActor;
         const actor = globalThis.game?.actors?.get(actorId);
@@ -1682,33 +1932,57 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       });
     });
     html.querySelectorAll("[data-refit-item]").forEach((button) => {
-      button.addEventListener(
-        "click",
-        () => this.#openComponent(button.dataset.refitItem),
-      );
+      this.#on(button, "click", () => this.#openComponent(button.dataset.refitItem));
     });
     html.querySelectorAll("[data-refit-remove]").forEach((button) => {
-      button.addEventListener(
-        "click",
+      this.#on(
+        button, "click",
         () => void this.#removeComponent(button.dataset.refitRemove, button),
       );
     });
     html.querySelectorAll("[data-refit-browse]").forEach((button) => {
-      button.addEventListener(
-        "click",
+      this.#on(
+        button, "click",
         () => void this.#browseComponents(button.dataset.refitBrowse, button),
       );
     });
-    html.querySelector("[data-native-vehicle-sheet]")?.addEventListener(
-      "click",
-      () => {
-        try {
-          openNativeVehicleSheet(this.actor);
-        } catch (error) {
-          ui.notifications.error(errorText(error));
-        }
-      },
-    );
+    this.#on(html.querySelector("[data-native-vehicle-sheet]"), "click", () => {
+      try {
+        openNativeVehicleSheet(this.actor);
+      } catch (error) {
+        ui.notifications.error(errorText(error));
+      }
+    });
+  }
+
+  /**
+   * Re-point the radar the sheet already owns at the stage this render produced.
+   * The instance survives an unchanged sensors panel (setStage is then a no-op) and
+   * a swapped one, so the sweep phase, clock and dial state are never reset and the
+   * radar is never rebuilt from scratch — only a sheet without an instance builds
+   * one. `onScaleChange` is set once per instance and `setView` re-reads the fresh
+   * view every render.
+   */
+  #attachRadar(html) {
+    const stage = html.querySelector("[data-radar-stage]");
+    if (!stage) {
+      this.#radar?.destroy();
+      this.#radar = null;
+      return;
+    }
+    if (this.#radar) {
+      this.#radar.setStage(stage);
+    } else {
+      this.#radar = new SensorRadar(stage);
+      this.#radar.onScaleChange = (value) => {
+        const uuid = this.actor?.uuid;
+        if (!uuid) return;
+        if (value == null) radarScales.delete(uuid);
+        else radarScales.set(uuid, value);
+      };
+      this.#radar.attach();
+    }
+    this.#radar.setView(this.#view);
   }
 
   #refreshHullDraft(form = null, reload = false) {
@@ -1742,29 +2016,32 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 
   #attachNavigation(html) {
     const prefix = this.id;
-    const ids = new Map();
-    html.querySelectorAll("[id]").forEach((element) => {
-      const previous = element.id;
-      const next = previous.startsWith(`${prefix}-`)
-        ? previous
-        : `${prefix}-${previous}`;
-      ids.set(previous, next);
-      element.id = next;
-    });
-    html.querySelectorAll("[aria-controls], [aria-labelledby]").forEach(
-      (element) => {
+    const prefixed = (id) => id.startsWith(`${prefix}-`) ? id : `${prefix}-${id}`;
+    const withSelf = (scope, selector) => [
+      ...(scope.matches?.(selector) ? [scope] : []),
+      ...scope.querySelectorAll(selector),
+    ];
+    // Sheet-scoped ids and the references to them are applied to the markup this
+    // render produced: a preserved panel already carries them from the render that
+    // installed it, and prefixing is idempotent. A full render owns the whole sheet.
+    const scopes = this.#freshAll ? [html] : Array.from(this.#freshRoots);
+    for (const scope of scopes) {
+      for (const element of withSelf(scope, "[id]")) {
+        element.id = prefixed(element.id);
+      }
+      for (
+        const element of withSelf(scope, "[aria-controls], [aria-labelledby]")
+      ) {
         for (const attribute of ["aria-controls", "aria-labelledby"]) {
           if (element.hasAttribute(attribute)) {
             element.setAttribute(
               attribute,
-              element.getAttribute(attribute).split(/\s+/).map((id) =>
-                ids.get(id) ?? id
-              ).join(" "),
+              element.getAttribute(attribute).split(/\s+/).map(prefixed).join(" "),
             );
           }
         }
-      },
-    );
+      }
+    }
     html.querySelectorAll("[data-tab-panel]").forEach((panel) => {
       const heading = panel.querySelector(".ship-panel-heading h2");
       panel.tabIndex = -1;
@@ -1779,7 +2056,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         tabs[0];
     tabs.forEach((tab) => {
       tab.tabIndex = tab === selected ? 0 : -1;
-      tab.addEventListener("keydown", (event) => {
+      this.#on(tab, "keydown", (event) => {
         const index = tabs.indexOf(tab);
         const next = event.key === "Home"
           ? 0
@@ -1797,18 +2074,15 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       });
     });
     html.querySelectorAll("[data-tab-button]").forEach((button) => {
-      button.addEventListener(
-        "click",
-        () => this.#selectTab(html, button.dataset.tabButton),
-      );
+      this.#on(button, "click", () => this.#selectTab(html, button.dataset.tabButton));
     });
     const menu = html.querySelector(".ship-maintenance-menu");
-    menu?.addEventListener("toggle", () => {
+    this.#on(menu, "toggle", () => {
       if (!menu.open && menu.contains(document.activeElement)) {
         html.querySelector("[data-tab-panel]:not([hidden])")?.focus();
       }
     });
-    menu?.addEventListener("keydown", (event) => {
+    this.#on(menu, "keydown", (event) => {
       if (event.key !== "Escape" || !menu.open) return;
       event.preventDefault();
       menu.open = false;
@@ -1841,8 +2115,22 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#epoch++;
     const token = actorToken(this.actor);
     if (token) clearMovementPreview(token.uuid);
+    this.#revalidatePanel(id);
     html.querySelectorAll(`[data-tab-panel='${id}'] form[data-live-preview]`)
       .forEach((form) => void this.#previewUi(form));
+  }
+
+  /**
+   * Belt to the dirty-check's braces. Every refresh compares all nine panels before
+   * anything is committed, so a panel's cache is normally current by the time its tab
+   * is clicked. Should a render ever not produce markup for this panel — a skipped
+   * part, a part the merge could not line up, a truncated render — the cache lags the
+   * sheet, and activating the tab re-renders instead of showing what was cached.
+   */
+  #revalidatePanel(id) {
+    if (!id || this.#panelVerified.get(id) === this.#renderSerial) return;
+    this.#stalePanels.add(id);
+    void this.render();
   }
 
   #restoreControls(html) {
@@ -1865,7 +2153,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             option.value === saved && !option.disabled
           )
         ) select.value = saved;
-        select.addEventListener("change", () => {
+        this.#on(select, "change", () => {
           this.#operators.set(key, select.value);
           select.closest("[data-tab-panel]")?.querySelectorAll(
             "form[data-live-preview]",
@@ -1893,9 +2181,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           ) input.value = value;
         }
       }
-      form.addEventListener(
-        "input",
-        () =>
+      this.#on(form, "input", () =>
           this.#uiDrafts.set(key, {
             revision,
             values: Object.fromEntries(new FormData(form).entries()),
@@ -1909,10 +2195,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         details.closest("[data-tab-panel]")?.dataset.tabPanel
       }:${index}`;
       if (this.#details.has(key)) details.open = this.#details.get(key);
-      details.addEventListener(
-        "toggle",
-        () => this.#details.set(key, details.open),
-      );
+      this.#on(details, "toggle", () => this.#details.set(key, details.open));
     });
     const state = this.actor.system.shipCombat.state;
     const hide = (operation, hidden) =>
@@ -1988,7 +2271,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             })`;
           }
         };
-        operatorSelect?.addEventListener("change", refreshReloadCost);
+        this.#on(operatorSelect, "change", refreshReloadCost);
         refreshReloadCost();
       },
     );
@@ -2051,7 +2334,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           },
         );
       };
-      input.addEventListener("input", refresh);
+      this.#on(input, "input", refresh);
       refresh();
     }
     const coast = form.querySelector("input[name='coastDuration']");
@@ -2092,11 +2375,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           },
         );
       };
-      coast.addEventListener("input", refreshCoast);
+      this.#on(coast, "input", refreshCoast);
       refreshCoast();
     }
 
-    form.querySelector("[data-coast-remaining]")?.addEventListener("click", (event) => {
+    this.#on(form.querySelector("[data-coast-remaining]"), "click", (event) => {
       event.preventDefault();
       const remaining = Number(coast?.max ?? 0);
       if (remaining <= 0) {
@@ -2111,7 +2394,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       void this.#submitUi(event, form, "maneuver");
     });
 
-    form.querySelector("[data-helm-reset]")?.addEventListener("click", (event) => {
+    this.#on(form.querySelector("[data-helm-reset]"), "click", (event) => {
       event.preventDefault();
       for (const name of ["forward", "lateral", "rotation"]) {
         const input = form.elements.namedItem(name);
@@ -2206,7 +2489,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           : reason;
       }
     };
-    operator?.addEventListener("change", () => {
+    this.#on(operator, "change", () => {
       refreshControl();
       void this.#previewUi(form);
     });
@@ -2241,7 +2524,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         take.title = !this.#canAct ? denial : `Current holder: ${label}`;
       }
     };
-    operator?.addEventListener("change", refreshControls);
+    this.#on(operator, "change", refreshControls);
     refreshControls();
     for (const prefix of ["sheddingPriority", "weaponPriority"]) {
       const selects = Array.from(
@@ -2261,8 +2544,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           if (other) other.value = previous;
           for (const entry of selects) entry.dataset.previous = entry.value;
         };
-        select.addEventListener("input", swap);
-        select.addEventListener("change", () => {
+        this.#on(select, "input", swap);
+        this.#on(select, "change", () => {
           swap();
           form.dispatchEvent(new Event("input", { bubbles: true }));
         });
@@ -2361,7 +2644,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         if (iconBtn && !iconBtn.dataset.attached) {
           iconBtn.dataset.attached = "true";
           // Left click: +1 tier
-          iconBtn.addEventListener("click", () => {
+          this.#on(iconBtn, "click", () => {
             if (!this.#canAct) return;
             const cur = numeric(input.value);
             const next = values.find((v) => v > cur);
@@ -2371,7 +2654,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             }
           });
           // Right click: -1 tier
-          iconBtn.addEventListener("contextmenu", (e) => {
+          this.#on(iconBtn, "contextmenu", (e) => {
             e.preventDefault();
             if (!this.#canAct) return;
             const cur = numeric(input.value);
@@ -2403,7 +2686,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         )?.focus();
       }
     };
-    form.addEventListener("input", refresh);
+    this.#on(form, "input", refresh);
     refresh();
   }
 
@@ -2655,7 +2938,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     };
 
     form.querySelectorAll("[data-shield-alloc]").forEach((button) => {
-      button.addEventListener("click", () => {
+      this.#on(button, "click", () => {
         if (button.disabled || !this.#canAct) return;
         const sector = shields.sectors.find((entry) =>
           entry.id === button.dataset.shieldAlloc
@@ -2681,7 +2964,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       });
     });
     form.querySelectorAll("[data-shield-regen]").forEach((button) => {
-      button.addEventListener("click", () => {
+      this.#on(button, "click", () => {
         if (button.disabled || !this.#canAct) return;
         const sector = shields.sectors.find((entry) =>
           entry.id === button.dataset.shieldRegen
@@ -2699,7 +2982,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         form.dispatchEvent(new Event("input", { bubbles: true }));
       });
     });
-    form.addEventListener("input", refresh);
+    this.#on(form, "input", refresh);
     refresh();
   }
 

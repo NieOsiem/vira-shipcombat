@@ -227,20 +227,48 @@ export class SensorRadar {
    */
   attach(stage = this.#stage) {
     this.#detachElements();
-    this.#stage = stage ?? null;
-    if (!this.#stage) return;
+    this.#adoptStage(stage);
+  }
 
-    const canvas = stage.querySelector("[data-radar-canvas]");
+  /**
+   * Re-points the radar at the stage the sheet just rendered, keeping this
+   * instance — and with it the sweep phase, clock and view — alive across a
+   * rebuild instead of a destroy() plus a fresh constructor. Every binding that
+   * points into the node being left is dropped (resize observer, motion,
+   * pointer and zoom listeners) and every element reference is re-resolved
+   * inside the replacement, so no cached node survives the move; the ticker and
+   * the dial state are not touched. A no-op when handed the node already in
+   * use, so a caller can pass whatever the render produced.
+   */
+  setStage(stage) {
+    const next = stage ?? null;
+    if (next === this.#stage) return;
+    this.#detachStage();
+    this.#adoptStage(next);
+  }
+
+  #adoptStage(stage) {
+    const next = stage ?? null;
+    this.#stage = next;
+    if (!next) {
+      // With no stage there is nothing to paint, so the frame is dropped; the
+      // dial state stays put for a later setStage()/attach().
+      this.#stopLoop();
+      this.#clearStageElements();
+      return;
+    }
+
+    const canvas = next.querySelector("[data-radar-canvas]");
     this.#canvas = canvas && typeof canvas.getContext === "function" ? canvas : null;
     this.#ctx = this.#canvas ? this.#canvas.getContext("2d") : null;
-    this.#hits = stage.querySelector("[data-radar-hits]");
-    this.#zoom = stage.querySelector("[data-radar-zoom]");
-    this.#corners = Array.from(stage.querySelectorAll(".ship-radar-corner"));
+    this.#hits = next.querySelector("[data-radar-hits]");
+    this.#zoom = next.querySelector("[data-radar-zoom]");
+    this.#corners = Array.from(next.querySelectorAll(".ship-radar-corner"));
     this.#hoveredUuid = "";
     this.#focusedUuid = "";
 
     // The hit layer covers the canvas, so zoom is captured stage-wide.
-    stage.addEventListener("wheel", this.#onWheel, { passive: false });
+    next.addEventListener("wheel", this.#onWheel, { passive: false });
     if (this.#hits) {
       this.#hits.addEventListener("pointerover", this.#onPointerOver);
       this.#hits.addEventListener("pointerout", this.#onPointerOut);
@@ -257,7 +285,7 @@ export class SensorRadar {
 
     if (typeof ResizeObserver === "function") {
       this.#observer = new ResizeObserver(this.#onResize);
-      this.#observer.observe(stage);
+      this.#observer.observe(next);
     }
 
     this.#readTheme();
@@ -265,6 +293,15 @@ export class SensorRadar {
     this.#refresh();
     this.#paint();
     this.#startLoop();
+  }
+
+  /** Drops the element references cached from a stage, so none can outlive it. */
+  #clearStageElements() {
+    this.#canvas = null;
+    this.#ctx = null;
+    this.#hits = null;
+    this.#zoom = null;
+    this.#corners = [];
   }
 
   setView(view) {
@@ -315,19 +352,24 @@ export class SensorRadar {
   }
 
   #detachElements() {
-    if (this.#frameId !== null) {
-      cancelAnimationFrame(this.#frameId);
-      this.#frameId = null;
-    }
+    this.#stopLoop();
     if (this.#resizeFrame !== null) {
       cancelAnimationFrame(this.#resizeFrame);
       this.#resizeFrame = null;
     }
+    this.#detachStage();
+  }
+
+  /**
+   * Drops the bindings that point into the stage node the radar is leaving,
+   * leaving the ticker and the dial state alone: setStage() re-points with
+   * these, while destroy() stacks them on top of the full teardown.
+   */
+  #detachStage() {
     this.#observer?.disconnect();
     this.#observer = null;
     this.#motion?.removeEventListener("change", this.#onMotionChange);
     this.#motion = null;
-    this.#lastTime = 0;
     this.#stage?.removeEventListener("wheel", this.#onWheel);
     this.#hits?.removeEventListener("pointerover", this.#onPointerOver);
     this.#hits?.removeEventListener("pointerout", this.#onPointerOut);
@@ -929,7 +971,14 @@ export class SensorRadar {
   }
 
   #startLoop() {
-    if (this.#reduceMotion || this.#frameId !== null || !this.#canvas) return;
+    // The media query can flip between renders; setStage() carries the previous
+    // stage's frame over, so the reduced-motion answer decides here rather than
+    // letting a sweep keep animating after the setting changed.
+    if (this.#reduceMotion) {
+      this.#stopLoop();
+      return;
+    }
+    if (this.#frameId !== null || !this.#canvas) return;
     this.#lastTime = 0;
     this.#frameId = requestAnimationFrame(this.#frame);
   }
