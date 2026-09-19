@@ -90,11 +90,21 @@ function severityIndex(severity) {
   return rank;
 }
 
-function normalizePoolEntry(entry, region) {
+function bubbleEmitterSector(config) {
+  const shield = config?.components?.shield;
+  if (shield?.topology !== "bubble") return null;
+  return shield.sectors?.[0] ?? "bubble";
+}
+
+function normalizePoolEntry(entry, region, config = null) {
   const channelId = entry?.channelId ?? entry?.conditionId;
   const kind = entry?.kind ?? (FAULT_CHANNELS.includes(channelId) ? "fault" : HAZARD_CHANNELS.includes(channelId) ? "hazard" : null);
   const componentId = entry?.componentId ?? (kind === "fault" ? entry?.targetId : null);
-  const sector = entry?.sector ?? null;
+  const rawSector = entry?.sector ?? null;
+  const bubbleSector = (kind === "fault" && channelId === "shieldEmitterDamage" && config)
+    ? bubbleEmitterSector(config)
+    : null;
+  const sector = bubbleSector ?? rawSector;
   const hazardRegion = entry?.region ?? (kind === "hazard" && ["fire", "breach"].includes(channelId)
     ? (entry?.targetId && entry.targetId !== "ship" ? entry.targetId : sector ?? region)
     : null);
@@ -119,6 +129,7 @@ function normalizePoolEntry(entry, region) {
     conditionId: channelId,
     componentId: kind === "fault" ? componentId : null,
     sector,
+    rawSector,
     region: hazardRegion,
     targetId: kind === "fault" ? componentId : hazardRegion ?? "ship",
     weight,
@@ -129,7 +140,7 @@ function normalizePoolEntry(entry, region) {
 function poolEntries(config, region) {
   const pool = config?.criticalPools?.[region];
   if (!Array.isArray(pool)) return [];
-  return pool.map((entry) => normalizePoolEntry(entry, region));
+  return pool.map((entry) => normalizePoolEntry(entry, region, config));
 }
 
 function allPoolEntries(config) {
@@ -149,7 +160,11 @@ function supportsHazards(config) {
 }
 
 function findPoolEntry(config, key) {
-  return allPoolEntries(config).find((entry) => conditionKey(entry) === key || entry.id === key) ?? null;
+  return allPoolEntries(config).find((entry) => (
+    conditionKey(entry) === key
+    || entry.id === key
+    || (entry.rawSector && conditionKey({ ...entry, sector: entry.rawSector }) === key)
+  )) ?? null;
 }
 
 function cloneDraftForConditions(draft) {
@@ -203,17 +218,6 @@ function componentList(config) {
 
 function componentForTarget(config, componentId) {
   return componentList(config).find((component) => component.id === componentId) ?? null;
-}
-
-/**
- * A Bubble Shield has one shared emitter, so the struck region only selects which critical pool
- * fires: the Fault itself must name the emitter that exists. Storing the directional region would
- * leave the Fault unable to degrade, block, or recover that emitter.
- */
-function bubbleEmitterSector(config) {
-  const shield = config?.components?.shield;
-  if (shield?.topology !== "bubble") return null;
-  return shield.sectors?.[0] ?? "bubble";
 }
 
 function targetSector(config, entry) {
@@ -371,7 +375,7 @@ function directApply(config, draft, entry, tiers, { suppressBreach = true } = {}
 
 function suppressFireForBreach(config, draft, region, beforeIndex, afterIndex) {
   const fireEntry = allPoolEntries(config).find((entry) => entry.channelId === "fire" && entry.region === region)
-    ?? normalizePoolEntry({ kind: "hazard", channelId: "fire", sector: region, weight: 1 }, region);
+    ?? normalizePoolEntry({ kind: "hazard", channelId: "fire", sector: region, weight: 1 }, region, config);
   const fireKey = conditionKey(fireEntry);
   const fire = draft.conditions[fireKey];
   if (!fire) return null;
@@ -400,13 +404,29 @@ function resolveEntry(config, draft, key) {
       componentId: existing.componentId ?? (existing.kind === "fault" ? existing.targetId : null),
       sector: existing.sector ?? existing.region,
       weight: 1,
-    }, existing.region ?? existing.sector);
+    }, existing.region ?? existing.sector, config);
+  }
+  if (typeof key === "string") {
+    const [channelId, region] = key.split(":");
+    if (HAZARD_CHANNELS.includes(channelId)) {
+      return normalizePoolEntry({
+        kind: "hazard",
+        channelId,
+        sector: region ?? null,
+        region: region ?? null,
+        weight: 1,
+      }, region ?? null, config);
+    }
   }
   return null;
 }
 
 function selectFaultConversion(config, draft, sector, random, randomIndex = 0) {
-  return selectWeighted(eligibleEntries(config, draft, sector, [], "fault"), random, randomIndex);
+  const targetSector = SECTORS.includes(sector) ? sector : null;
+  const candidates = targetSector
+    ? eligibleEntries(config, draft, targetSector, [], "fault")
+    : SECTORS.flatMap((s) => eligibleEntries(config, draft, s, [], "fault"));
+  return selectWeighted(candidates, random, randomIndex);
 }
 
 function applyConditionTiersCore(config, draft, { conditionId, tiers, sector, random, selector }) {
@@ -420,9 +440,13 @@ function applyConditionTiersCore(config, draft, { conditionId, tiers, sector, ra
     return { applications, discarded: remaining, blockedByBreach: true, convertedHazard: false };
   }
   if (entry.kind === "hazard" && !supportsHazards(config)) {
-    entry = selectFaultConversion(config, draft, sector ?? entry.poolRegion ?? entry.region, random, randomIndex);
+    const conversionSector = sector ?? entry.poolRegion ?? entry.region;
+    entry = selectFaultConversion(config, draft, conversionSector, random, randomIndex);
     if (!entry) return { applications, discarded: remaining, convertedHazard: true };
-    if (eligibleEntries(config, draft, sector ?? entry.poolRegion, [], "fault").length > 1) randomIndex += 1;
+    const candidatePool = SECTORS.includes(conversionSector)
+      ? eligibleEntries(config, draft, conversionSector, [], "fault")
+      : SECTORS.flatMap((s) => eligibleEntries(config, draft, s, [], "fault"));
+    if (candidatePool.length > 1) randomIndex += 1;
   }
 
   let application = directApply(config, draft, entry, remaining);

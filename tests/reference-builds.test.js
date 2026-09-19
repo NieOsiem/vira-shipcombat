@@ -323,6 +323,7 @@ describe("Peregrinus Interceptor reference build", () => {
 
   test("resolves every struck region onto the one bubble emitter", () => {
     const { config, state } = peregrinusShip();
+    const severities = ["minor", "major", "critical", "destroyed"];
 
     for (const [index, sector] of ["fore", "port", "starboard", "aft"].entries()) {
       applyConditionTiers(config, state, {
@@ -336,8 +337,23 @@ describe("Peregrinus Interceptor reference build", () => {
           ["bubble", null].includes(condition.sector)
         ),
       ).toBe(true);
-      expect(Object.values(state.conditions)).toHaveLength(index + 1);
+      expect(Object.values(state.conditions)).toHaveLength(1);
+      expect(Object.values(state.conditions)[0].severity).toBe(severities[index]);
     }
+  });
+
+  test("converts non-sectorized Hazards on a hazard-incapable hull to an eligible Fault", () => {
+    const { config, state } = peregrinusShip();
+    const result = applyConditionTiers(config, state, {
+      conditionId: "electricalCascade",
+      tiers: 1,
+      random: 0,
+    });
+    expect(result.convertedHazard).toBe(true);
+    expect(result.applications).toHaveLength(1);
+    expect(result.applications[0].applied).toBe(1);
+    expect(Object.values(state.conditions)).toHaveLength(1);
+    expect(Object.values(state.conditions)[0].kind).toBe("fault");
   });
 
   test("denies its single pilot combat repair and Recovery Work (rules 3.5)", () => {

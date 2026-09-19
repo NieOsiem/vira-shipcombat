@@ -1194,4 +1194,21 @@ describe("refit API", () => {
     });
     expect(actor.events).toEqual([]);
   });
+
+  test("prunes active Hazards when refitting to a hazard-incapable hull", async () => {
+    actor.system.shipCombat.state.conditions = {
+      "fire:fore": { id: "fire:fore", kind: "hazard", channelId: "fire", region: "fore", severity: "minor" },
+      "electricalCascade": { id: "electricalCascade", kind: "hazard", channelId: "electricalCascade", severity: "minor" },
+    };
+    actor.system.shipCombat.state.work = {
+      "fire:fore": { id: "fire:fore", kind: "hazard" },
+    };
+
+    await refit.resetShipToReferenceBuild(actor, PEREGRINUS_HULL_CONFIG.id);
+
+    const conditions = actor.system.shipCombat.state.conditions;
+    expect(conditions["fire:fore"]).toBeUndefined();
+    expect(conditions["electricalCascade"]).toBeUndefined();
+    expect(actor.system.shipCombat.state.work["fire:fore"]).toBeUndefined();
+  });
 });
