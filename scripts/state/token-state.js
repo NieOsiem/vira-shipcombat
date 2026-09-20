@@ -172,11 +172,25 @@ export async function writeTokenTransform(document, transform) {
   return document.update(update, { viraShipCombatInternal: true });
 }
 
-export async function loadShipRecords(uuids) {
+/**
+ * Load ship records for an operation. A target that vanished between preparation and execution stops
+ * being involved instead of failing the whole operation; required uuids must always resolve.
+ */
+export async function loadShipRecords(uuids, { requiredUuids = [] } = {}) {
+  const required = new Set(requiredUuids);
   const records = new Map();
   for (const uuid of uuids) {
     if (records.has(uuid)) continue;
-    const document = await resolveShipDocument(uuid);
+    let document;
+    try {
+      document = await resolveShipDocument(uuid);
+    } catch (error) {
+      if (
+        required.has(uuid) || !(error instanceof RuleViolation) ||
+        error.code !== "TOKEN_NOT_FOUND"
+      ) throw error;
+      continue;
+    }
     const actor = isTokenDocument(document) ? document.actor : document;
     await initializeShipActor(actor);
     records.set(uuid, readShipRecord(document));

@@ -332,6 +332,36 @@ function tokenDocumentGone(token) {
 }
 
 /**
+ * Whether any live token of this Actor still fights in a combat. A deleted token's Combatant no
+ * longer resolves a token, so only surviving documents count.
+ */
+function actorReferencedByCombat(actor) {
+  const uuid = actor?.uuid;
+  if (!uuid) return false;
+  for (const combat of collectionValues(game.combats)) {
+    for (const combatant of collectionValues(combat?.combatants)) {
+      if (removedCombatants.has(combatant)) continue;
+      const token = combatantToken(combatant);
+      if (token?.actor?.uuid === uuid) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether a world Actor carries a phase it cannot legitimately hold. A world Actor is only
+ * mid-combat while one of its tokens is still a Combatant: a duplicated ship is born with its
+ * source's phase and turnKey but joins no combat, and `combat.enter` is suppressed for a ship that
+ * is not outsideCombat, so it could never advance. That persisted phase is stale.
+ */
+function orphanedActorState(actor) {
+  if (actor?.isToken) return false;
+  const phase = actor?.system?.shipCombat?.state?.phase;
+  if (phase === undefined || phase === "outsideCombat") return false;
+  return !actorReferencedByCombat(actor);
+}
+
+/**
  * Initialize, normalize, and synchronize one world or synthetic ship Actor in its own context.
  * `queued: false` is mandatory for callers that already run inside the authority queue: enqueuing
  * from there would make the running task await work appended behind itself. `refreshOperators`
@@ -454,10 +484,12 @@ function lifecyclePayload(type, key) {
 }
 
 async function executeLifecycle(combat, combatant, type, key) {
-  const token = combatantToken(combatant);
-  if (!token) return null;
-  const targetTokens = operationTargetTokens(combat, token, type);
   const response = await submitAutomaticShipOperation(async () => {
+    // Re-derive the involved tokens at the queue head: a hook snapshot can predate a deletion, and a
+    // token that vanished must not stay part of the operation.
+    const token = combatantToken(combatant);
+    if (!token) return null;
+    const targetTokens = operationTargetTokens(combat, token, type);
     if (
       ["combat.enter", "phase.start"].includes(type) &&
       (deletedCombats.has(combat) || removedCombatants.has(combatant))
@@ -555,16 +587,35 @@ async function reconcileCombat(combat, combatants, current) {
   if (currentCombatant) await beginTurn(combat, currentCombatant, current);
 }
 
+const COMBAT_RECONCILE_RETRY_MS = 750;
+
 function scheduleCombat(combat) {
   // V14's updateCombat hook runs in super._onUpdate, before current/turns are
   // rebuilt. Capture after that synchronous stack, never retain mutable history.
   queueMicrotask(() => {
-    const combatants = collectionValues(combat.combatants);
-    const current = combatState(combat);
-    schedule(
-      "Failed to synchronize ship combat",
-      () => reconcileCombat(combat, combatants, current),
-    );
+    schedule("Failed to synchronize ship combat", async () => {
+      const combatants = collectionValues(combat.combatants);
+      try {
+        await reconcileCombat(combat, combatants, combatState(combat));
+        return;
+      } catch (error) {
+        // A rejected lifecycle operation aborts the pass part-way. The phase/turn guards make a
+        // second pass safe, so one retry against fresh combat state finishes the handoff that the
+        // failed pass left in progress instead of waiting for the next combat update.
+        console.warn(
+          `${MODULE_ID} | Ship combat synchronization failed; retrying once`,
+          error,
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, COMBAT_RECONCILE_RETRY_MS)
+        );
+      }
+      await reconcileCombat(
+        combat,
+        collectionValues(combat.combatants),
+        combatState(combat),
+      );
+    });
   });
 }
 
@@ -595,6 +646,67 @@ async function leaveCombatant(combat, combatant) {
   await submitLifecycle(combat, combatant, "phase.coast", key);
   await submitLifecycle(combat, combatant, "phase.end", key);
   await submitLifecycle(combat, combatant, "combat.leave", "combat");
+}
+
+/**
+ * Retire a ship whose token was deleted. The Combatant can no longer resolve a token, so the normal
+ * token-based lifecycle cannot run: a linked ship is returned to outsideCombat through its Actor
+ * document instead (there is nothing left to coast), and the orphaned Combatant slot is removed
+ * because core leaves it in place. An unlinked copy's state lives in the deleted token's delta and
+ * dies with it, so only the slot is retired.
+ */
+async function leaveRemovedShipCombatant(combat, combatant, token) {
+  if (combatantToken(combatant)) return leaveCombatant(combat, combatant);
+  await deleteOrphanedCombatant(combat, combatant);
+  if (token?.actorLink !== true) return;
+  const actor = combatant?.actor ?? token.actor ?? null;
+  if (!actor || actorReferencedByCombat(actor)) return;
+  const state = actor.system?.shipCombat?.state;
+  if (!state || state.phase === "outsideCombat") return;
+  await submitActorCombatLeave(actor);
+}
+
+/**
+ * Remove a Combatant whose token no longer exists. Foundry 14.366's own token-deletion cleanup
+ * compares the Combat's Scene document with a Scene id and skips every Combat bound to a Scene, so
+ * the module retires the slot itself; the guards keep a future core that deletes it from erroring.
+ */
+async function deleteOrphanedCombatant(combat, combatant) {
+  if (!combatant?.id || !combat?.combatants?.has?.(combatant.id)) return;
+  try {
+    await combat.deleteEmbeddedDocuments("Combatant", [combatant.id]);
+  } catch (error) {
+    console.warn(
+      `${MODULE_ID} | Failed to retire the orphaned combatant ${combatant.id}`,
+      error,
+    );
+  }
+}
+
+/**
+ * Return a token-less ship to outsideCombat. The request is built at the queue head so the
+ * expected revision is current, and a no-op when the ship already left combat.
+ */
+async function submitActorCombatLeave(actor) {
+  const response = await submitAutomaticShipOperation(async () => {
+    const state = actor.system?.shipCombat?.state;
+    if (!state || state.phase === "outsideCombat") return null;
+    const revision = Number(state.revision ?? 0);
+    return {
+      id: `${MODULE_ID}:leave:${actor.uuid}:${revision}`,
+      type: "combat.leave",
+      sourceUuid: actor.uuid,
+      targetUuids: [],
+      expectedRevisions: { [actor.uuid]: revision },
+      payload: {},
+    };
+  });
+  if (!response?.ok && response?.error) {
+    console.warn(
+      `${MODULE_ID} | Failed to return ${actor.name} to outside combat after its token was removed: ${response.error.message}`,
+    );
+  }
+  return response;
 }
 
 function hasPositionChange(changes) {
@@ -747,7 +859,9 @@ function initializeLoadedActors() {
     if (actor.type === SHIP_TYPE) {
       schedule(
         `Failed to initialize ship ${actor.name} (${actor.uuid ?? actor.id})`,
-        () => initializeActorShipData(actor),
+        () => initializeActorShipData(actor, {
+          resetOrphanedState: orphanedActorState(actor),
+        }),
       );
     }
   }
@@ -862,7 +976,9 @@ export function registerShipHooks() {
     if (actor.type === SHIP_TYPE) {
       schedule(
         `Failed to initialize ship ${actor.name} (${actor.uuid ?? actor.id})`,
-        () => initializeActorShipData(actor),
+        () => initializeActorShipData(actor, {
+          resetOrphanedState: orphanedActorState(actor),
+        }),
       );
     }
   });
@@ -893,20 +1009,25 @@ export function registerShipHooks() {
       deletedTokens.add(token);
       if (!deletedTokenIsShip(token)) return;
       // A deleted token cannot leave combat through its own hook, so every combatant that pointed at
-      // it is retired here. Both leaveCombatant and the track prune tolerate an already-gone token.
+      // it is retired here. A linked ship is returned to outsideCombat through its Actor document and
+      // the orphaned Combatant slot is removed; the track prune tolerates an already-gone token.
       for (const combat of collectionValues(game.combats)) {
         for (const combatant of collectionValues(combat?.combatants)) {
           if (!combatantReferencesToken(combatant, token)) continue;
           removedCombatants.add(combatant);
-          schedule(
-            "Failed to leave removed ship combatant",
-            () => leaveCombatant(combat, combatant),
+          scheduleCleanup(
+            "Failed to retire removed ship combatant",
+            () => activeGm()
+              ? leaveRemovedShipCombatant(combat, combatant, token)
+              : undefined,
           );
         }
       }
       scheduleCleanup(
         "Failed to prune orphaned sensor tracks",
-        () => enqueueAuthorityWork(() => pruneOrphanedSceneTracks(token)),
+        () => activeGm()
+          ? enqueueAuthorityWork(() => pruneOrphanedSceneTracks(token))
+          : undefined,
       );
     } catch (error) {
       console.warn(

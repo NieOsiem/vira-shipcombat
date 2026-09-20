@@ -174,6 +174,19 @@ function recordAdvanceCooldown(request, records) {
   if (actorUuid) advanceCooldowns.set(actorUuid, nowMs);
 }
 
+/**
+ * Scene participants the requester did not name join with the revision read after loading, so a ship
+ * that was not yet initialized when the request was normalized still gets its revision. Targets the
+ * requester named keep the requester's own snapshot and stay strict.
+ */
+function fillExpectedRevisions(request, records, requestedTargets) {
+  for (const [uuid, record] of records) {
+    if (requestedTargets.has(uuid) || Number.isInteger(request.expectedRevisions[uuid])) continue;
+    const revision = record.state?.revision;
+    if (Number.isInteger(revision)) request.expectedRevisions[uuid] = revision;
+  }
+}
+
 function validateExpectedRevisions(request, records) {
   for (const [uuid, record] of records) {
     const expected = request.expectedRevisions[uuid];
@@ -499,9 +512,11 @@ async function processRequest(request, submitterId) {
     const user = activeUser(submitterId);
     const cached = processed.get(request.id);
     if (cached) return cloneDocumentData(cached);
+    const requestedTargets = new Set(Array.isArray(request.targetUuids) ? request.targetUuids : []);
     await normalizeSceneParticipants(request);
     const uuids = operationUuids(request);
-    const records = await loadShipRecords(uuids);
+    const records = await loadShipRecords(uuids, { requiredUuids: [request.sourceUuid] });
+    fillExpectedRevisions(request, records, requestedTargets);
     validateExpectedRevisions(request, records);
     assertPermission(user, request, records.get(request.sourceUuid));
 
