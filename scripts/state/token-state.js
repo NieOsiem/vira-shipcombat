@@ -109,32 +109,6 @@ export function snapshotTokenTransform(tokenDocument) {
   return transform;
 }
 
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-/**
- * Leaf paths present in `stored` but absent from `next`. Arrays and primitives count as leaves:
- * their value is replaced wholesale, so only disappearing keys need an explicit deletion.
- */
-function removedStatePaths(stored, next, prefix = []) {
-  if (!isPlainObject(stored)) return [];
-  const paths = [];
-  for (const [key, value] of Object.entries(stored)) {
-    const path = [...prefix, key];
-    if (!isPlainObject(value)) {
-      if (!isPlainObject(next) || !Object.hasOwn(next, key)) paths.push(path);
-      continue;
-    }
-    if (!isPlainObject(next?.[key])) {
-      paths.push(path);
-      continue;
-    }
-    paths.push(...removedStatePaths(value, next[key], path));
-  }
-  return paths;
-}
-
 export async function writeShipState(document, state) {
   // Synthetic actors persist into TokenDocument delta data; linked actors and sidebar
   // actors persist into their world Actor.
@@ -146,19 +120,12 @@ export async function writeShipState(document, state) {
     "system.shipCombat.state": replacement,
     ...nativeVehicleFieldValues(config, state),
   }, { viraShipCombatInternal: true, diff: false });
-  // A delta-backed token merges into its stored delta, which keeps every key the new state no longer
-  // carries, so a finished Recovery Work entry, an expired jam or a dropped track would come back on the
-  // next load. Linked and sidebar actors replace the path outright and need none of this.
-  if (!isToken || document.actorLink !== false) return document;
-  const removals = removedStatePaths(actor._source?.system?.shipCombat?.state, state);
-  if (!removals.length) return document;
-  const deletions = {};
-  for (const path of removals) {
-    // Track and condition keys are URL-encoded by the engine, so a key never contains a path dot.
-    deletions[`system.shipCombat.state.${path.join(".")}`] =
-      globalThis.foundry.data.operators.ForcedDeletion.create();
-  }
-  return actor.update(deletions, { viraShipCombatInternal: true });
+  // The replacement operator replaces the whole state, which for a delta-backed token also replaces
+  // the state its stored delta carries: a finished Recovery Work entry, an expired jam or a dropped
+  // track cannot survive there. Foundry applies the operator and refreshes the document source before
+  // the awaited update resolves, so nothing is left to delete afterwards, and a delta-side deletion
+  // could not suppress a key the base Actor contributes because ActorDelta re-merges it on load.
+  return document;
 }
 
 export async function writeTokenTransform(document, transform) {

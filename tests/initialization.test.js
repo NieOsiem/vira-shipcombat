@@ -23,12 +23,6 @@ class FakeForcedReplacement {
   }
 }
 
-class FakeForcedDeletion {
-  static create() {
-    return new FakeForcedDeletion();
-  }
-}
-
 function setPath(object, path, value) {
   const parts = path.split(".");
   let cursor = object;
@@ -93,7 +87,6 @@ beforeEach(() => {
     data: {
       operators: {
         ForcedReplacement: FakeForcedReplacement,
-        ForcedDeletion: FakeForcedDeletion,
       },
     },
   };
@@ -486,47 +479,27 @@ describe("native vehicle edits through registered Actor hooks", () => {
     expect(notifications).toEqual([]);
   });
 
-  test("drops state keys a delta-backed token no longer carries", async () => {
+  test("replaces a delta-backed token's state outright in a single write", async () => {
     const state = clone(actor.system.shipCombat.state);
-    // Stored delta carries a Work entry the new state has dropped (a finished recovery job).
+    // The stored delta carries a Work entry the new state has dropped (a finished recovery job).
     actor.system.shipCombat.state.work = {
       "recovery:cooling": { current: 2, required: 2 },
     };
     actor._source.system = clone(actor.system);
 
-    // A TokenDocument delta merges deeply, so a key the incoming payload omits survives; the harness's
-    // FakeActor replaces the path outright, which would hide the bug this test pins.
-    const mergeDeep = (base, patch) => {
-      const out = { ...base };
-      for (const [key, value] of Object.entries(patch ?? {})) {
-        const nested = value && typeof value === "object" && !Array.isArray(value)
-          && base?.[key] && typeof base[key] === "object" && !Array.isArray(base[key]);
-        out[key] = nested ? mergeDeep(base[key], value) : clone(value);
-      }
-      return out;
-    };
+    // Real Foundry applies the ForcedReplacement operator to the whole state and refreshes the
+    // document source before the awaited update resolves, so the dropped entry cannot survive the
+    // write and no follow-up deletion is needed.
     actor.update = async (changes, options = {}) => {
       actor.updates += 1;
       updateChanges.push(changes);
       updateOptions.push(options);
       for (const [path, supplied] of Object.entries(changes)) {
-        if (supplied instanceof FakeForcedDeletion) {
-          const parts = path.split(".");
-          const key = parts.pop();
-          let parent = actor;
-          for (const part of parts) parent = parent?.[part];
-          if (parent) delete parent[key];
-        } else if (path === "system.shipCombat.state") {
-          actor.system.shipCombat.state = mergeDeep(
-            actor.system.shipCombat.state,
-            supplied.value,
-          );
-        } else {
-          const parts = path.split(".");
-          let cursor = actor;
-          for (const part of parts.slice(0, -1)) cursor = cursor[part] ??= {};
-          cursor[parts.at(-1)] = clone(supplied);
+        if (path === "system.shipCombat.state" && supplied instanceof FakeForcedReplacement) {
+          actor.system.shipCombat.state = clone(supplied.value);
+          continue;
         }
+        setPath(actor, path, supplied instanceof FakeForcedReplacement ? supplied.value : supplied);
       }
       actor._source.system = clone(actor.system);
       return actor;
@@ -535,7 +508,8 @@ describe("native vehicle edits through registered Actor hooks", () => {
     await writeShipState({ actor, actorLink: false }, state);
     await settleHooks();
 
-    expect(updateChanges).toHaveLength(2);
+    expect(updateChanges).toHaveLength(1);
+    // The entry is gone; normalization restores the empty container it belongs in.
     expect(actor.system.shipCombat.state.work).toEqual({});
   });
 

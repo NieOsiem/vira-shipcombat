@@ -270,7 +270,6 @@ describe("refit API", () => {
       hull: 17,
       heat: 9,
       velocity: { x: 4, y: -2 },
-      history: [{ type: "kept" }],
       conditions: {
         local: {
           id: "local",
@@ -319,7 +318,6 @@ describe("refit API", () => {
       hull: 17,
       heat: 9,
       velocity: { x: 4, y: -2 },
-      history: [{ type: "kept" }],
       revision: beforeRevision + 1,
     });
     expect(actor.events.map(({ type }) => type)).toEqual([
@@ -435,7 +433,6 @@ describe("refit API", () => {
       hull: 23,
       heat: 8,
       tracks: { target: { targetUuid: "Scene.s.Token.t", state: "contact" } },
-      history: [{ type: "kept" }],
       conditions: {
         sensor: {
           id: `sensorFault:${sensorId}`,
@@ -453,7 +450,6 @@ describe("refit API", () => {
       hull: 23,
       heat: 8,
       tracks: {},
-      history: [{ type: "kept" }],
       revision: revision + 1,
     });
     expect(actor.system.shipCombat.state.conditions).toEqual({
@@ -467,7 +463,6 @@ describe("refit API", () => {
     actor.system.shipCombat.state.hull = 11;
     actor.system.shipCombat.state.heat = 7;
     actor.system.shipCombat.state.velocity = { x: 3, y: 6 };
-    actor.system.shipCombat.state.history = [{ type: "kept" }];
     const oldIds = new Set(actor.items.keys());
     const revision = actor.system.shipCombat.state.revision;
 
@@ -514,7 +509,6 @@ describe("refit API", () => {
       hull: 11,
       heat: 7,
       velocity: { x: 3, y: 6 },
-      history: [{ type: "kept" }],
       revision: revision + 1,
     });
   });

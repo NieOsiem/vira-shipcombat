@@ -172,7 +172,6 @@ export function createInitialState(config) {
     conditions: {},
     repairAttemptUsed: false,
     pendingFate: null,
-    history: [],
   };
 }
 
@@ -247,5 +246,8 @@ export function normalizeShipData(data, items = undefined) {
     ? normalized.state
     : clone(defaults.state);
   normalized.state.schemaVersion = SCHEMA_VERSION;
+  // The operation history was written per committed operation and never read; strip what older
+  // documents still carry so the growth stops being persisted.
+  delete normalized.state.history;
   return normalized;
 }

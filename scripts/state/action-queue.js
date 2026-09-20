@@ -27,10 +27,6 @@ let queueTail = Promise.resolve();
 let initialized = false;
 let initialization = null;
 
-function now() {
-  return new Date().toISOString();
-}
-
 function failure(id, error) {
   return {
     ok: false,
@@ -211,24 +207,13 @@ function validateLiveRevisions(request, records) {
   }
 }
 
-function historyEvent(request, submitterId, timestamp) {
-  return {
-    id: request.id,
-    type: request.type,
-    timestamp,
-    submitterId,
-  };
-}
-
-function incrementChangedStates(result, records, request, submitterId, timestamp) {
+function incrementChangedStates(result, records) {
   const changed = [...new Set([...(result.changedUuids ?? []), ...Object.keys(result.tokenUpdates ?? {})])];
   for (const uuid of changed) {
     const record = records.get(uuid);
     const next = result.shipStates?.[uuid];
     if (!record || !next) throw rule("INVALID_OPERATION_RESULT", "The rule result changed an unknown ship or omitted its replacement state.", { uuid });
     next.revision = Number(record.state.revision) + 1;
-    next.history = Array.isArray(next.history) ? next.history : [];
-    next.history.push(historyEvent(request, submitterId, timestamp));
   }
   result.changedUuids = changed;
 }
@@ -520,13 +505,12 @@ async function processRequest(request, submitterId) {
     validateExpectedRevisions(request, records);
     assertPermission(user, request, records.get(request.sourceUuid));
 
-    const timestamp = now();
     const before = operationSnapshots(records);
     const result = await executeShipOperation(cloneDocumentData(request), dispatcherContext(records, user));
     assertResultScope(result, records);
     activeUser(submitterId);
     validateLiveRevisions(request, records);
-    incrementChangedStates(result, records, request, submitterId, timestamp);
+    incrementChangedStates(result, records);
     const response = { ok: true, id: request.id, result: cloneDocumentData(result) };
     await persistOperation(records, result, before);
     recordAdvanceCooldown(request, records);

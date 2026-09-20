@@ -423,13 +423,13 @@ describe("ship data defaults", () => {
     first.config.components.drives.main.tiers[0].multiplier = 99;
     firstMainDriveItem.system.definition.base.thrust = 77;
     first.state.hull = 1;
-    first.state.history.push({ type: "test-event" });
+    first.state.effects.push({ id: "test-effect" });
 
     expect(first.config.label).toBe("Mutable Test Ship");
     expect(first.config.components.drives.main.base.thrust).toBe(99);
     expect(firstMainDriveItem.system.definition.base.thrust).toBe(77);
     expect(first.state.hull).toBe(1);
-    expect(first.state.history).toEqual([{ type: "test-event" }]);
+    expect(first.state.effects).toEqual([{ id: "test-effect" }]);
     expect(second.config.label).toBe("Canadensis Training Corvette");
     expect(second.config.components.drives.main.base.thrust).toBe(6);
     expect(firstMainDriveItem.system.definition.tiers[0].multiplier).toBe(0);
@@ -439,7 +439,7 @@ describe("ship data defaults", () => {
     );
     expect(secondMainDriveItem.system.definition.base.thrust).toBe(6);
     expect(second.state.hull).toBe(50);
-    expect(second.state.history).toEqual([]);
+    expect(second.state.effects).toEqual([]);
     expect(CANADENSIS_CONFIG.label).toBe("Canadensis Training Corvette");
     expect(CANADENSIS_CONFIG.components.drives.main.base.thrust).toBe(6);
   });
@@ -517,11 +517,11 @@ describe("ship data defaults", () => {
     expect(normalized.config).not.toBe(supplied.config);
     expect(normalized.state).not.toBe(supplied.state);
     expect(normalized.state.power).not.toBe(supplied.state.power);
-    expect(normalized.state.history).not.toBe(supplied.state.history);
+    expect(normalized.state.history).toBeUndefined();
     expect(normalized.config.label).toBe("Supplied Ship");
     expect(normalized.state.hull).toBe(17);
     expect(normalized.state.power.engines).toBe(4);
-    expect(normalized.state.history).toEqual([{
+    expect(supplied.state.history).toEqual([{
       type: "supplied-event",
       details: { kept: true },
     }]);
@@ -535,11 +535,13 @@ describe("ship data defaults", () => {
     expect(normalized.state.velocity).toEqual({ x: 0, y: 0 });
 
     normalized.config.label = "Changed Normalized Ship";
-    normalized.state.history[0].details.kept = false;
     normalized.state.extension.nested.push("changed");
 
     expect(supplied.config.label).toBe("Supplied Ship");
-    expect(supplied.state.history[0].details.kept).toBe(true);
+    expect(supplied.state.history).toEqual([{
+      type: "supplied-event",
+      details: { kept: true },
+    }]);
     expect(supplied.state.extension.nested).toEqual(["kept"]);
   });
 });
