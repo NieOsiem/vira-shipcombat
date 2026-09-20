@@ -4830,6 +4830,34 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     }
   }
 
+  /**
+   * Expected revisions for an operation, read from the live documents. The first attempt keeps the
+   * revision the caller captured when it rendered, so a genuinely stale click is rejected; a retry
+   * passes no source revision and re-reads everything.
+   */
+  async #operationRevisions(sourceUuid, targetUuids, sourceRevision = null) {
+    const revisions = {};
+    if (Number.isInteger(sourceRevision)) {
+      revisions[sourceUuid] = sourceRevision;
+    } else {
+      const source = await fromUuid(sourceUuid);
+      const actor = source?.actor ?? source;
+      revisions[sourceUuid] = Number(
+        actor?.system?.shipCombat?.state?.revision ?? 0,
+      );
+    }
+    for (const uuid of targetUuids) {
+      const document = await fromUuid(uuid);
+      const revision = document?.actor?.system?.shipCombat?.state?.revision ??
+        document?.system?.shipCombat?.state?.revision;
+      if (!Number.isInteger(revision)) {
+        throw new Error("The selected target is unavailable.");
+      }
+      revisions[uuid] = revision;
+    }
+    return revisions;
+  }
+
   async #commitOperation(
     type,
     payload = {},
@@ -4842,16 +4870,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       throw new Error("Place this ship on the active Scene to operate it.");
     }
     const sourceUuid = token ? token.uuid : this.actor.uuid;
-    const revisions = { [sourceUuid]: Number(sourceRevision ?? 0) };
-    for (const uuid of targetUuids) {
-      const document = await fromUuid(uuid);
-      const revision = document?.actor?.system?.shipCombat?.state?.revision ??
-        document?.system?.shipCombat?.state?.revision;
-      if (!Number.isInteger(revision)) {
-        throw new Error("The selected target is unavailable.");
-      }
-      revisions[uuid] = revision;
-    }
+    const revisions = await this.#operationRevisions(sourceUuid, targetUuids, sourceRevision);
     if (
       type === "attack" &&
       (this.#foundryTargets().length !== 1 ||
@@ -4869,7 +4888,21 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       expectedRevisions: revisions,
       payload,
     };
-    const response = await submitShipOperation(request);
+    let response = await submitShipOperation(request);
+    if (
+      !response?.ok && !requiresPlacedToken(type) &&
+      response?.error?.code === "STALE_REVISION"
+    ) {
+      // Another client's operation moved this ship between render and click (a passive sensor
+      // refresh, for instance). A non-spatial operation reads no geometry, so retry once against the
+      // current revisions instead of making the player click again; spatial operations keep the hard
+      // rejection because their ranges and targets must be re-derived deliberately.
+      response = await submitShipOperation({
+        ...request,
+        id: foundry.utils.randomID(),
+        expectedRevisions: await this.#operationRevisions(sourceUuid, targetUuids),
+      });
+    }
     if (!response?.ok) {
       throw new Error(
         response?.error?.message ?? response?.error ?? `${type} was rejected.`,

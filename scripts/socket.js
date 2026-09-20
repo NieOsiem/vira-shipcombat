@@ -5,6 +5,8 @@ const CHANNEL = `module.${MODULE_ID}`;
 const REQUEST_TIMEOUT_MS = 30_000;
 /** A slow GM still commits the operation it was sent, so the caller waits out a bounded grace period. */
 const REQUEST_TIMEOUT_GRACE_MS = 120_000;
+/** How often a pending request is re-sent while the same authority is still the active GM. */
+const REQUEST_RETRY_MS = 5_000;
 const pending = new Map();
 let requestHandler = null;
 let listening = false;
@@ -84,8 +86,7 @@ async function receive(envelope, senderUserId) {
   if (envelope.kind !== "result" || envelope.recipientId !== globalThis.game?.user?.id) return;
   const waiter = pending.get(envelope.requestId);
   if (!waiter) return;
-  pending.delete(envelope.requestId);
-  clearTimeout(waiter.timer);
+  forget(waiter);
   if (envelope.unexpectedError) waiter.reject(deserializeUnexpected(envelope.unexpectedError));
   else waiter.resolve(envelope.response);
 }
@@ -109,7 +110,7 @@ function armDeadline(entry, delay) {
   return setTimeout(() => {
     if (pending.get(entry.requestId) !== entry) return;
     if (entry.graced) {
-      pending.delete(entry.requestId);
+      forget(entry);
       entry.reject(new Error("The active GM did not answer the ship operation request."));
       return;
     }
@@ -117,6 +118,40 @@ function armDeadline(entry, delay) {
     globalThis.console?.warn?.(`Vira Ship Combat is still waiting for the active GM to answer ship operation "${entry.requestId}".`);
     entry.timer = armDeadline(entry, REQUEST_TIMEOUT_GRACE_MS);
   }, delay);
+}
+
+/**
+ * Re-send a pending request on a short cadence while the same authority is still the active GM. A
+ * reloaded GM client answers from its retained result cache by request id, so a replay commits
+ * nothing twice; a packet lost while that GM was away is simply delivered again. When the authority
+ * changes, replaying would lose the cache that makes the retry idempotent, so the request fails fast
+ * instead of hanging out the grace period.
+ */
+function armRetransmit(entry) {
+  return setTimeout(() => {
+    if (pending.get(entry.requestId) !== entry) return;
+    const authority = getActiveGM();
+    if (!authority || authority.id !== entry.authorityId) {
+      forget(entry);
+      entry.reject(new Error(
+        "The active GM changed while this ship operation was pending. Its outcome is unknown; check the ship before retrying.",
+      ));
+      return;
+    }
+    try {
+      emit(entry.envelope);
+    } catch {
+      // The socket is down; the next tick tries again.
+    }
+    entry.retryTimer = armRetransmit(entry);
+  }, REQUEST_RETRY_MS);
+}
+
+/** Drop every timer a pending entry owns and forget it. */
+function forget(entry) {
+  pending.delete(entry.requestId);
+  clearTimeout(entry.timer);
+  clearTimeout(entry.retryTimer);
 }
 
 function requestRemote(request, submitterId) {
@@ -131,14 +166,25 @@ function requestRemote(request, submitterId) {
     resolve = resolvePromise;
     reject = rejectPromise;
   });
-  const entry = { requestId: request.id, promise, resolve, reject, timer: null, graced: false };
+  const envelope = { moduleId: MODULE_ID, kind: "request", request, submitterId };
+  const entry = {
+    requestId: request.id,
+    envelope,
+    authorityId: gm.id,
+    promise,
+    resolve,
+    reject,
+    timer: null,
+    retryTimer: null,
+    graced: false,
+  };
   pending.set(request.id, entry);
   entry.timer = armDeadline(entry, REQUEST_TIMEOUT_MS);
+  entry.retryTimer = armRetransmit(entry);
   try {
-    emit({ moduleId: MODULE_ID, kind: "request", request, submitterId });
+    emit(envelope);
   } catch (error) {
-    pending.delete(request.id);
-    clearTimeout(entry.timer);
+    forget(entry);
     reject(error);
   }
   return promise;

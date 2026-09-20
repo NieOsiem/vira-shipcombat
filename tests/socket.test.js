@@ -155,12 +155,13 @@ describe("ship operation deadline", () => {
       const promise = requestRemoteShipOperation({ id: "req-6" }, PLAYER.id);
       let settled = "pending";
       promise.then(() => { settled = "resolved"; }, () => { settled = "rejected"; });
-      expect(clock.timers.map((timer) => timer.delay)).toEqual([30_000]);
+      // The deadline, plus the retransmission cadence armed alongside it.
+      expect(clock.timers.map((timer) => timer.delay)).toEqual([30_000, 5_000]);
 
       clock.timers[0].fn();
       await Promise.resolve();
       expect(settled).toBe("pending");
-      expect(clock.timers.map((timer) => timer.delay)).toEqual([30_000, 120_000]);
+      expect(clock.timers.map((timer) => timer.delay)).toEqual([30_000, 5_000, 120_000]);
 
       await deliver({
         moduleId: "vira-shipcombat",
@@ -171,7 +172,9 @@ describe("ship operation deadline", () => {
         response: { ok: true, id: "req-6" },
       }, GM.id);
       await expect(promise).resolves.toEqual({ ok: true, id: "req-6" });
+      // Both the grace deadline and the retry cadence stop with the entry.
       expect(clock.cleared).toContain(clock.timers[1]);
+      expect(clock.cleared).toContain(clock.timers[2]);
     } finally {
       clock.restore();
     }
@@ -181,14 +184,14 @@ describe("ship operation deadline", () => {
     const clock = fakeTimers();
     try {
       const promise = requestRemoteShipOperation({ id: "req-7" }, PLAYER.id);
-      clock.timers[0].fn();
-      clock.timers[1].fn();
+      const deadline = (delay) => clock.timers.find((timer) => timer.delay === delay);
+      deadline(30_000).fn();
+      deadline(120_000).fn();
       await expect(promise).rejects.toThrow("did not answer");
-      expect(clock.timers.map((timer) => timer.delay)).toEqual([30_000, 120_000]);
 
       // The forgotten request can be retried under the same id instead of replaying a dead entry.
       const retry = requestRemoteShipOperation({ id: "req-7" }, PLAYER.id);
-      expect(clock.timers).toHaveLength(3);
+      expect(clock.timers).toHaveLength(5);
       await deliver({
         moduleId: "vira-shipcombat",
         kind: "result",
@@ -199,6 +202,52 @@ describe("ship operation deadline", () => {
       }, GM.id);
       await expect(retry).resolves.toEqual({ ok: true, id: "req-7", retried: true });
     } finally {
+      clock.restore();
+    }
+  });
+
+  test("a pending request is re-sent while the same authority stays active", async () => {
+    const clock = fakeTimers();
+    try {
+      const promise = requestRemoteShipOperation({ id: "req-8" }, PLAYER.id);
+      expect(emitted).toHaveLength(1);
+
+      const retry = () => clock.timers.filter((timer) => timer.delay === 5_000).at(-1);
+      retry().fn();
+      expect(emitted).toHaveLength(2);
+      expect(emitted[1].envelope.request.id).toBe("req-8");
+      expect(emitted[1].envelope.kind).toBe("request");
+      // The loop keeps a replacement armed while the request stays pending.
+      expect(clock.timers.filter((timer) => timer.delay === 5_000)).toHaveLength(2);
+
+      await deliver({
+        moduleId: "vira-shipcombat",
+        kind: "result",
+        requestId: "req-8",
+        recipientId: GM.id,
+        authorityId: GM.id,
+        response: { ok: true, id: "req-8" },
+      }, GM.id);
+      await expect(promise).resolves.toEqual({ ok: true, id: "req-8" });
+    } finally {
+      clock.restore();
+    }
+  });
+
+  test("a pending request fails fast once the authority changes", async () => {
+    const clock = fakeTimers();
+    const otherGM = { id: "gm2", isGM: true, active: true, name: "Other GM" };
+    users.set(otherGM.id, otherGM);
+    try {
+      const promise = requestRemoteShipOperation({ id: "req-9" }, PLAYER.id);
+      users.activeGM = otherGM;
+      clock.timers.find((timer) => timer.delay === 5_000).fn();
+      await expect(promise).rejects.toThrow("active GM changed");
+      // A new authority would replay without the first GM's result cache, so no request is re-sent.
+      expect(emitted).toHaveLength(1);
+    } finally {
+      users.activeGM = GM;
+      users.delete(otherGM.id);
       clock.restore();
     }
   });
