@@ -1216,6 +1216,55 @@ describe("ordered lifecycle transactions", () => {
     expect(state).toMatchObject({ phase: "active", turnKey: "round-8" });
   });
 
+  test("a rewound Start replays the turn without repeating opening housekeeping", () => {
+    const { config, state } = freshShip();
+    state.phase = "end";
+    state.turnKey = "round-7";
+    runEndPhase(config, state, clone({ random: [0], endKey: "round-7" }));
+    expect(state).toMatchObject({
+      phase: "start",
+      turnKey: null,
+      completedTurnKey: "round-7",
+    });
+
+    state.heat = 20;
+    for (const sector of Object.keys(state.shields.hp)) state.shields.hp[sector] = 1;
+    const before = clone(state);
+
+    const result = runStartPhase(config, state, clone({ turnKey: "round-7" }));
+
+    expect(state).toMatchObject({
+      phase: "active",
+      turnKey: "round-7",
+      completedTurnKey: null,
+    });
+    expect(state.heat).toBe(before.heat);
+    expect(state.shields.hp).toEqual(before.shields.hp);
+    // A replay restores the turn's pools; that is the point of replaying the turn.
+    expect(Object.keys(state.resources.actions ?? {}).length).toBeGreaterThan(0);
+    expect(Object.keys(state.resources.orders ?? {}).length).toBeGreaterThan(0);
+    expect(result.events.at(-1)).toMatchObject({
+      type: "turnReset",
+      replay: true,
+    });
+  });
+
+  test("a Start for a new turn still applies opening housekeeping", () => {
+    const { config, state } = freshShip();
+    state.phase = "end";
+    state.turnKey = "round-7";
+    runEndPhase(config, state, clone({ random: [0], endKey: "round-7" }));
+
+    state.heat = 20;
+    for (const sector of Object.keys(state.shields.hp)) state.shields.hp[sector] = 1;
+
+    runStartPhase(config, state, clone({ turnKey: "round-8" }));
+
+    expect(state.phase).toBe("active");
+    expect(state.completedTurnKey).toBeNull();
+    expect(Object.values(state.shields.hp).some((hp) => hp > 1)).toBe(true);
+  });
+
   test("an injected mid-Start failure rolls back both the lifecycle transaction and dispatcher input", () => {
     const record = freshShip((config) => {
       config.components.cooling.tiers.find(({ power }) => power === 1).cooling =

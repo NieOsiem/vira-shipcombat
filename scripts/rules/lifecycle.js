@@ -121,6 +121,7 @@ export function enterCombat(config, state, { turnKey = state?.turnKey } = {}) {
   return transaction(state, (draft) => {
     draft.phase = "start";
     draft.turnKey = turnKey ?? null;
+    draft.completedTurnKey = null;
     return { events: [event("combat", "enteredCombat", { turnKey: draft.turnKey })] };
   });
 }
@@ -130,6 +131,7 @@ export function leaveCombat(config, state) {
   return transaction(state, (draft) => {
     draft.phase = "outsideCombat";
     draft.turnKey = null;
+    draft.completedTurnKey = null;
     return { events: [event("combat", "leftCombat")] };
   });
 }
@@ -162,8 +164,29 @@ export function runStartPhase(config, state, {
         phase: draft.phase,
       });
     }
+    // A tracker rewind re-runs the Start Phase for a turn that already ended. The turn-scoped reset
+    // (pools, timeline, spent rotation) is repeated so the turn can be played again, but the one-shot
+    // opening housekeeping (expiry, cooling, recharge, boot ticks) belongs to the first Start of the
+    // turn and must not apply a second time. Evasion keeps whatever the played turn left it with,
+    // because a replay has no snapshot to restore.
+    const replay = draft.completedTurnKey != null && draft.completedTurnKey === turnKey;
     draft.phase = "start";
     draft.turnKey = turnKey ?? null;
+    draft.completedTurnKey = null;
+    if (replay) {
+      const resources = refreshResources(config, draft, {
+        turnKey: draft.turnKey,
+        roster: roster ?? { command: [], crew: [] },
+        occupiedIdentities,
+        conflictPolicy,
+      });
+      draft.timeline = 0;
+      draft.rotationSpent = 0;
+      draft.pivotSpent = 0;
+      events.push(event(8, "turnReset", { resources, timeline: 0, rotationSpent: 0, pivotSpent: 0, evasion: clone(draft.evasion), replay: true }));
+      draft.phase = "active";
+      return { events, deferredPassiveNotices: [] };
+    }
     const expired = expireEffects(draft, "nextStart", draft.turnKey);
     resetEvasionAtStart(draft);
     const rosterValidation = validateRoster(config, roster ?? { command: [], crew: [] }, { occupiedIdentities, conflictPolicy });
@@ -263,7 +286,9 @@ export function runEndPhase(config, state, { random = [], endKey = state?.turnKe
     draft.phase = "start";
     // A rewind to Start must invalidate the finished turn: beginTurn recomputes the same
     // `${combatId}:${round}:${combatantId}` key, so a retained turnKey would make the
-    // phase.start guard treat the new Start as a duplicate and deadlock the ship.
+    // phase.start guard treat the new Start as a duplicate and deadlock the ship. The completed key
+    // is remembered instead, so a rewound Start can tell a replay from a fresh turn.
+    draft.completedTurnKey = endKey ?? draft.turnKey ?? null;
     draft.turnKey = null;
     return { events, fate };
   });
@@ -382,6 +407,7 @@ export function cycleOutsideCombatRound(config, state, {
     // 5. Conclude outside combat
     draft.phase = "outsideCombat";
     draft.turnKey = null;
+    draft.completedTurnKey = null;
 
     return { events, coast, fate };
   });
