@@ -19,7 +19,7 @@
       {{#each tabs}}<button type="button" role="tab" data-tab-button="{{id}}" aria-selected="{{active}}" tabindex="{{#if active}}0{{else}}-1{{/if}}" aria-controls="panel-{{id}}">{{label}}</button>{{/each}}
     </nav>
     {{#if isGM}}
-    <details class="ship-maintenance-menu">
+    <details class="ship-maintenance-menu" data-sync="maintenance-menu">
       <summary title="Maintenance and configuration" aria-label="Maintenance and configuration"><i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i></summary>
       <nav aria-label="Maintenance sections">
         {{#each maintenanceTabs}}<button type="button" data-tab-button="{{id}}" aria-pressed="{{active}}" aria-controls="panel-{{id}}">{{label}}</button>{{/each}}
@@ -99,7 +99,7 @@
         {{/if}}
       </section>
 
-      <details class="ship-card ship-stations">
+      <details class="ship-card ship-stations" data-sync="crew-stations">
         <summary>
           <span class="ship-kicker">Stations</span>
           <strong>{{view.stationSlots.occupied.command}}/{{view.stationSlots.capacity.command}} command · {{view.stationSlots.occupied.crew}}/{{view.stationSlots.capacity.crew}} crew</strong>
@@ -459,7 +459,7 @@
             </div>
           </div>
           <div class="ship-power-footer">
-            <details class="ship-power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
+            <details class="ship-power-priorities" data-sync="power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
             <div class="ship-action-row ship-power-actions"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Commit and release</button></div>
           </div>
           <p class="ship-preview-line" data-preview aria-live="polite"></p>
@@ -703,7 +703,7 @@
               <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span>{{size}}</span><span class="ship-status-chip">{{status}}</span></header>
               {{#if installed}}<button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" aria-label="Open {{itemName}} component Item">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<strong>{{itemName}}</strong><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>{{else}}<div class="ship-refit-drop"><i class="fa-solid fa-download" aria-hidden="true"></i><span>Empty · {{dropLabel}}</span></div>{{/if}}
               {{#unless installed}}<button type="button" data-refit-browse="{{id}}" aria-label="Browse components for {{label}}" {{#unless ../canRefit}}disabled{{/unless}}>Browse components</button>{{/unless}}
-              <details><summary>Mount details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div></dl>{{#if installed}}<button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove component</button>{{/if}}</details>
+              <details data-sync="refit-slot-{{id}}"><summary>Mount details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div></dl>{{#if installed}}<button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove component</button>{{/if}}</details>
             </article>
           {{else}}<p class="ship-empty">This hull defines no component slots.</p>{{/each}}
         </div>
@@ -716,17 +716,17 @@
               <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span>{{size}}</span><span class="ship-status-chip">{{status}}</span></header>
               {{#if installed}}<button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" aria-label="Open {{itemName}} weapon Item">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<strong>{{itemName}}</strong><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>{{else}}<div class="ship-refit-drop"><i class="fa-solid fa-download" aria-hidden="true"></i><span>Empty · {{dropLabel}}</span></div>{{/if}}
               {{#unless installed}}<button type="button" data-refit-browse="{{id}}" aria-label="Browse components for {{label}}" {{#unless ../canRefit}}disabled{{/unless}}>Browse components</button>{{/unless}}
-              <details><summary>Mount details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div><div><dt>Traverse</dt><dd>{{traverse}}</dd></div></dl>{{#if installed}}<button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove weapon</button>{{/if}}</details>
+              <details data-sync="refit-hardpoint-{{id}}"><summary>Mount details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div><div><dt>Traverse</dt><dd>{{traverse}}</dd></div></dl>{{#if installed}}<button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove weapon</button>{{/if}}</details>
             </article>
           {{else}}<p class="ship-empty">This hull defines no hardpoints.</p>{{/each}}
         </div>
       </section>
-      <details class="ship-card">
+      <details class="ship-card" data-sync="refit-unreferenced">
         <summary>Unreferenced component Items</summary>
         <p class="ship-muted">Advanced hull edits retain Items no longer referenced by a mount. These Items provide no ship capability while unreferenced.</p>
         <div class="ship-refit-grid">{{#each refitUnreferencedItems}}<article class="ship-refit-card"><header><h3>{{name}}</h3><span class="ship-status-chip">Unreferenced</span></header><span>{{componentClass}} · {{size}}</span><button type="button" data-refit-item="{{id}}" aria-label="Open structured Item sheet for {{name}}">Open Item</button></article>{{else}}<p class="ship-empty">No unreferenced component Items.</p>{{/each}}</div>
       </details>
-      <details class="ship-card ship-console-config">
+      <details class="ship-card ship-console-config" data-sync="hull-json">
         <summary>Advanced hull JSON</summary>
         <p class="ship-muted">Hull structure only. Installed component definitions live in embedded Items. Removing a mount reference retains its Item above; it does not delete the Item.</p>
         <p class="ship-warning" data-hull-stale role="status" {{#unless hullDraftStale}}hidden{{/unless}}>Hull changed since you started editing. <button type="button" data-hull-reload>Reload current hull</button></p>
@@ -737,8 +737,8 @@
     <section id="panel-log-config" class="ship-console-panel" role="tabpanel" aria-label="Log and diagnostics" data-tab-panel="log-config" {{#unless tabState.log-config.active}}hidden{{/unless}}>
       <div class="ship-panel-heading"><h2>Log &amp; Diagnostics</h2></div>
       {{#if isGM}}
-        <details class="ship-card ship-diagnostics"><summary>Raw operation console</summary><p class="ship-muted">Diagnostic escape hatch. Normal play uses combat controls.</p><div class="ship-console-actions">{{#each rawActions}}<form class="ship-operation" data-raw-operation="{{type}}"><fieldset {{#if disabled}}disabled{{/if}}><legend>{{group}} · {{type}}</legend>{{#if targeted}}<label>Target Token UUID(s)<input name="targets" type="text" placeholder="Scene.…Token.…"></label>{{/if}}<label>Payload JSON<textarea name="payload" rows="4" spellcheck="false">{}</textarea></label><p class="ship-console-help">{{help}}</p><details><summary>Raw preview</summary><pre data-preview aria-live="polite"></pre></details><button type="submit">Commit {{type}}</button>{{#if reason}}<p class="ship-console-reason">{{reason}}</p>{{/if}}</fieldset></form>{{/each}}</div></details>
-        <details class="ship-card ship-diagnostics"><summary>Raw ship state</summary><pre class="ship-console-state">{{stateJson}}</pre></details>
+        <details class="ship-card ship-diagnostics" data-sync="raw-operations"><summary>Raw operation console</summary><p class="ship-muted">Diagnostic escape hatch. Normal play uses combat controls.</p><div class="ship-console-actions">{{#each rawActions}}<form class="ship-operation" data-raw-operation="{{type}}"><fieldset {{#if disabled}}disabled{{/if}}><legend>{{group}} · {{type}}</legend>{{#if targeted}}<label>Target Token UUID(s)<input name="targets" type="text" placeholder="Scene.…Token.…"></label>{{/if}}<label>Payload JSON<textarea name="payload" rows="4" spellcheck="false">{}</textarea></label><p class="ship-console-help">{{help}}</p><details data-sync="raw-preview-{{type}}"><summary>Raw preview</summary><pre data-preview aria-live="polite"></pre></details><button type="submit">Commit {{type}}</button>{{#if reason}}<p class="ship-console-reason">{{reason}}</p>{{/if}}</fieldset></form>{{/each}}</div></details>
+        <details class="ship-card ship-diagnostics" data-sync="raw-state"><summary>Raw ship state</summary><pre class="ship-console-state">{{stateJson}}</pre></details>
       {{else}}<p class="ship-empty">Diagnostics are available only to the GM.</p>{{/if}}
     </section>
   </div>

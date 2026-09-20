@@ -1498,6 +1498,30 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
   }
 
   /**
+   * Core records a focused element by the id it carries. This sheet prefixes ids on the nodes a
+   * render produced, while a panel replaced by that render still carries the raw template id until
+   * the prefix pass runs, so a prefixed lookup finds nothing there. Remember the raw id alongside
+   * core's capture and retry the lookup without the app prefix.
+   */
+  _preSyncPartState(partId, newElement, priorElement, state) {
+    super._preSyncPartState(partId, newElement, priorElement, state);
+    const focused = priorElement.querySelector(":focus");
+    const prefix = `${this.id}-`;
+    if (focused?.id?.startsWith(prefix)) {
+      state.focusRawId = focused.id.slice(prefix.length);
+    }
+  }
+
+  /** @inheritDoc */
+  _syncPartState(partId, newElement, priorElement, state) {
+    super._syncPartState(partId, newElement, priorElement, state);
+    if (!state?.focusRawId) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && newElement.contains(active)) return;
+    newElement.querySelector(`#${CSS.escape(state.focusRawId)}`)?.focus();
+  }
+
+  /**
    * Re-rendering swaps only the panels whose freshly rendered markup differs from
    * the markup already installed: an unchanged panel keeps its node — and with it
    * its listeners, focus, scroll offset and staged input — while a changed panel is
