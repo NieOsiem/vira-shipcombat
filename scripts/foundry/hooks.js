@@ -14,7 +14,7 @@ import {
   nativeVehicleFieldChanges,
   shipFieldsFromNativeVehicleChanges,
 } from "../model/native-vehicle.js";
-import { assignedUserIds } from "../rules/operators.js";
+import { assignmentOperatorId, assignedUserIds } from "../rules/operators.js";
 import { pruneOrphanedTracks } from "../rules/sensors.js";
 
 import {
@@ -329,6 +329,95 @@ function orphanedSyntheticState(token) {
 /** Whether a scheduled initialization outlived its TokenDocument. */
 function tokenDocumentGone(token) {
   return !token?.actor || deletedTokens.has(token);
+}
+
+/**
+ * Documents that carry authoritative ship state: world Actors, and unlinked tokens whose state lives
+ * in their own delta.
+ */
+function authoritativeShipDocuments() {
+  const documents = [];
+  for (const actor of game.actors ?? []) {
+    if (actor.type === SHIP_TYPE) documents.push(actor);
+  }
+  for (const scene of game.scenes ?? []) {
+    for (const token of scene.tokens ?? []) {
+      if (token.actorLink === false && isShipToken(token)) documents.push(token);
+    }
+  }
+  return documents;
+}
+
+/** Mark one ship document's operators of a deleted Actor and vacate their stations. */
+async function retireOperatorsOf(document, actorId) {
+  const actor = document.actor ?? document;
+  const shipCombat = actor.system?.shipCombat;
+  const operators = shipCombat?.config?.operators;
+  if (!Array.isArray(operators) || !shipCombat?.state) return;
+  const retired = new Set(
+    operators
+      .filter((operator) => operator?.actorId === actorId)
+      .map((operator) => operator.id),
+  );
+  if (!retired.size) return;
+
+  const config = clone(shipCombat.config);
+  let configChanged = false;
+  for (const operator of config.operators) {
+    if (!retired.has(operator.id) || operator.incapacitated === true) continue;
+    operator.incapacitated = true;
+    configChanged = true;
+  }
+
+  const state = clone(shipCombat.state);
+  let stateChanged = false;
+  for (const slot of ["command", "crew"]) {
+    const entries = Array.isArray(state.roster?.[slot]) ? state.roster[slot] : [];
+    const kept = entries.filter((assignment) =>
+      !retired.has(assignmentOperatorId(assignment))
+    );
+    if (kept.length === entries.length) continue;
+    state.roster[slot] = kept;
+    stateChanged = true;
+  }
+  for (const pool of ["actions", "orders"]) {
+    const entries = state.resources?.[pool];
+    if (!entries || typeof entries !== "object") continue;
+    for (const operatorId of retired) {
+      if (!Object.hasOwn(entries, operatorId)) continue;
+      delete entries[operatorId];
+      stateChanged = true;
+    }
+  }
+
+  if (configChanged) {
+    await document.update({
+      "system.shipCombat.config": forcedReplacement(config),
+    }, { [INTERNAL_UPDATE]: true, diff: false });
+  }
+  if (stateChanged) await writeShipState(document, state);
+}
+
+/**
+ * Retire the stations of a deleted crew Actor on every ship that assigns it. The Actor never
+ * resolves again, so without this its station keeps granting its Action and Order pools to a
+ * character that no longer exists.
+ */
+async function retireDeletedCrewActor(actor) {
+  const actorId = actor?.id;
+  if (typeof actorId !== "string" || !actorId) return;
+  for (const document of authoritativeShipDocuments()) {
+    try {
+      await retireOperatorsOf(document, actorId);
+    } catch (error) {
+      console.warn(
+        `${MODULE_ID} | Failed to retire the stations of ${
+          actor.name ?? actorId
+        } on ${document.uuid ?? document}`,
+        error,
+      );
+    }
+  }
 }
 
 /**
@@ -981,6 +1070,14 @@ export function registerShipHooks() {
         }),
       );
     }
+  });
+
+  Hooks.on("deleteActor", (actor) => {
+    if (!actor || actor.type === SHIP_TYPE) return;
+    schedule(
+      `Failed to retire the crew stations of ${actor.name}`,
+      () => enqueueAuthorityWork(() => retireDeletedCrewActor(actor)),
+    );
   });
 
   Hooks.on("createToken", (token) => {

@@ -22,7 +22,7 @@ function rosterEntries(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function assignmentOperatorId(assignment) {
+export function assignmentOperatorId(assignment) {
   if (typeof assignment === "string") return assignment;
   return assignment?.operatorId ?? assignment?.id ?? null;
 }
