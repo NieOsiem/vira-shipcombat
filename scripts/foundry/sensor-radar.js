@@ -34,6 +34,8 @@ const SWEEP_STATIC = -1.1;
 const SWEEP_BLUR = 8;
 
 const FRAME_MS = 1000 / 30;
+/** A hidden panel keeps failing #size(); retry it at this cadence, not every frame. */
+const LAYOUT_RETRY_MS = 250;
 /** Longest simulated step after a background tab resumes, seconds. */
 const MAX_DELTA = 0.25;
 
@@ -182,6 +184,7 @@ export class SensorRadar {
 
   #radius = 0;
   #laidOut = false;
+  #lastLayoutAttempt = 0;
   #dpr = 1;
 
   #radar = null;
@@ -242,7 +245,12 @@ export class SensorRadar {
    */
   setStage(stage) {
     const next = stage ?? null;
-    if (next === this.#stage) return;
+    if (next === this.#stage) {
+      // A frame that ended itself after its canvas detached is restarted here when the
+      // same stage is handed back still connected. #startLoop is a no-op while running.
+      if (next && this.#canvas?.isConnected) this.#startLoop();
+      return;
+    }
     this.#detachStage();
     this.#adoptStage(next);
   }
@@ -992,9 +1000,22 @@ export class SensorRadar {
   }
 
   #frame = (time) => {
+    if (!this.#canvas?.isConnected || !this.#ctx) {
+      // The sheet moved on without calling destroy(); drop the frame instead of
+      // rescheduling a loop that can never paint. setStage() restarts it.
+      this.#stopLoop();
+      return;
+    }
     this.#frameId = requestAnimationFrame(this.#frame);
-    if (document.hidden || !this.#canvas?.isConnected || !this.#ctx) return;
-    if (!this.#laidOut) this.#size();
+    if (document.hidden) return;
+    if (!this.#laidOut) {
+      // A hidden panel measures 0x0. Retrying layout every frame would query it at
+      // frame rate, so retry at a fixed cadence until the panel is back.
+      if (this.#lastLayoutAttempt !== 0 &&
+        time - this.#lastLayoutAttempt < LAYOUT_RETRY_MS) return;
+      this.#lastLayoutAttempt = time;
+      if (!this.#size()) return;
+    }
     const last = this.#lastTime;
     if (last !== 0 && time - last < FRAME_MS) return;
     let delta = last === 0 ? 0 : (time - last) / 1000;

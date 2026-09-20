@@ -91,6 +91,14 @@ function gridSize() {
   return sceneGridGeometry(globalThis.canvas?.scene).gridSize;
 }
 
+/** Convert a Distance-Unit point from ship state to the scene-pixel space of the overlay. */
+function distancePoint(value) {
+  const point = finitePoint(value);
+  if (!point) return null;
+  const scale = gridSize();
+  return { x: point.x * scale, y: point.y * scale };
+}
+
 function useModernGraphics(graphics) {
   return typeof graphics?.stroke === "function";
 }
@@ -887,7 +895,8 @@ function drawPreview(graphics, key, preview) {
 }
 
 function drawLastKnown(graphics, marker, key) {
-  const point = finitePoint(marker?.position);
+  // Tracks store Distance Units; every other overlay draw receives canvas pixels.
+  const point = distancePoint(marker?.position);
   if (!point) return;
   const radius = Math.max(9, gridSize() * 0.14);
   drawCircle(graphics, point, radius, {
