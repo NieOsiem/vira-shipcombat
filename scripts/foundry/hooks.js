@@ -554,13 +554,21 @@ function operationId(combat, combatant, key, type) {
 
 function operationTargetTokens(combat, sourceToken, type) {
   if (type !== "phase.start" && type !== "phase.coast") return [];
-  const tokens = [];
+  const tokens = new Map();
   for (const combatant of combat.combatants) {
     const token = combatantToken(combatant);
-    if (token && token.uuid !== sourceToken.uuid) tokens.push(token);
+    if (token && token.uuid !== sourceToken.uuid) tokens.set(token.uuid, token);
   }
-  tokens.sort((left, right) => left.uuid.localeCompare(right.uuid));
-  return tokens;
+  // Collision and passive detection are scene geometry, not encounter membership (rules 5.11): a
+  // neutral hull on the source's Scene is a collision body whether or not it is a Combatant.
+  for (const token of collectionValues(sourceToken.parent?.tokens)) {
+    if (token.uuid !== sourceToken.uuid && isShipToken(token)) {
+      tokens.set(token.uuid, token);
+    }
+  }
+  return [...tokens.values()].sort((left, right) =>
+    left.uuid.localeCompare(right.uuid)
+  );
 }
 
 function lifecyclePayload(type, key) {

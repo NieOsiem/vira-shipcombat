@@ -66,7 +66,7 @@ function validateRequest(request) {
   return request;
 }
 
-const SCENE_SNAPSHOT_TYPES = new Set(["maneuver", "setRoster", "refreshResources", "phase.start", "startPhase", "reposition"]);
+const SCENE_SNAPSHOT_TYPES = new Set(["maneuver", "setRoster", "refreshResources", "phase.start", "startPhase", "reposition", "advanceTurn"]);
 
 async function normalizeSceneParticipants(request) {
   if (!SCENE_SNAPSHOT_TYPES.has(request.type)) return;
