@@ -1,0 +1,2114 @@
+{
+ "runsPer": 120,
+ "quick": false,
+ "generatedAt": "2026-09-20T20:24:40.152Z",
+ "thrust": "shipped",
+ "jobs": 14,
+ "hull": {
+  "id": "peregrinus-interceptor",
+  "label": "Peregrinus Interceptor",
+  "source": "peregrinus-interceptor (reference build)"
+ },
+ "sectors": [
+  "bubble"
+ ],
+ "directional": false,
+ "doctrine": "fighter",
+ "results": [
+  {
+   "id": "base:hover-hover",
+   "variant": "base",
+   "match": "hover vs hover",
+   "label": "hover mirror",
+   "policyA": "hover",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0,
+   "hangfirePerTurn": 1.001,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0,
+   "motionModifier": 0,
+   "range": 0,
+   "medianMinRange": null,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {},
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 0
+      },
+      "regen": {
+       "bubble": 0
+      },
+      "damageTotal": 0,
+      "regenTotal": 0,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 0,
+      "topSectorShare": null,
+      "sectorsPerDamagedRound": null,
+      "multiSectorRoundShare": null
+     },
+     "speed": 0,
+     "hangfire": 4744,
+     "hangfirePerTurn": 0.988,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {},
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 0
+      },
+      "regen": {
+       "bubble": 0
+      },
+      "damageTotal": 0,
+      "regenTotal": 0,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 0,
+      "topSectorShare": null,
+      "sectorsPerDamagedRound": null,
+      "multiSectorRoundShare": null
+     },
+     "speed": 0,
+     "hangfire": 4862,
+     "hangfirePerTurn": 1.013,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "base:brawl-hover",
+   "variant": "base",
+   "match": "brawl vs hover",
+   "label": "brawl vs hover",
+   "policyA": "brawl",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.954,
+    "B_deals": 1.832
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 1.373,
+   "hangfirePerTurn": 0.058,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.075,
+   "motionModifier": -6.121,
+   "range": 16.9,
+   "medianMinRange": 7.3,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "brawl",
+     "policyLabel": "brawl station 15 su @ 16",
+     "orbit": {
+      "targetRadius": 15,
+      "holdRadius": 14.4,
+      "settledTurns": 3840,
+      "insertTurns": 480,
+      "meanRadius": 16.2,
+      "minRadius": 10.84,
+      "maxRadius": 26.18,
+      "radiusErrorPct": 13.77,
+      "radiusP95ErrorPct": 53.41,
+      "radiusMaxErrorPct": 74.52,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 43.8,
+      "clippedTurns": 2160
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 2250,
+       "optimal": 2250,
+       "optimalPct": 100,
+       "bands": {
+        "optimal": 2250
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 2201,
+       "optimal": 2201,
+       "optimalPct": 100,
+       "bands": {
+        "optimal": 2201
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 1780,
+       "port": 6948,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 8792
+      },
+      "regen": {
+       "bubble": 8277
+      },
+      "damageTotal": 8792,
+      "regenTotal": 8277,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 15.56,
+     "hangfire": 103,
+     "hangfirePerTurn": 0.021,
+     "pivotSpentMedian": 59.96,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 4370,
+       "optimal": 4304,
+       "optimalPct": 98.5,
+       "bands": {
+        "extended1": 66,
+        "optimal": 4304
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 4358,
+       "optimal": 4292,
+       "optimalPct": 98.5,
+       "bands": {
+        "extended1": 66,
+        "optimal": 4292
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 4451,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 4580
+      },
+      "regen": {
+       "bubble": 4580
+      },
+      "damageTotal": 4580,
+      "regenTotal": 4580,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 0,
+     "hangfire": 456,
+     "hangfirePerTurn": 0.095,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "base:orbit16-hover",
+   "variant": "base",
+   "match": "orbit16 vs hover",
+   "label": "orbit 16 vs hover",
+   "policyA": "orbit16",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 1.091,
+    "B_deals": 1.173
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 1.779,
+   "hangfirePerTurn": 0.062,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0,
+   "motionModifier": -7.826,
+   "range": 29.5,
+   "medianMinRange": 26.7,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "orbit16",
+     "policyLabel": "orbit 30 su @ 16",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3840,
+      "insertTurns": 480,
+      "meanRadius": 29.54,
+      "minRadius": 29.49,
+      "maxRadius": 29.85,
+      "radiusErrorPct": 1.53,
+      "radiusP95ErrorPct": 1.63,
+      "radiusMaxErrorPct": 1.71,
+      "pivotMedian": 30.6,
+      "pivotSpendPctMedian": 51,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 100,
+      "clippedTurns": 0
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 4217,
+       "optimal": 4217,
+       "optimalPct": 100,
+       "bands": {
+        "optimal": 4217
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 4193,
+       "optimal": 4193,
+       "optimalPct": 100,
+       "bands": {
+        "optimal": 4193
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 8538,
+       "port": 132,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 5628
+      },
+      "regen": {
+       "bubble": 5375
+      },
+      "damageTotal": 5628,
+      "regenTotal": 5375,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 15.83,
+     "hangfire": 128,
+     "hangfirePerTurn": 0.027,
+     "pivotSpentMedian": 30.6,
+     "pivotSpentP95": 35.713924439747
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 4335,
+       "optimal": 4269,
+       "optimalPct": 98.5,
+       "bands": {
+        "extended1": 66,
+        "optimal": 4269
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 4335,
+       "optimal": 4269,
+       "optimalPct": 98.5,
+       "bands": {
+        "extended1": 66,
+        "optimal": 4269
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 8410,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 5236
+      },
+      "regen": {
+       "bubble": 5156
+      },
+      "damageTotal": 5236,
+      "regenTotal": 5156,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 0,
+     "hangfire": 468,
+     "hangfirePerTurn": 0.098,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "base:orbit24-hover",
+   "variant": "base",
+   "match": "orbit24 vs hover",
+   "label": "orbit 24 vs hover",
+   "policyA": "orbit24",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.948,
+    "B_deals": 1.069
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 1.699,
+   "hangfirePerTurn": 0.055,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.012,
+   "motionModifier": -8,
+   "range": 29.7,
+   "medianMinRange": 24.2,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "orbit24",
+     "policyLabel": "orbit 30 su @ 24",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3600,
+      "insertTurns": 720,
+      "meanRadius": 29.68,
+      "minRadius": 29.52,
+      "maxRadius": 29.98,
+      "radiusErrorPct": 1.05,
+      "radiusP95ErrorPct": 1.43,
+      "radiusMaxErrorPct": 1.6,
+      "pivotMedian": 45.82,
+      "pivotSpendPctMedian": 76.4,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 100,
+      "clippedTurns": 0
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 3815,
+       "optimal": 3701,
+       "optimalPct": 97,
+       "bands": {
+        "extended1": 114,
+        "optimal": 3701
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 3815,
+       "optimal": 3701,
+       "optimalPct": 97,
+       "bands": {
+        "extended1": 114,
+        "optimal": 3701
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 234,
+       "port": 8232,
+       "starboard": 0,
+       "aft": 218
+      },
+      "damage": {
+       "bubble": 5132
+      },
+      "regen": {
+       "bubble": 4858
+      },
+      "damageTotal": 5132,
+      "regenTotal": 4858,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 23.93,
+     "hangfire": 56,
+     "hangfirePerTurn": 0.012,
+     "pivotSpentMedian": 45.82,
+     "pivotSpentP95": 55
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 4342,
+       "optimal": 4050,
+       "optimalPct": 93.3,
+       "bands": {
+        "extended1": 292,
+        "optimal": 4050
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 4342,
+       "optimal": 4050,
+       "optimalPct": 93.3,
+       "bands": {
+        "extended1": 292,
+        "optimal": 4050
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 7630,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 4552
+      },
+      "regen": {
+       "bubble": 4486
+      },
+      "damageTotal": 4552,
+      "regenTotal": 4486,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 0,
+     "hangfire": 468,
+     "hangfirePerTurn": 0.098,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "base:orbit32-hover",
+   "variant": "base",
+   "match": "orbit32 vs hover",
+   "label": "orbit 32 vs hover",
+   "policyA": "orbit32",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.132,
+    "B_deals": 0.654
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 1.102,
+   "hangfirePerTurn": 0.054,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.061,
+   "motionModifier": -8,
+   "range": 31.7,
+   "medianMinRange": 26.7,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "orbit32",
+     "policyLabel": "orbit 30 su @ 32",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3480,
+      "insertTurns": 840,
+      "meanRadius": 30.92,
+      "minRadius": 27.79,
+      "maxRadius": 36.43,
+      "radiusErrorPct": 5.97,
+      "radiusP95ErrorPct": 14.64,
+      "radiusMaxErrorPct": 21.43,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 37.9,
+      "clippedTurns": 2160
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 950,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended1": 950
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 950,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended1": 950
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 8234,
+       "starboard": 0,
+       "aft": 444
+      },
+      "damage": {
+       "bubble": 3140
+      },
+      "regen": {
+       "bubble": 3079
+      },
+      "damageTotal": 3140,
+      "regenTotal": 3079,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 31.88,
+     "hangfire": 50,
+     "hangfirePerTurn": 0.01,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 4339,
+       "optimal": 1766,
+       "optimalPct": 40.7,
+       "bands": {
+        "extended1": 2344,
+        "optimal": 1766,
+        "extended2": 229
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 4339,
+       "optimal": 1766,
+       "optimalPct": 40.7,
+       "bands": {
+        "extended1": 2344,
+        "optimal": 1766,
+        "extended2": 229
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 1900,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 636
+      },
+      "regen": {
+       "bubble": 636
+      },
+      "damageTotal": 636,
+      "regenTotal": 636,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 0,
+     "hangfire": 468,
+     "hangfirePerTurn": 0.098,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "base:orbit40-hover",
+   "variant": "base",
+   "match": "orbit40 vs hover",
+   "label": "orbit 40 vs hover",
+   "policyA": "orbit40",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.094,
+    "B_deals": 0.245
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0.618,
+   "hangfirePerTurn": 0.372,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.064,
+   "motionModifier": -8,
+   "range": 35.9,
+   "medianMinRange": 27,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "orbit40",
+     "policyLabel": "orbit 30 su @ 40",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3360,
+      "insertTurns": 960,
+      "meanRadius": 37.93,
+      "minRadius": 30.82,
+      "maxRadius": 44.26,
+      "radiusErrorPct": 26.44,
+      "radiusP95ErrorPct": 47.54,
+      "radiusMaxErrorPct": 47.54,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3360
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 529,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended2": 529
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 529,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended2": 529
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 4433,
+       "starboard": 0,
+       "aft": 444
+      },
+      "damage": {
+       "bubble": 1176
+      },
+      "regen": {
+       "bubble": 1176
+      },
+      "damageTotal": 1176,
+      "regenTotal": 1176,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 39.81,
+     "hangfire": 1450,
+     "hangfirePerTurn": 0.302,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 2472,
+       "optimal": 213,
+       "optimalPct": 8.6,
+       "bands": {
+        "extended1": 1259,
+        "optimal": 213,
+        "extended2": 1000
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 2405,
+       "optimal": 213,
+       "optimalPct": 8.9,
+       "bands": {
+        "extended1": 1192,
+        "optimal": 213,
+        "extended2": 1000
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 1058,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 452
+      },
+      "regen": {
+       "bubble": 450
+      },
+      "damageTotal": 452,
+      "regenTotal": 450,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 0,
+     "hangfire": 2123,
+     "hangfirePerTurn": 0.442,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "base:orbit24-orbit24",
+   "variant": "base",
+   "match": "orbit24 vs orbit24",
+   "label": "orbit 24 mirror",
+   "policyA": "orbit24",
+   "policyB": "orbit24",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.063,
+    "B_deals": 0.068
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0.381,
+   "hangfirePerTurn": 0.659,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.021,
+   "motionModifier": -8,
+   "range": 35.3,
+   "medianMinRange": 31.3,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "orbit24",
+     "policyLabel": "orbit 30 su @ 24",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3720,
+      "insertTurns": 600,
+      "meanRadius": 44.23,
+      "minRadius": 31.34,
+      "maxRadius": 56.55,
+      "radiusErrorPct": 47.43,
+      "radiusP95ErrorPct": 84.84,
+      "radiusMaxErrorPct": 88.5,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3000
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 891,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended1": 792,
+        "extended2": 99
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 891,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended1": 792,
+        "extended2": 99
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 1878,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 328
+      },
+      "regen": {
+       "bubble": 316
+      },
+      "damageTotal": 328,
+      "regenTotal": 316,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 23.75,
+     "hangfire": 3088,
+     "hangfirePerTurn": 0.643,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "orbit24",
+     "policyLabel": "orbit 30 su @ 24",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3720,
+      "insertTurns": 600,
+      "meanRadius": 44.99,
+      "minRadius": 31.27,
+      "maxRadius": 58.38,
+      "radiusErrorPct": 49.96,
+      "radiusP95ErrorPct": 91.44,
+      "radiusMaxErrorPct": 94.62,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3360
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 978,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended1": 476,
+        "extended2": 502
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 900,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended2": 502,
+        "extended1": 398
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 1782,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 304
+      },
+      "regen": {
+       "bubble": 298
+      },
+      "damageTotal": 304,
+      "regenTotal": 298,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 23.63,
+     "hangfire": 3242,
+     "hangfirePerTurn": 0.675,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    }
+   }
+  },
+  {
+   "id": "base:brawl-orbit24",
+   "variant": "base",
+   "match": "brawl vs orbit24",
+   "label": "brawl vs orbit 24",
+   "policyA": "brawl",
+   "policyB": "orbit24",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.403,
+    "B_deals": 0.335
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 1.236,
+   "hangfirePerTurn": 0.198,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.022,
+   "motionModifier": -8,
+   "range": 33.4,
+   "medianMinRange": 15.4,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "brawl",
+     "policyLabel": "brawl station 15 su @ 16",
+     "orbit": {
+      "targetRadius": 15,
+      "holdRadius": 14.4,
+      "settledTurns": 3840,
+      "insertTurns": 480,
+      "meanRadius": 30.64,
+      "minRadius": 24.8,
+      "maxRadius": 35.69,
+      "radiusErrorPct": 104.29,
+      "radiusP95ErrorPct": 137.58,
+      "radiusMaxErrorPct": 137.91,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3360
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 1903,
+       "optimal": 1281,
+       "optimalPct": 67.3,
+       "bands": {
+        "optimal": 1281,
+        "extended1": 622
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 1899,
+       "optimal": 1277,
+       "optimalPct": 67.2,
+       "bands": {
+        "optimal": 1277,
+        "extended1": 622
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 654,
+       "port": 7406,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 1608
+      },
+      "regen": {
+       "bubble": 1537
+      },
+      "damageTotal": 1608,
+      "regenTotal": 1537,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 15.64,
+     "hangfire": 1754,
+     "hangfirePerTurn": 0.365,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "orbit24",
+     "policyLabel": "orbit 30 su @ 24",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3720,
+      "insertTurns": 600,
+      "meanRadius": 35.36,
+      "minRadius": 30.27,
+      "maxRadius": 40.37,
+      "radiusErrorPct": 17.88,
+      "radiusP95ErrorPct": 34.43,
+      "radiusMaxErrorPct": 34.57,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3480
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 4030,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended2": 1407,
+        "extended1": 2623
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 4030,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended2": 1407,
+        "extended1": 2623
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 240,
+       "port": 3082,
+       "starboard": 0,
+       "aft": 480
+      },
+      "damage": {
+       "bubble": 1936
+      },
+      "regen": {
+       "bubble": 1923
+      },
+      "damageTotal": 1936,
+      "regenTotal": 1923,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 23.72,
+     "hangfire": 142,
+     "hangfirePerTurn": 0.03,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    }
+   }
+  },
+  {
+   "id": "base:brawl-brawl",
+   "variant": "base",
+   "match": "brawl vs brawl",
+   "label": "brawl mirror",
+   "policyA": "brawl",
+   "policyB": "brawl",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.321,
+    "B_deals": 0.347
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0.702,
+   "hangfirePerTurn": 0.366,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.134,
+   "motionModifier": -8,
+   "range": 29.6,
+   "medianMinRange": 13.4,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "brawl",
+     "policyLabel": "brawl station 15 su @ 16",
+     "orbit": {
+      "targetRadius": 15,
+      "holdRadius": 14.4,
+      "settledTurns": 3840,
+      "insertTurns": 480,
+      "meanRadius": 32.27,
+      "minRadius": 12.08,
+      "maxRadius": 48.08,
+      "radiusErrorPct": 116.46,
+      "radiusP95ErrorPct": 219.82,
+      "radiusMaxErrorPct": 220.54,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 6.3,
+      "clippedTurns": 3480
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 1854,
+       "optimal": 579,
+       "optimalPct": 31.2,
+       "bands": {
+        "optimal": 579,
+        "extended2": 570,
+        "extended1": 705
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 1800,
+       "optimal": 525,
+       "optimalPct": 29.2,
+       "bands": {
+        "extended2": 570,
+        "optimal": 525,
+        "extended1": 705
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 790,
+       "port": 2298,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 1664
+      },
+      "regen": {
+       "bubble": 1544
+      },
+      "damageTotal": 1664,
+      "regenTotal": 1544,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 15.6,
+     "hangfire": 1622,
+     "hangfirePerTurn": 0.338,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "brawl",
+     "policyLabel": "brawl station 15 su @ 16",
+     "orbit": {
+      "targetRadius": 15,
+      "holdRadius": 14.4,
+      "settledTurns": 3720,
+      "insertTurns": 600,
+      "meanRadius": 30.33,
+      "minRadius": 13.39,
+      "maxRadius": 45.44,
+      "radiusErrorPct": 104.89,
+      "radiusP95ErrorPct": 193.53,
+      "radiusMaxErrorPct": 202.93,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 19.4,
+      "clippedTurns": 2880
+     },
+     "weapons": {
+      "PereCannonA00001": {
+       "attacks": 1615,
+       "optimal": 1052,
+       "optimalPct": 65.1,
+       "bands": {
+        "optimal": 1052,
+        "extended1": 563
+       }
+      },
+      "PereCannonB00001": {
+       "attacks": 1473,
+       "optimal": 910,
+       "optimalPct": 61.8,
+       "bands": {
+        "optimal": 910,
+        "extended1": 563
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 1994,
+       "port": 1660,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 1540
+      },
+      "regen": {
+       "bubble": 1503
+      },
+      "damageTotal": 1540,
+      "regenTotal": 1503,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 15.91,
+     "hangfire": 1890,
+     "hangfirePerTurn": 0.394,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    }
+   }
+  },
+  {
+   "id": "cannon:hover-hover",
+   "variant": "cannon",
+   "match": "hover vs hover",
+   "label": "cannon hover mirror",
+   "policyA": "hover",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0,
+   "hangfirePerTurn": 0.5,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0,
+   "motionModifier": 0,
+   "range": 0,
+   "medianMinRange": null,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {},
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 0
+      },
+      "regen": {
+       "bubble": 0
+      },
+      "damageTotal": 0,
+      "regenTotal": 0,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 0,
+      "topSectorShare": null,
+      "sectorsPerDamagedRound": null,
+      "multiSectorRoundShare": null
+     },
+     "speed": 0,
+     "hangfire": 2372,
+     "hangfirePerTurn": 0.494,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {},
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 0
+      },
+      "regen": {
+       "bubble": 0
+      },
+      "damageTotal": 0,
+      "regenTotal": 0,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 0,
+      "topSectorShare": null,
+      "sectorsPerDamagedRound": null,
+      "multiSectorRoundShare": null
+     },
+     "speed": 0,
+     "hangfire": 2431,
+     "hangfirePerTurn": 0.506,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "cannon:brawl-hover",
+   "variant": "cannon",
+   "match": "brawl vs hover",
+   "label": "cannon brawl vs hover",
+   "policyA": "brawl",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.772,
+    "B_deals": 1.627
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0.69,
+   "hangfirePerTurn": 0.027,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.686,
+   "motionModifier": -6.113,
+   "range": 16.9,
+   "medianMinRange": 7.3,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "brawl",
+     "policyLabel": "brawl station 15 su @ 16",
+     "orbit": {
+      "targetRadius": 15,
+      "holdRadius": 14.4,
+      "settledTurns": 3840,
+      "insertTurns": 480,
+      "meanRadius": 16.2,
+      "minRadius": 10.84,
+      "maxRadius": 26.18,
+      "radiusErrorPct": 13.77,
+      "radiusP95ErrorPct": 53.41,
+      "radiusMaxErrorPct": 74.52,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 43.8,
+      "clippedTurns": 2160
+     },
+     "weapons": {
+      "PereCannonB00001": {
+       "attacks": 2250,
+       "optimal": 2250,
+       "optimalPct": 100,
+       "bands": {
+        "optimal": 2250
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 890,
+       "port": 3480,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 7808
+      },
+      "regen": {
+       "bubble": 7484
+      },
+      "damageTotal": 7808,
+      "regenTotal": 7484,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 15.56,
+     "hangfire": 35,
+     "hangfirePerTurn": 0.007,
+     "pivotSpentMedian": 59.96,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {
+      "PereCannonB00001": {
+       "attacks": 4370,
+       "optimal": 4304,
+       "optimalPct": 98.5,
+       "bands": {
+        "extended1": 66,
+        "optimal": 4304
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 2250,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 3708
+      },
+      "regen": {
+       "bubble": 3708
+      },
+      "damageTotal": 3708,
+      "regenTotal": 3708,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 0,
+     "hangfire": 223,
+     "hangfirePerTurn": 0.046,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "cannon:orbit24-hover",
+   "variant": "cannon",
+   "match": "orbit24 vs hover",
+   "label": "cannon orbit 24 vs hover",
+   "policyA": "orbit24",
+   "policyB": "hover",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 1.104,
+    "B_deals": 1.255
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0.851,
+   "hangfirePerTurn": 0.027,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.863,
+   "motionModifier": -8,
+   "range": 29.7,
+   "medianMinRange": 24.2,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "orbit24",
+     "policyLabel": "orbit 30 su @ 24",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3600,
+      "insertTurns": 720,
+      "meanRadius": 29.68,
+      "minRadius": 29.52,
+      "maxRadius": 29.98,
+      "radiusErrorPct": 1.05,
+      "radiusP95ErrorPct": 1.43,
+      "radiusMaxErrorPct": 1.6,
+      "pivotMedian": 45.82,
+      "pivotSpendPctMedian": 76.4,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 100,
+      "clippedTurns": 0
+     },
+     "weapons": {
+      "PereCannonB00001": {
+       "attacks": 3830,
+       "optimal": 3713,
+       "optimalPct": 96.9,
+       "bands": {
+        "optimal": 3713,
+        "extended1": 117
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 117,
+       "port": 4113,
+       "starboard": 0,
+       "aft": 109
+      },
+      "damage": {
+       "bubble": 6024
+      },
+      "regen": {
+       "bubble": 5761
+      },
+      "damageTotal": 6024,
+      "regenTotal": 5761,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 23.93,
+     "hangfire": 25,
+     "hangfirePerTurn": 0.005,
+     "pivotSpentMedian": 45.82,
+     "pivotSpentP95": 55
+    },
+    "B": {
+     "policy": "hover",
+     "policyLabel": "hover",
+     "orbit": null,
+     "weapons": {
+      "PereCannonB00001": {
+       "attacks": 4339,
+       "optimal": 4047,
+       "optimalPct": 93.3,
+       "bands": {
+        "extended1": 292,
+        "optimal": 4047
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 3830,
+       "port": 0,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 5300
+      },
+      "regen": {
+       "bubble": 5227
+      },
+      "damageTotal": 5300,
+      "regenTotal": 5227,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 0,
+     "hangfire": 234,
+     "hangfirePerTurn": 0.049,
+     "pivotSpentMedian": 0,
+     "pivotSpentP95": 0
+    }
+   }
+  },
+  {
+   "id": "cannon:orbit24-orbit24",
+   "variant": "cannon",
+   "match": "orbit24 vs orbit24",
+   "label": "cannon orbit 24 mirror",
+   "policyA": "orbit24",
+   "policyB": "orbit24",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.077,
+    "B_deals": 0.075
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0.192,
+   "hangfirePerTurn": 0.329,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.205,
+   "motionModifier": -8,
+   "range": 35.2,
+   "medianMinRange": 31.3,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "orbit24",
+     "policyLabel": "orbit 30 su @ 24",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3720,
+      "insertTurns": 600,
+      "meanRadius": 44.23,
+      "minRadius": 31.34,
+      "maxRadius": 56.55,
+      "radiusErrorPct": 47.43,
+      "radiusP95ErrorPct": 84.84,
+      "radiusMaxErrorPct": 88.5,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3000
+     },
+     "weapons": {
+      "PereCannonB00001": {
+       "attacks": 863,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended1": 767,
+        "extended2": 96
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 978,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 360
+      },
+      "regen": {
+       "bubble": 340
+      },
+      "damageTotal": 360,
+      "regenTotal": 340,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 23.75,
+     "hangfire": 1549,
+     "hangfirePerTurn": 0.323,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "orbit24",
+     "policyLabel": "orbit 30 su @ 24",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3720,
+      "insertTurns": 600,
+      "meanRadius": 44.99,
+      "minRadius": 31.27,
+      "maxRadius": 58.38,
+      "radiusErrorPct": 49.96,
+      "radiusP95ErrorPct": 91.44,
+      "radiusMaxErrorPct": 94.62,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3360
+     },
+     "weapons": {
+      "PereCannonB00001": {
+       "attacks": 978,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended1": 480,
+        "extended2": 498
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 0,
+       "port": 863,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 368
+      },
+      "regen": {
+       "bubble": 363
+      },
+      "damageTotal": 368,
+      "regenTotal": 363,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 23.63,
+     "hangfire": 1614,
+     "hangfirePerTurn": 0.336,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    }
+   }
+  },
+  {
+   "id": "cannon:brawl-orbit24",
+   "variant": "cannon",
+   "match": "brawl vs orbit24",
+   "label": "cannon brawl vs orbit 24",
+   "policyA": "brawl",
+   "policyB": "orbit24",
+   "runs": 120,
+   "killRate": 0,
+   "medianTtk": null,
+   "medianFirstCollapse": null,
+   "shieldDmgPerTurn": {
+    "A_deals": 0.424,
+    "B_deals": 0.592
+   },
+   "hullDmgPerTurn": {
+    "A_deals": 0,
+    "B_deals": 0
+   },
+   "medianHullRemaining": {
+    "A": 25,
+    "B": 25
+   },
+   "attacksPerTurn": 0.62,
+   "hangfirePerTurn": 0.1,
+   "meanRounds": 40,
+   "solutionsPerTurn": 0.642,
+   "motionModifier": -8,
+   "range": 33.4,
+   "medianMinRange": 15.4,
+   "ramEvents": 0,
+   "rejects": {},
+   "sides": {
+    "A": {
+     "policy": "brawl",
+     "policyLabel": "brawl station 15 su @ 16",
+     "orbit": {
+      "targetRadius": 15,
+      "holdRadius": 14.4,
+      "settledTurns": 3840,
+      "insertTurns": 480,
+      "meanRadius": 30.64,
+      "minRadius": 24.8,
+      "maxRadius": 35.69,
+      "radiusErrorPct": 104.29,
+      "radiusP95ErrorPct": 137.58,
+      "radiusMaxErrorPct": 137.91,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3360
+     },
+     "weapons": {
+      "PereCannonB00001": {
+       "attacks": 1909,
+       "optimal": 1302,
+       "optimalPct": 68.2,
+       "bands": {
+        "optimal": 1302,
+        "extended1": 607
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 325,
+       "port": 3718,
+       "starboard": 0,
+       "aft": 0
+      },
+      "damage": {
+       "bubble": 2840
+      },
+      "regen": {
+       "bubble": 2718
+      },
+      "damageTotal": 2840,
+      "regenTotal": 2718,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 15.64,
+     "hangfire": 893,
+     "hangfirePerTurn": 0.186,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    },
+    "B": {
+     "policy": "orbit24",
+     "policyLabel": "orbit 30 su @ 24",
+     "orbit": {
+      "targetRadius": 30,
+      "holdRadius": 28.8,
+      "settledTurns": 3720,
+      "insertTurns": 600,
+      "meanRadius": 35.36,
+      "minRadius": 30.27,
+      "maxRadius": 40.37,
+      "radiusErrorPct": 17.88,
+      "radiusP95ErrorPct": 34.43,
+      "radiusMaxErrorPct": 34.57,
+      "pivotMedian": 60,
+      "pivotSpendPctMedian": 100,
+      "pivotCapabilityMin": 60,
+      "insideNominalPct": 0,
+      "clippedTurns": 3480
+     },
+     "weapons": {
+      "PereCannonB00001": {
+       "attacks": 4043,
+       "optimal": 0,
+       "optimalPct": 0,
+       "bands": {
+        "extended2": 1412,
+        "extended1": 2631
+       }
+      }
+     },
+     "sectors": {
+      "struck": {
+       "fore": 120,
+       "port": 1549,
+       "starboard": 0,
+       "aft": 240
+      },
+      "damage": {
+       "bubble": 2036
+      },
+      "regen": {
+       "bubble": 2030
+      },
+      "damageTotal": 2036,
+      "regenTotal": 2030,
+      "funnelCapture": null,
+      "funnelMissedRounds": null,
+      "funnelRounds": 4800,
+      "distinctSectorsDamaged": 1,
+      "topSectorShare": 1,
+      "sectorsPerDamagedRound": 1,
+      "multiSectorRoundShare": 0
+     },
+     "speed": 23.72,
+     "hangfire": 70,
+     "hangfirePerTurn": 0.015,
+     "pivotSpentMedian": 60,
+     "pivotSpentP95": 60
+    }
+   }
+  }
+ ]
+}
