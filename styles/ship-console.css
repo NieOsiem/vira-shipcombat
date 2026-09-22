@@ -5490,3 +5490,114 @@
   vertical-align: middle;
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
+
+/* Player control ownership: mute locked controls and their supporting readouts. */
+.ship-console-layout .ship-primary:disabled {
+  border-color: var(--ship-border) !important;
+  color: var(--ship-muted) !important;
+  background: #0b1218 !important;
+  box-shadow: none !important;
+  filter: grayscale(100%);
+  opacity: 0.42;
+}
+
+
+.ship-control-surface.is-control-locked {
+  border-color: rgb(255 189 82 / 28%);
+}
+
+.ship-control-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ship-control-surface.is-control-locked .ship-control-status {
+  border-color: rgb(255 189 82 / 55%);
+  color: var(--ship-amber);
+  background: rgb(255 189 82 / 10%);
+}
+
+.ship-control-surface.is-control-held .ship-control-status {
+  border-color: rgb(85 225 139 / 55%);
+  color: var(--ship-green);
+  background: rgb(85 225 139 / 10%);
+}
+
+.ship-console-layout .ship-control-take:not(:disabled) {
+  border-color: rgb(255 189 82 / 75%);
+  color: #1a1102;
+  background: linear-gradient(180deg, #ffd582, #e8a631);
+  box-shadow: 0 0 12px rgb(255 189 82 / 14%);
+}
+
+.ship-console-layout .ship-control-take:hover:not(:disabled),
+.ship-console-layout .ship-control-take:focus-visible:not(:disabled) {
+  border-color: #ffe4ad;
+  color: #100a01;
+  background: linear-gradient(180deg, #ffe4ad, #f0b64f);
+  box-shadow: 0 0 0 1px rgb(255 189 82 / 25%), 0 0 16px rgb(255 189 82 / 18%);
+}
+
+[data-tab-panel="helm"].is-control-locked .ship-helm-axis {
+  border-color: rgb(142 165 173 / 20%);
+  background: linear-gradient(135deg, rgb(142 165 173 / 4%), rgb(8 13 18 / 65%));
+}
+
+[data-tab-panel="helm"].is-control-locked .ship-helm-axis-header > i,
+[data-tab-panel="helm"].is-control-locked .ship-helm-axis-header > h3,
+[data-tab-panel="helm"].is-control-locked .ship-helm-value-chip {
+  border-color: rgb(142 165 173 / 32%);
+  color: var(--ship-muted);
+  background: rgb(142 165 173 / 6%);
+  box-shadow: none;
+  text-shadow: none;
+}
+
+[data-tab-panel="helm"].is-control-locked .ship-helm-budget {
+  border-color: rgb(142 165 173 / 24%);
+  background: rgb(142 165 173 / 5%);
+}
+
+
+[data-tab-panel="helm"].is-control-locked .ship-helm-slider-labels {
+  color: var(--ship-muted);
+  opacity: 0.72;
+}
+
+
+[data-control-surface="power"].is-control-locked .ship-ftl-reactor,
+[data-control-surface="power"].is-control-locked .ship-ftl-systems,
+[data-control-surface="power"].is-control-locked .ship-power-priorities {
+  filter: grayscale(90%) saturate(20%);
+  opacity: 0.42;
+}
+
+[data-control-surface="power"].is-control-locked .ship-ftl-readouts .ship-kicker,
+[data-control-surface="power"].is-control-locked .ship-ftl-readout-label,
+[data-control-surface="power"].is-control-locked .ship-ftl-readout-value:not(.ship-danger) {
+  color: var(--ship-muted);
+  opacity: 0.52;
+  text-shadow: none;
+}
+
+[data-control-surface="power"].is-control-locked .ship-ftl-subdivider {
+  border-color: rgb(142 165 173 / 20%);
+  opacity: 0.5;
+}
+
+[data-control-surface="defense"].is-control-locked .ship-shield-center,
+[data-control-surface="defense"].is-control-locked .ship-shield-total,
+[data-control-surface="defense"].is-control-locked .ship-shield-sector-head,
+[data-control-surface="defense"].is-control-locked .ship-shield-sector-stats,
+[data-control-surface="defense"].is-control-locked .ship-shield-controls,
+[data-control-surface="defense"].is-control-locked .ship-shield-status,
+[data-control-surface="defense"].is-control-locked [data-distribute] {
+  filter: grayscale(90%) saturate(20%);
+  opacity: 0.42;
+}
+
+[data-control-surface="defense"].is-control-locked .ship-shield-sector-card {
+  border-color: rgb(142 165 173 / 24%);
+  background: linear-gradient(180deg, rgb(142 165 173 / 5%), rgb(7 13 18 / 74%));
+}

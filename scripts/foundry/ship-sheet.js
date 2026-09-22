@@ -184,6 +184,15 @@ function consoleOperator(panel, form) {
   return panel?.querySelector("[data-page-operator], select[name='operatorId']") ?? null;
 }
 
+function holdsConsoleControl(state, control, panel, form) {
+  if (globalThis.game?.user?.isGM) return true;
+  const selected = consoleOperator(panel, form)?.value;
+  const holder = typeof state?.controls?.[control] === "string"
+    ? state.controls[control]
+    : state?.controls?.[control]?.operatorId;
+  return Boolean(selected && holder && selected === holder);
+}
+
 function elementFormData(element) {
   const form = element.matches?.("form")
     ? element
@@ -2480,6 +2489,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       void this.#previewUi(form);
     });
 
+    const panel = html.querySelector("[data-tab-panel='helm']");
     const operator = form.elements.namedItem("operatorId");
     const hiddenOperator = form.querySelector("input[name='operatorId'][type='hidden']");
     const holder = typeof state.controls?.helm === "string"
@@ -2488,12 +2498,18 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const holderLabel =
       this.#config.operators?.find((entry) => entry.id === holder)?.label ??
         holder ?? "Unheld";
+    const fieldset = form.querySelector(".ship-helm-controls");
     const refreshControl = () => {
       if (hiddenOperator && hiddenOperator !== operator && operator?.value) {
         hiddenOperator.value = operator.value;
       }
-      const held = Boolean(holder && holder === operator?.value);
-      const take = html.querySelector("[data-tab-panel='helm'] [data-ui-operation='takeControl'][data-control='helm']");
+      const held = holdsConsoleControl(state, "helm", panel, form);
+      panel?.classList.toggle("is-control-locked", !held);
+      panel?.classList.toggle("is-control-held", held);
+      if (fieldset) fieldset.disabled = !held;
+      const status = panel?.querySelector("[data-control-status]");
+      if (status) status.textContent = held ? "ACTIVE" : "LOCKED";
+      const take = panel?.querySelector("[data-ui-operation='takeControl'][data-control='helm']");
       if (take) {
         take.disabled = !token || held || !this.#canAct;
         take.title = !token
@@ -2532,6 +2548,14 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       } catch (error) {
         reason = errorText(error);
       }
+      for (const button of form.querySelectorAll(
+        "button[type='submit'], [data-coast-remaining], [data-helm-reset]",
+      )) {
+        button.disabled = !token || !held || !this.#canAct;
+        if (!held && token && this.#canAct) {
+          button.title = "Take Helm to use maneuver controls.";
+        }
+      }
       const hardReserve = numeric(this.#config.evasionHardReserve);
       const hardArm = form.querySelector("[data-ui-operation='armEvasion'][data-tier='hard']");
       let hardReason = "";
@@ -2557,7 +2581,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       }
       if (hardArm) {
         hardArm.hidden = Boolean(state.evasion?.armed || hardReason);
-        hardArm.disabled = !token || !this.#canAct;
+        hardArm.disabled = !token || !held || !this.#canAct;
         hardArm.title = !token
           ? "Place this ship on the active Scene to evade."
           : !this.#canAct
@@ -2567,7 +2591,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const arm = form.querySelector("[data-ui-operation='armEvasion']");
       if (arm) {
         arm.hidden = Boolean(state.evasion?.armed || reason);
-        arm.disabled = !token || !this.#canAct;
+        arm.disabled = !token || !held || !this.#canAct;
         arm.title = !token
           ? "Place this ship on the active Scene to evade."
           : !this.#canAct
@@ -2606,6 +2630,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       ? "Active Phase required."
       : "Operational access required.";
     const panel = html.querySelector("[data-tab-panel='power-defense']");
+    const canEditPower = () =>
+      this.#canAct && holdsConsoleControl(state, "power", panel, form);
     const refreshControls = () => {
       for (const control of ["power", "defense"]) {
         const take = panel?.querySelector(`[data-control='${control}']`);
@@ -2619,16 +2645,38 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         const label = this.#config.operators?.find((entry) =>
           entry.id === holder
         )?.label ?? holder ?? "Unheld";
-        const held = Boolean(holder && holder === source?.value);
+        const held = holdsConsoleControl(
+          state,
+          control,
+          panel,
+          take.closest("form[data-ui-operation]"),
+        );
+        const surface = panel?.querySelector(`[data-control-surface='${control}']`);
+        surface?.classList.toggle("is-control-locked", !held);
+        surface?.classList.toggle("is-control-held", held);
         take.textContent = held
           ? "Held — commit below"
           : `Take ${control} · ${label} (costs 1 Action/Order)`;
         take.disabled = held || !this.#canAct;
-        take.title = !this.#canAct ? denial : `Current holder: ${label}`;
+        take.title = !this.#canAct ? denial : held
+          ? `${label} holds ${control} control.`
+          : `Current holder: ${label}`;
+        const submit = surface?.querySelector("button[type='submit']");
+        if (submit) {
+          submit.disabled = !this.#canAct || !held;
+          submit.title = !this.#canAct
+            ? denial
+            : held
+            ? `Commit the staged ${control} route.`
+            : `Take ${control} control before committing.`;
+        }
       }
     };
     panel?.querySelectorAll("[data-page-operator]")
-      .forEach((select) => this.#on(select, "change", refreshControls));
+      .forEach((select) => this.#on(select, "change", () => {
+        refreshControls();
+        refresh();
+      }));
     refreshControls();
     for (const prefix of ["sheddingPriority", "weaponPriority"]) {
       const selects = Array.from(
@@ -2636,9 +2684,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       );
       for (const select of selects) {
         select.dataset.previous = select.value;
-        select.disabled = !this.#canAct;
+        select.disabled = !canEditPower();
         select.title = !this.#canAct
           ? denial
+          : !canEditPower()
+          ? "Take power control to edit shedding priorities."
           : "Swaps with the previous occupant of this priority.";
         const swap = () => {
           const previous = select.dataset.previous;
@@ -2718,9 +2768,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
             "aria-label",
             `${system.label} power point ${index}`,
           );
-          button.disabled = !this.#canAct;
+          button.disabled = !canEditPower();
           button.title = !this.#canAct
             ? denial
+            : !canEditPower()
+            ? "Take power control to change allocation."
             : `${system.label} ${index} Power${
               isOverclock ? " (Overclock)" : ""
             }${isReserved ? " (Weapon Reserved)" : ""}`;
@@ -2728,7 +2780,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           // Direct slab click
           button.addEventListener("click", (e) => {
             e.stopPropagation();
-            if (!this.#canAct) return;
+            if (!canEditPower()) return;
             let target;
             if (system.id === "weapons") {
               target = Math.max(reservedWeapons, index);
@@ -2749,7 +2801,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           iconBtn.dataset.attached = "true";
           // Left click: +1 tier
           this.#on(iconBtn, "click", () => {
-            if (!this.#canAct) return;
+            if (!canEditPower()) return;
             const cur = numeric(input.value);
             const next = values.find((v) => v > cur);
             if (next !== undefined) {
@@ -2760,7 +2812,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           // Right click: -1 tier
           this.#on(iconBtn, "contextmenu", (e) => {
             e.preventDefault();
-            if (!this.#canAct) return;
+            if (!canEditPower()) return;
             const cur = numeric(input.value);
             const prev = values.filter((v) => v < cur).at(-1);
             if (prev !== undefined) {
@@ -2773,12 +2825,14 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           });
         }
         if (iconBtn) {
-          iconBtn.disabled = !this.#canAct;
+          iconBtn.disabled = !canEditPower();
           const cur = numeric(input.value);
           const next = values.find((v) => v > cur);
           const prev = values.filter((v) => v < cur).at(-1);
           iconBtn.title = !this.#canAct
             ? denial
+            : !canEditPower()
+            ? "Take power control to change allocation."
             : `${system.label}: ${cur} Power\nLeft-click: +1 (${
               next ?? "max"
             })\nRight-click: −1 (${prev ?? "min"})`;
@@ -2791,6 +2845,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       }
     };
     this.#on(form, "input", refresh);
+    refreshControls();
     refresh();
   }
 
@@ -2802,6 +2857,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const denial = (state.phase !== "active" && state.phase !== "outsideCombat")
       ? "Active Phase required."
       : "Operational access required.";
+    const panel = html.querySelector("[data-tab-panel='power-defense']");
+    const canEditDefense = () =>
+      this.#canAct && holdsConsoleControl(state, "defense", panel, form);
+    const defenseReason = () =>
+      !this.#canAct ? denial : "Take defense control to change shield routing.";
     const pool = shields.regenPipsTotal ?? 20;
     const limit = shields.regenPipLimit ?? pool;
     const cap = shields.regenerationWeightCap ?? 100;
@@ -2836,19 +2896,22 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const stagedWeight = (sector) =>
       Math.max(0, Math.min(numeric(inputs.get(sector.id).regen.value), cap));
     let unassignedRegen = 0;
-    form.querySelectorAll("[data-distribute]").forEach((button) => {
-      button.disabled = !this.#canAct || !shields.directional;
-      button.title = !this.#canAct
-        ? denial
-        : !shields.directional
-        ? button.dataset.distribute === "regen"
-          ? "Bubble shields regenerate as one pool."
-          : "Bubble shields have no directional allocation."
-        : button.dataset.distribute === "regen"
-        ? "Stage an even regeneration split; commit below."
-        : "Stage an even allocation; commit below.";
-    });
     const refresh = () => {
+      const editable = canEditDefense();
+      form.querySelectorAll("[data-distribute]").forEach((button) => {
+        button.disabled = !editable || !shields.directional;
+        button.title = !editable
+          ? defenseReason()
+          : !shields.directional
+          ? button.dataset.distribute === "regen"
+            ? "Bubble shields regenerate as one pool."
+            : "Bubble shields have no directional allocation."
+          : button.dataset.distribute === "regen"
+          ? "Stage an even regeneration split; commit below."
+          : "Stage an even allocation; commit below.";
+      });
+      form.classList.toggle("is-control-locked", !editable);
+      form.classList.toggle("is-control-held", editable);
       const write = (selector, text) => {
         form.querySelectorAll(selector).forEach((output) => {
           output.textContent = text;
@@ -2874,9 +2937,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         hint.textContent = "";
       }
       if (submit) {
-        submit.disabled = !this.#canAct;
-        submit.title = !this.#canAct
-          ? denial
+        submit.disabled = !editable;
+        submit.title = !editable
+          ? defenseReason()
           : "Commit the staged shield allocation.";
       }
 
@@ -2955,11 +3018,11 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
               "aria-label",
               `${sector.label} regeneration pip ${index} of ${limit}`,
             );
-            pip.disabled = !this.#canAct ||
+            pip.disabled = !editable ||
               !shields.directional ||
               index > reachable;
-            pip.title = !this.#canAct
-              ? denial
+            pip.title = !editable
+              ? defenseReason()
               : !shields.directional
               ? "Bubble shields regenerate as one pool."
               : !shields.regeneration
@@ -2968,7 +3031,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
               ? `Redistribute: ${unassignedRegen} of ${pool} regen pips unassigned.`
               : `${sector.label} regeneration ${index * 5}%`;
             pip.addEventListener("click", () => {
-              if (pip.disabled || !this.#canAct) return;
+              if (pip.disabled || !canEditDefense()) return;
               if (index > pips && index - pips > unassignedRegen) return;
               inputs.get(sector.id).regen.value = String(index * 5);
               form.dispatchEvent(new Event("input", { bubbles: true }));
@@ -2986,8 +3049,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         if (!sector) return;
         const value = stagedAllocation(sector);
         const adding = numeric(button.dataset.delta) > 0;
-        const reason = !this.#canAct
-          ? denial
+        const reason = !editable
+          ? defenseReason()
           : !shields.directional
           ? "Bubble shields have no directional allocation."
           : adding
@@ -3014,8 +3077,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         if (!sector) return;
         const weight = stagedWeight(sector);
         const adding = numeric(button.dataset.delta) > 0;
-        const reason = !this.#canAct
-          ? denial
+        const reason = !editable
+          ? defenseReason()
           : !shields.directional
           ? "Bubble shields regenerate as one pool."
           : adding
@@ -3045,7 +3108,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 
     form.querySelectorAll("[data-shield-alloc]").forEach((button) => {
       this.#on(button, "click", () => {
-        if (button.disabled || !this.#canAct) return;
+        if (button.disabled || !canEditDefense()) return;
         const sector = shields.sectors.find((entry) =>
           entry.id === button.dataset.shieldAlloc
         );
@@ -3071,7 +3134,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     });
     form.querySelectorAll("[data-shield-regen]").forEach((button) => {
       this.#on(button, "click", () => {
-        if (button.disabled || !this.#canAct) return;
+        if (button.disabled || !canEditDefense()) return;
         const sector = shields.sectors.find((entry) =>
           entry.id === button.dataset.shieldRegen
         );
@@ -3089,6 +3152,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       });
     });
     this.#on(form, "input", refresh);
+    this.#on(panel?.querySelector("[data-page-operator='defense']"), "change", refresh);
     refresh();
   }
 
@@ -4572,7 +4636,20 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       }
       if (type !== "attack") {
         const submit = form.querySelector("button[type='submit']");
-        if (submit) submit.disabled = !this.#canAct;
+        const requiredControl = {
+          maneuver: "helm",
+          rotate: "helm",
+          routePower: "power",
+          routeDefense: "defense",
+        }[type];
+        const panel = form.closest("[data-tab-panel]");
+        if (submit) {
+          submit.disabled = !this.#canAct ||
+            Boolean(
+              requiredControl &&
+                !holdsConsoleControl(state, requiredControl, panel, form),
+            );
+        }
         output.dataset.error = "false";
       }
     } catch (error) {

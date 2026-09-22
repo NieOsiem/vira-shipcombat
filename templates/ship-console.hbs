@@ -256,7 +256,7 @@
       </details>
     </section>
 
-    <section id="panel-helm" class="ship-console-panel" role="tabpanel" aria-label="Helm" data-tab-panel="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>
+    <section id="panel-helm" class="ship-console-panel ship-control-surface {{#unless view.helmHeld}}is-control-locked{{else}}is-control-held{{/unless}}" role="tabpanel" aria-label="Helm" data-tab-panel="helm" data-control-surface="helm" {{#unless tabState.helm.active}}hidden{{/unless}}>
       <div class="ship-panel-heading">
         <h2>Helm</h2>
         {{#if isGM}}
@@ -266,7 +266,7 @@
         {{/if}}
         {{#unless isGM}}
           <div class="ship-helm-actions-inline">
-            <span class="ship-readout" title="Helm Station Status">{{#if view.helmHeld}}ACTIVE{{else}}VACANT{{/if}}</span>
+            <span class="ship-readout ship-control-status" data-control-status title="Helm Station Status">{{#if view.helmHeld}}ACTIVE{{else}}LOCKED{{/if}}</span>
             {{#if view.helmHeld}}
               <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Release Helm</button>
             {{else}}
@@ -398,7 +398,7 @@
         <span class="ship-readout {{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</span>
       </div>
       <div class="ship-systems-layout">
-        <form class="ship-card" data-ui-operation="routePower" data-console="power" data-live-preview="routePower">
+        <form class="ship-card ship-control-surface" data-control-surface="power" data-ui-operation="routePower" data-console="power" data-live-preview="routePower">
           <div class="ship-ftl-power">
             <div class="ship-ftl-reactor" aria-label="Reactor Reserve">
               <div class="ship-ftl-reactor-stack" data-reactor-stack role="meter" aria-label="Reactor power reserve" aria-valuemin="0" aria-valuemax="{{view.power.reactor.maximum}}" aria-valuenow="{{view.power.reactor.free}}"></div>
@@ -463,13 +463,13 @@
           </div>
           <div class="ship-power-footer">
             <details class="ship-power-priorities" data-sync="power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
-            <div class="ship-action-row ship-power-actions">{{#unless isGM}}<button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take power</button>{{/unless}}<button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>{{#if isGM}}Commit power route{{else}}Commit and release{{/if}}</button></div>
+            <div class="ship-action-row ship-power-actions"><button type="button" class="ship-control-take" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Commit and release</button></div>
           </div>
           <p class="ship-preview-line" data-preview aria-live="polite"></p>
         </form>
       </div>
       {{#if view.shields.sectors.length}}
-        <form class="ship-shield-hud {{#unless view.shields.directional}}ship-shield-hud--bubble{{/unless}}" data-ui-operation="routeDefense" data-console="defense" data-live-preview="routeDefense">
+        <form class="ship-shield-hud {{#unless view.shields.directional}}ship-shield-hud--bubble{{/unless}} ship-control-surface" data-control-surface="defense" data-ui-operation="routeDefense" data-console="defense" data-live-preview="routeDefense">
           <div class="ship-shield-hud-grid">
             <p class="ship-shield-total"><span>Total</span><output data-shield-total-hp>{{view.shields.totalHp}}</output><span aria-hidden="true">/</span><output data-shield-total-budget>{{view.shields.budget}}</output></p>
             {{#each view.shields.sectors}}
@@ -548,7 +548,7 @@
               <button type="button" data-distribute="allocation" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Balance charge</button>
               <button type="button" data-distribute="regen" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Balance regen</button>
             {{/if}}
-            {{#unless isGM}}<button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take defense</button>{{/unless}}
+            <button type="button" class="ship-control-take" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take defense</button>
             <button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>{{#if isGM}}Commit defense route{{else}}Commit and release{{/if}}</button>
           </div>
         </form>
