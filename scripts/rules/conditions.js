@@ -169,6 +169,7 @@ function findPoolEntry(config, key) {
 
 function cloneDraftForConditions(draft) {
   const conditions = Object.fromEntries(Object.entries(draft?.conditions ?? {}).map(([key, value]) => [key, { ...value }]));
+  const work = Object.fromEntries(Object.entries(draft?.work ?? {}).map(([key, value]) => [key, { ...value }]));
   const shields = draft?.shields ? {
     ...draft.shields,
     hp: { ...(draft.shields.hp ?? {}) },
@@ -178,11 +179,12 @@ function cloneDraftForConditions(draft) {
   const weapons = draft?.weapons && typeof draft.weapons === "object"
     ? Object.fromEntries(Object.entries(draft.weapons).map(([key, value]) => [key, value && typeof value === "object" ? { ...value } : value]))
     : draft?.weapons;
-  return { ...draft, conditions, shields, weapons };
+  return { ...draft, conditions, work, shields, weapons };
 }
 
 function commitConditionDraft(target, source) {
   target.conditions = source.conditions;
+  target.work = source.work;
   if (source.shields !== undefined) target.shields = source.shields;
   if (source.weapons !== undefined) target.weapons = source.weapons;
   if (source.hull !== undefined) target.hull = source.hull;
@@ -556,6 +558,75 @@ export function applyConditionTiers(config, draft, { conditionId, tiers = 1, sec
   const result = applyConditionTiersCore(config, working, { conditionId, tiers, sector, random, selector });
   commitConditionDraft(draft, working);
   return result;
+}
+
+/** Valid manifest-backed Fault and Hazard targets for GM condition administration. */
+export function listConditionTargets(config) {
+  return distinctEntries(allPoolEntries(config)).map((entry) => ({
+    id: conditionKey(entry),
+    kind: entry.kind,
+    channelId: entry.channelId,
+    componentId: entry.componentId,
+    sector: entry.sector,
+    region: entry.region,
+  }));
+}
+
+/** Set one exact condition tier without a repair roll or random critical selection. */
+export function setConditionSeverity(config, draft, { conditionId, severity }) {
+  const entry = resolveEntry(config, draft, conditionId);
+  if (!entry) {
+    throw new RuleViolation(
+      "UNKNOWN_CONDITION_TARGET",
+      "The condition target is not present in the ship's critical manifest.",
+      { conditionId },
+    );
+  }
+  const tiers = entry.kind === "hazard" ? HAZARD_SEVERITIES : FAULT_SEVERITIES;
+  const requested = severity === "healthy" || severity == null ? null : severity;
+  if (requested !== null && !tiers.includes(requested)) {
+    throw new RuleViolation(
+      "INVALID_CONDITION_SEVERITY",
+      `A ${entry.kind} condition requires one of: ${tiers.join(", ")}.`,
+      { conditionId, severity, allowed: tiers },
+    );
+  }
+
+  const working = cloneDraftForConditions(draft);
+  const canonicalKey = conditionKey(entry);
+  const sourceKey = Object.hasOwn(working.conditions, conditionId)
+    ? conditionId
+    : canonicalKey;
+  const existing = working.conditions[sourceKey] ?? working.conditions[canonicalKey] ?? null;
+  const before = existing?.severity ?? "healthy";
+
+  delete working.conditions[sourceKey];
+  if (sourceKey !== canonicalKey) delete working.conditions[canonicalKey];
+  if (requested !== null) {
+    const condition = instanceFor({ ...entry, config }, existing);
+    condition.severity = requested;
+    condition.clock = condition.kind === "hazard" ? 2 : null;
+    working.conditions[canonicalKey] = condition;
+    applyImmediateFaultConsequences(config, working, condition);
+  }
+
+  if (before !== (requested ?? "healthy")) {
+    delete working.work[`recovery:${sourceKey}`];
+    delete working.work[`recovery:${canonicalKey}`];
+    for (const [key, job] of Object.entries(working.work)) {
+      if (job?.targetId === sourceKey || job?.targetId === canonicalKey) {
+        delete working.work[key];
+      }
+    }
+  }
+  commitConditionDraft(draft, working);
+  return {
+    conditionId: canonicalKey,
+    kind: entry.kind,
+    before,
+    after: requested ?? "healthy",
+    removed: requested === null,
+  };
 }
 
 export function getFaultEffects(config, draft, { componentId = null, targetId = componentId, channel = null, conditionId = channel, sector = null } = {}) {

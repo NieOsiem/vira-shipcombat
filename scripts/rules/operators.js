@@ -623,7 +623,9 @@ export function seedOperatorResources(state, roster) {
 
 export function checkEligibility(config, draft, { operatorId, operation }) {
   const reasons = [];
+  const metadata = operationMetadata(operation);
   const isOutside = draft?.phase === "outsideCombat";
+  const bypassProcedure = metadata.bypassProcedure === true;
   // Outside combat a hull has no roster to draw from: the operator is whoever is at the console,
   // so an unmatched operatorId resolves to the ship's first profile instead of refusing.
   const freeAssignment = () => {
@@ -632,11 +634,24 @@ export function checkEligibility(config, draft, { operatorId, operation }) {
       ?? { id: operatorId ?? "crew", label: "Crew", type: "npc" };
     return { profile: fallback, assignment: { operatorId: fallback.id }, slot: "crew" };
   };
+  const authorityAssignment = () => {
+    const profile = operatorProfiles(config).find((candidate) =>
+      candidate?.id === operatorId
+    );
+    if (!profile) return null;
+    return {
+      profile,
+      assignment: { operatorId: profile.id },
+      slot: "command",
+    };
+  };
   let assigned;
   try {
     assigned = assignmentFor(config, draft, operatorId);
   } catch (error) {
-    if (isOutside) {
+    if (bypassProcedure) {
+      assigned = authorityAssignment();
+    } else if (isOutside) {
       assigned = freeAssignment();
     } else if (error instanceof RuleViolation) {
       return {
@@ -649,7 +664,13 @@ export function checkEligibility(config, draft, { operatorId, operation }) {
     }
   }
   if (!assigned) {
-    if (isOutside) {
+    if (bypassProcedure) {
+      assigned = authorityAssignment();
+      if (!assigned) {
+        reasons.push({ code: "UNKNOWN_OPERATOR", operatorId });
+        return { eligible: false, code: reasons[0].code, reasons };
+      }
+    } else if (isOutside) {
       assigned = freeAssignment();
     } else {
       reasons.push({ code: "OPERATOR_NOT_ASSIGNED", operatorId });
@@ -657,19 +678,20 @@ export function checkEligibility(config, draft, { operatorId, operation }) {
     }
   }
 
-  const metadata = operationMetadata(operation);
   const profile = assigned.profile;
-  if (assigned.assignment.incapacitated || profile.incapacitated) {
-    reasons.push({ code: "OPERATOR_INCAPACITATED" });
-  }
-  if (assigned.assignment.disconnected || profile.disconnected) {
-    reasons.push({ code: "OPERATOR_DISCONNECTED" });
-  }
-  if (assigned.slot === "command" && metadata.commandAllowed === false) {
-    reasons.push({ code: "COMMAND_NOT_ALLOWED" });
-  }
-  if (assigned.slot === "crew" && metadata.crewAllowed === false) {
-    reasons.push({ code: "CREW_NOT_ALLOWED" });
+  if (!bypassProcedure) {
+    if (assigned.assignment.incapacitated || profile.incapacitated) {
+      reasons.push({ code: "OPERATOR_INCAPACITATED" });
+    }
+    if (assigned.assignment.disconnected || profile.disconnected) {
+      reasons.push({ code: "OPERATOR_DISCONNECTED" });
+    }
+    if (assigned.slot === "command" && metadata.commandAllowed === false) {
+      reasons.push({ code: "COMMAND_NOT_ALLOWED" });
+    }
+    if (assigned.slot === "crew" && metadata.crewAllowed === false) {
+      reasons.push({ code: "CREW_NOT_ALLOWED" });
+    }
   }
 
   const ratings = profile.ratings ?? {};
@@ -753,8 +775,10 @@ export function checkEligibility(config, draft, { operatorId, operation }) {
     operator: profile,
     assignment: assigned.assignment,
     slot: assigned.slot,
-    resource: assigned.slot === "command" ? "action" : "order",
-    remaining: resourceRemaining(draft, assigned.slot, operatorId),
+    resource: bypassProcedure ? null : assigned.slot === "command" ? "action" : "order",
+    remaining: bypassProcedure
+      ? null
+      : resourceRemaining(draft, assigned.slot, operatorId),
     requirements: metadata,
   };
 }
@@ -768,6 +792,18 @@ export function spendOperationResource(
   draft,
   { operatorId, operation, cost = 1, free = false },
 ) {
+  const metadata = operationMetadata(operation);
+  if (metadata.bypassProcedure === true) {
+    return {
+      operatorId,
+      slot: null,
+      resource: null,
+      spent: 0,
+      remaining: null,
+      released: [],
+      bypassed: true,
+    };
+  }
   const eligibility = checkEligibility(config, draft, {
     operatorId,
     operation,
@@ -779,7 +815,7 @@ export function spendOperationResource(
       eligibility,
     );
   }
-  if (free || operationMetadata(operation).free === true || draft?.phase === "outsideCombat") {
+  if (free || metadata.free === true || draft?.phase === "outsideCombat") {
     return {
       operatorId,
       slot: eligibility.slot,
@@ -848,6 +884,18 @@ function assertModuleControl(control) {
 
 export function takeControl(config, draft, { operatorId, control, operation }) {
   assertModuleControl(control);
+  if (operationMetadata(operation).bypassProcedure === true) {
+    return {
+      operatorId,
+      control,
+      slot: null,
+      resource: null,
+      spent: 0,
+      remaining: null,
+      released: [],
+      bypassed: true,
+    };
+  }
   const eligibility = checkEligibility(config, draft, {
     operatorId,
     operation,
@@ -965,10 +1013,11 @@ export function contributeWork(
       { jobId, required },
     );
   }
+  const bypassProcedure = operationMetadata(operation).bypassProcedure === true;
   const isOutside = draft?.phase === "outsideCombat";
   const cost = eligibility.slot === "command" && !isOutside ? COMMAND_ACTIONS : CREW_ORDERS;
   const remaining = eligibility.remaining;
-  if (!isOutside) {
+  if (!isOutside && !bypassProcedure) {
     if (
       !Number.isInteger(remaining) ||
       (eligibility.slot === "command"
@@ -989,8 +1038,8 @@ export function contributeWork(
 
   const current = Math.max(0, Number(existing?.current ?? 0));
   const next = Math.min(required, current + 1);
-  const released = releaseOperatorControls(draft, operatorId);
-  if (!isOutside) {
+  const released = bypassProcedure ? [] : releaseOperatorControls(draft, operatorId);
+  if (!isOutside && !bypassProcedure) {
     setResourceRemaining(draft, eligibility.slot, operatorId, remaining - cost);
   }
   draft.work ??= {};
@@ -1008,8 +1057,8 @@ export function contributeWork(
     required,
     complete: next >= required,
     discarded: current + 1 > required ? current + 1 - required : 0,
-    spent: cost,
-    resource: eligibility.resource,
+    spent: bypassProcedure ? 0 : cost,
+    resource: bypassProcedure ? null : eligibility.resource,
     released,
   };
 }

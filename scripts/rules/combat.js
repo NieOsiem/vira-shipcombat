@@ -866,6 +866,7 @@ function makePreview(context) {
     targetState,
     declaration,
     helpers = {},
+    bypassProcedure = false,
   } = context;
   const violations = [];
   const targetId = declaration.targetUuid ?? declaration.targetId;
@@ -931,7 +932,7 @@ function makePreview(context) {
       ),
     );
   }
-  if (!assigned.pool) {
+  if (!bypassProcedure && !assigned.pool) {
     violations.push(
       violation(
         "OPERATOR_NOT_ASSIGNED",
@@ -939,7 +940,7 @@ function makePreview(context) {
       ),
     );
   }
-  if (assigned.pool && assigned.remaining < 1) {
+  if (!bypassProcedure && assigned.pool && assigned.remaining < 1) {
     violations.push(
       violation(
         "INSUFFICIENT_OPERATION_RESOURCE",
@@ -1309,10 +1310,10 @@ function makePreview(context) {
   const costs = {
     operation: {
       operatorId,
-      pool: assigned.pool,
-      amount: 1,
-      before: assigned.remaining,
-      after: assigned.remaining - 1,
+      pool: bypassProcedure ? null : assigned.pool,
+      amount: bypassProcedure ? 0 : 1,
+      before: bypassProcedure ? null : assigned.remaining,
+      after: bypassProcedure ? null : assigned.remaining - 1,
     },
     readiness: {
       weaponId: weapon.id,
@@ -1454,6 +1455,7 @@ export function commitAttack(context) {
     declaration,
     helpers = {},
     rollD20,
+    bypassProcedure = false,
   } = context;
   if (typeof rollD20 !== "function") {
     throw new RuleViolation(
@@ -1468,6 +1470,7 @@ export function commitAttack(context) {
     targetState: targetDraft,
     declaration,
     helpers,
+    bypassProcedure,
   });
   if (!preview.legal) {
     throw new RuleViolation(
@@ -1503,9 +1506,17 @@ export function commitAttack(context) {
     const operationSpend = typeof helpers.spendOperationResource === "function"
       ? helpers.spendOperationResource(attackerConfig, attackerDraft, {
         operatorId: commitment.operatorId,
-        operation: "attack",
+        operation: { id: "attack", bypassProcedure },
         cost: 1,
       })
+      : bypassProcedure
+      ? {
+        operatorId: commitment.operatorId,
+        resource: null,
+        spent: 0,
+        remaining: null,
+        released: [],
+      }
       : localSpend(
         attackerDraft,
         commitment.operatorId,

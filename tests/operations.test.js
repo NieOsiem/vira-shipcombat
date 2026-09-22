@@ -5,7 +5,10 @@ import {
   createDefaultShipData,
   createInitialState,
 } from "../scripts/model/defaults.js";
-import { SEVERITY_RANK } from "../scripts/rules/conditions.js";
+import {
+  listConditionTargets,
+  SEVERITY_RANK,
+} from "../scripts/rules/conditions.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 import {
   assignedUserIds,
@@ -305,32 +308,42 @@ describe("dispatcher rejection and authority", () => {
     expect(json(foreign)).toBe(before);
   });
 
-  test("an explicit GM override permits an unassigned operator but no implicit override does", () => {
+  test("active GM authority bypasses operator assignment and resource spending automatically", () => {
     const source = ship(SOURCE);
-    source.state.phase = "active";
-    source.state.resources.actions[PILOT] = 1;
-    assignedUser(source, PILOT, "owner-user");
+    source.state.phase = "start";
+    source.state.resources.actions[PILOT] = 0;
     const authority = context([[SOURCE, source]], {
       isGM: true,
       userId: "different-user",
     });
 
-    expect(
-      errorCode(() =>
-        executeShipOperation(
-          request("spendResource", SOURCE, [], { operatorId: PILOT }),
-          authority,
-        )
-      ),
-    ).toBe("OPERATOR_PERMISSION_DENIED");
     const result = executeShipOperation(
-      request("spendResource", SOURCE, [], {
-        operatorId: PILOT,
-        gmOverride: true,
-      }),
+      request("spendResource", SOURCE, [], { operatorId: PILOT }),
       authority,
     );
     expect(result.shipStates[SOURCE].resources.actions[PILOT]).toBe(0);
+    expect(result.gmEvents[0].detail).toMatchObject({
+      spent: 0,
+      resource: null,
+      bypassed: true,
+    });
+
+    source.state.phase = "active";
+    const player = context([[SOURCE, source]], {
+      isGM: false,
+      userId: "different-user",
+    });
+    expect(
+      errorCode(() =>
+        executeShipOperation(
+          request("spendResource", SOURCE, [], {
+            operatorId: PILOT,
+            gmOverride: true,
+          }),
+          player,
+        )
+      ),
+    ).toBe("OPERATOR_PERMISSION_DENIED");
   });
 });
 
@@ -896,6 +909,159 @@ describe("authority invariants", () => {
     expect(json(authority)).toBe(before);
     expect(source.state.controls.helm).toEqual({ operatorId: PILOT });
   });
+  test("GM attacks bypass procedure but retain targeting and weapon mechanics", () => {
+    const source = ship(SOURCE);
+    const target = ship(TARGET_A);
+    source.state.phase = "end";
+    target.token.y = -20;
+    const weaponId = CANADENSIS_IDS.railgun;
+    source.state.weapons[weaponId].readiness = 1;
+    source.state.resources.actions[GUNNER] = 0;
+    const payload = { operatorId: GUNNER, weaponId, barrageRounds: 1 };
+
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("attack", SOURCE, [TARGET_A], payload),
+        context([[SOURCE, source], [TARGET_A, target]]),
+      )
+    )).toBe("ILLEGAL_ATTACK_DECLARATION");
+
+    source.state.tracks[trackKey(TARGET_A)] = {
+      targetUuid: TARGET_A,
+      state: "targeted",
+      passiveContact: true,
+      firingSolution: false,
+      effectiveAc: target.config.ac,
+      remembered: {},
+      jams: [],
+    };
+    const result = executeShipOperation(
+      request("attack", SOURCE, [TARGET_A], payload),
+      context([[SOURCE, source], [TARGET_A, target]]),
+    );
+
+    expect(result.shipStates[SOURCE].resources.actions[GUNNER]).toBe(0);
+    expect(result.shipStates[SOURCE].weapons[weaponId].readiness).toBe(0);
+    expect(result.shipStates[SOURCE].heat).toBeGreaterThan(source.state.heat);
+  });
+
+  test("GM repairs bypass assignment, phase, resources, and the command attempt limit", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "end";
+    source.state.repairAttemptUsed = true;
+    source.state.resources.orders[DAMAGE_CONTROL] = 0;
+    source.state.conditions.sensor = {
+      kind: "fault",
+      conditionId: "sensorFault",
+      componentId: source.config.components.sensor.id,
+      severity: "major",
+    };
+
+    const result = executeShipOperation(
+      request("repair", SOURCE, [], {
+        operatorId: DAMAGE_CONTROL,
+        conditionId: "sensor",
+      }),
+      context([[SOURCE, source]], { rollD20: () => 10 }),
+    );
+
+    expect(result.shipStates[SOURCE].conditions.sensor.severity).toBe("minor");
+    expect(result.shipStates[SOURCE].resources.orders[DAMAGE_CONTROL]).toBe(0);
+    expect(result.shipStates[SOURCE].repairAttemptUsed).toBe(true);
+    expect(result.publicEvents[0].detail).toMatchObject({
+      spent: 0,
+      resource: null,
+    });
+  });
+
+  test("GM repair authority does not create missing physical repair capability", () => {
+    const source = ship(SOURCE);
+    source.state.phase = "end";
+    source.config.capabilityProfile.physicalRepair = false;
+    const operator = source.config.operators.find((entry) =>
+      entry.id === DAMAGE_CONTROL
+    );
+    operator.type = "ai";
+    operator.capabilities = [];
+    source.state.conditions.sensor = {
+      kind: "fault",
+      conditionId: "sensorFault",
+      componentId: source.config.components.sensor.id,
+      severity: "minor",
+    };
+
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("repair", SOURCE, [], {
+          operatorId: DAMAGE_CONTROL,
+          conditionId: "sensor",
+        }),
+        context([[SOURCE, source]]),
+      )
+    )).toBe("PHYSICAL_REPAIR_UNAVAILABLE");
+  });
+
+  test("GM condition administration accepts only manifest targets and exact tiers", () => {
+    const source = ship(SOURCE);
+    const target = listConditionTargets(source.config)[0];
+    expect(target).toBeDefined();
+
+    const added = executeShipOperation(
+      request("setCondition", SOURCE, [], {
+        conditionId: target.id,
+        severity: "minor",
+      }),
+      context([[SOURCE, source]]),
+    );
+    expect(added.shipStates[SOURCE].conditions[target.id]).toMatchObject({
+      kind: target.kind,
+      severity: "minor",
+    });
+
+    const withCondition = {
+      ...source,
+      state: added.shipStates[SOURCE],
+    };
+    const removed = executeShipOperation(
+      request(
+        "setCondition",
+        SOURCE,
+        [],
+        { conditionId: target.id, severity: "healthy" },
+      ),
+      context([[SOURCE, withCondition]]),
+    );
+    expect(removed.shipStates[SOURCE].conditions[target.id]).toBeUndefined();
+
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("setCondition", SOURCE, [], {
+          conditionId: "not-in-the-manifest",
+          severity: "minor",
+        }),
+        context([[SOURCE, source]]),
+      )
+    )).toBe("UNKNOWN_CONDITION_TARGET");
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("setCondition", SOURCE, [], {
+          conditionId: target.id,
+          severity: "impossible",
+        }),
+        context([[SOURCE, source]]),
+      )
+    )).toBe("INVALID_CONDITION_SEVERITY");
+    expect(errorCode(() =>
+      executeShipOperation(
+        request("setCondition", SOURCE, [], {
+          conditionId: target.id,
+          severity: "minor",
+        }),
+        context([[SOURCE, source]], { isGM: false, userId: "player" }),
+      )
+    )).toBe("GM_REQUIRED");
+  });
+
 });
 
 describe("ship destruction and fate", () => {

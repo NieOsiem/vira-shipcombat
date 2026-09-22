@@ -10,6 +10,7 @@ import {
   applyConditionTiers,
   getFaultEffects,
   selectCondition,
+  setConditionSeverity,
 } from "./conditions.js";
 import { resolveShipFate } from "./damage.js";
 import {
@@ -105,6 +106,7 @@ export const OPERATION_TYPES = Object.freeze({
   HULL_REPAIR: "hullRepair",
   COOLING: "cooling",
   VENT: "vent",
+  SET_CONDITION: "setCondition",
   REPOSITION: "reposition",
   RESOLVE_FATE: "resolveFate",
   ADVANCE_TURN: "advanceTurn",
@@ -160,6 +162,7 @@ const TYPE_ALIASES = Object.freeze({
   "hull-repair": OPERATION_TYPES.HULL_REPAIR,
   activeCooling: OPERATION_TYPES.COOLING,
   emergencyVent: OPERATION_TYPES.VENT,
+  setCondition: OPERATION_TYPES.SET_CONDITION,
   "gm-reposition": OPERATION_TYPES.REPOSITION,
   fate: OPERATION_TYPES.RESOLVE_FATE,
   "resolve-fate": OPERATION_TYPES.RESOLVE_FATE,
@@ -174,6 +177,7 @@ const GM_TYPES = new Set([
   OPERATION_TYPES.LEAVE_COMBAT,
   OPERATION_TYPES.SET_ROSTER,
   OPERATION_TYPES.REFRESH_RESOURCES,
+  OPERATION_TYPES.SET_CONDITION,
   OPERATION_TYPES.REPOSITION,
   OPERATION_TYPES.RESOLVE_FATE,
 ]);
@@ -429,8 +433,7 @@ function assignmentId(entry) {
 function operatorFor(ship, operation, context) {
   const operatorId = operation.payload.operatorId;
   const isOutside = OUTSIDE_COMBAT_ALLOWED_TYPES.has(operation.type) && ship.state?.phase === "outsideCombat";
-  const override = (context?.isGM === true &&
-    operation.payload.gmOverride === true) || isOutside;
+  const override = context?.isGM === true || isOutside;
   if (typeof operatorId !== "string" || !operatorId) {
     if (override) return null;
     violation(
@@ -827,8 +830,8 @@ function assertShipCanAct(state) {
   }
 }
 
-function requireControl(source, control, operatorId) {
-  if (source.state?.phase === "outsideCombat") return;
+function requireControl(source, control, operatorId, context) {
+  if (context?.isGM === true || source.state?.phase === "outsideCombat") return;
   const holder = source.state?.controls?.[control];
   const holderId = typeof holder === "string" ? holder : holder?.operatorId;
   if (holderId !== operatorId) {
@@ -839,7 +842,8 @@ function requireControl(source, control, operatorId) {
     );
   }
 }
-function releaseControl(source, control, operatorId) {
+function releaseControl(source, control, operatorId, context) {
+  if (context?.isGM === true) return false;
   if (source.state?.phase === "outsideCombat") return true;
   const holder = source.state?.controls?.[control];
   const holderId = typeof holder === "string" ? holder : holder?.operatorId;
@@ -917,14 +921,17 @@ function refreshMovementDetection(drafts, moved, request, context, changed, even
   }
 }
 
-function operationMetadata(operation) {
-  return { id: operation.type };
+function operationMetadata(operation, context) {
+  return {
+    id: operation.type,
+    bypassProcedure: context?.isGM === true,
+  };
 }
 
-function spend(source, operation) {
+function spend(source, operation, context) {
   return spendOperationResource(source.config, source.state, {
     operatorId: operation.payload.operatorId,
-    operation: operationMetadata(operation),
+    operation: operationMetadata(operation, context),
     cost: 1,
     free: false,
   });
@@ -1104,7 +1111,7 @@ export function executeShipOperation(operation, context) {
   }
   if (ACTIVE_TYPES.has(request.type)) {
     const allowedOutside = OUTSIDE_COMBAT_ALLOWED_TYPES.has(request.type) && source.state.phase === "outsideCombat";
-    if (!allowedOutside) {
+    if (!allowedOutside && context?.isGM !== true) {
       assertActivePhase(source.state);
     }
     assertShipCanAct(source.state);
@@ -1195,13 +1202,13 @@ export function executeShipOperation(operation, context) {
       });
       break;
     case OPERATION_TYPES.SPEND_RESOURCE:
-      result = spend(source, request);
+      result = spend(source, request, context);
       break;
     case OPERATION_TYPES.TAKE_CONTROL:
       result = takeControl(source.config, source.state, {
         operatorId: request.payload.operatorId,
         control: request.payload.control,
-        operation: operationMetadata(request),
+        operation: operationMetadata(request, context),
       });
       break;
     case OPERATION_TYPES.RELEASE_CONTROL: {
@@ -1220,7 +1227,7 @@ export function executeShipOperation(operation, context) {
       if (
         holderId &&
         holderId !== request.payload.operatorId &&
-        !request.payload.gmOverride
+        context?.isGM !== true
       ) {
         violation(
           "CONTROL_HELD_BY_OTHER",
@@ -1237,14 +1244,14 @@ export function executeShipOperation(operation, context) {
       result = contributeWork(source.config, source.state, {
         ...request.payload,
         operatorId: request.payload.operatorId,
-        operation: operationMetadata(request),
+        operation: operationMetadata(request, context),
       });
       break;
     case OPERATION_TYPES.MANEUVER: {
       if (source.token?.x == null) {
         violation("TOKEN_REQUIRED", "Maneuver requires a placed token on the canvas.");
       }
-      requireControl(source, "helm", request.payload.operatorId);
+      requireControl(source, "helm", request.payload.operatorId, context);
       result = applyManeuver(
         source.state,
         movementInput(source, drafts, request, context),
@@ -1264,7 +1271,7 @@ export function executeShipOperation(operation, context) {
       if (source.token?.x == null) {
         violation("TOKEN_REQUIRED", "Rotation requires a placed token on the canvas.");
       }
-      requireControl(source, "helm", request.payload.operatorId);
+      requireControl(source, "helm", request.payload.operatorId, context);
       result = applyRotation(
         source.state,
         movementInput(source, drafts, request, context),
@@ -1280,11 +1287,11 @@ export function executeShipOperation(operation, context) {
       break;
     }
     case OPERATION_TYPES.ARM_EVASION: {
-      requireControl(source, "helm", request.payload.operatorId);
+      requireControl(source, "helm", request.payload.operatorId, context);
       const capabilities = driveCapabilities(source);
       const reserve = Number(source.config?.evasionReserve ?? 0);
       result = armEvasion(source.state, {
-        phase: source.state.phase,
+        phase: context?.isGM === true ? "active" : source.state.phase,
         hasHelm: true,
         enginesPower: Number(source.state?.power?.engines ?? 0),
         hardwareOperational:
@@ -1301,11 +1308,11 @@ export function executeShipOperation(operation, context) {
       break;
     }
     case OPERATION_TYPES.DISARM_EVASION:
-      requireControl(source, "helm", request.payload.operatorId);
+      requireControl(source, "helm", request.payload.operatorId, context);
       result = disarmEvasion(source.state);
       break;
     case OPERATION_TYPES.ROUTE_POWER: {
-      requireControl(source, "power", request.payload.operatorId);
+      requireControl(source, "power", request.payload.operatorId, context);
       const route = commitPowerRoute(
         source.config,
         source.state,
@@ -1318,6 +1325,7 @@ export function executeShipOperation(operation, context) {
           source,
           "power",
           request.payload.operatorId,
+          context,
         ),
       };
       break;
@@ -1325,7 +1333,7 @@ export function executeShipOperation(operation, context) {
     case OPERATION_TYPES.TOGGLE_WEAPON: {
       const eligibility = spendOperationResource(source.config, source.state, {
         operatorId: request.payload.operatorId,
-        operation: operationMetadata(request),
+        operation: operationMetadata(request, context),
         free: true,
       });
       result = {
@@ -1335,7 +1343,7 @@ export function executeShipOperation(operation, context) {
       break;
     }
     case OPERATION_TYPES.ROUTE_DEFENSE:
-      requireControl(source, "defense", request.payload.operatorId);
+      requireControl(source, "defense", request.payload.operatorId, context);
       result = {
         ...commitDefenseRoute(
           source.config,
@@ -1346,6 +1354,7 @@ export function executeShipOperation(operation, context) {
           source,
           "defense",
           request.payload.operatorId,
+          context,
         ),
       };
       break;
@@ -1362,7 +1371,7 @@ export function executeShipOperation(operation, context) {
         : Array.from(drafts.values()).filter((ship) =>
           ship.uuid !== source.uuid
         ).map((ship) => targetObservation(source, ship, request, context));
-      spend(source, request);
+      spend(source, request, context);
       result = activePing(source.state, {
         ...sensorInput(source, null, request, context, operator),
         d20: requireRoll(context),
@@ -1375,7 +1384,7 @@ export function executeShipOperation(operation, context) {
     case OPERATION_TYPES.DEEP_SCAN:
     case OPERATION_TYPES.FIRING_SOLUTION: {
       const target = requireSingleTarget(request, drafts);
-      spend(source, request);
+      spend(source, request, context);
       const input = sensorInput(source, target, request, context, operator);
       if (request.type === OPERATION_TYPES.ACQUIRE) {
         if (request.payload.dc != null) input.d20 = requireRoll(context);
@@ -1404,7 +1413,7 @@ export function executeShipOperation(operation, context) {
       break;
     }
     case OPERATION_TYPES.FADE: {
-      spend(source, request);
+      spend(source, request, context);
       const observers = Array.from(drafts.values()).filter((ship) =>
         ship.uuid !== source.uuid
       ).map((observer) => ({
@@ -1431,7 +1440,7 @@ export function executeShipOperation(operation, context) {
     case OPERATION_TYPES.BREAK_LOCK:
     case OPERATION_TYPES.BURN_THROUGH: {
       const target = requireSingleTarget(request, drafts);
-      spend(source, request);
+      spend(source, request, context);
       const input = {
         ...sensorInput(source, target, request, context, operator),
         targetUuid: target.uuid,
@@ -1486,6 +1495,7 @@ export function executeShipOperation(operation, context) {
         targetConfig: target.config,
         targetDraft: target.state,
         declaration,
+        bypassProcedure: context?.isGM === true,
         rollD20: () => requireRoll(context),
         random: randomSource(context),
         helpers: {
@@ -1519,7 +1529,7 @@ export function executeShipOperation(operation, context) {
         jobId: `reload:${weaponId}`,
         required: reload.required,
         operation: {
-          ...operationMetadata(request),
+          ...operationMetadata(request, context),
           allowWork: true,
           requiresPhysicalTask: true,
         },
@@ -1541,13 +1551,13 @@ export function executeShipOperation(operation, context) {
         ...request.payload,
         total: undefined,
         roll: requireRoll(context),
-        operation: operationMetadata(request),
+        operation: operationMetadata(request, context),
       });
       break;
     case OPERATION_TYPES.RECOVERY_WORK:
       result = contributeRecoveryWork(source.config, source.state, {
         ...request.payload,
-        operation: operationMetadata(request),
+        operation: operationMetadata(request, context),
       });
       break;
     case OPERATION_TYPES.HULL_REPAIR:
@@ -1555,19 +1565,25 @@ export function executeShipOperation(operation, context) {
         ...request.payload,
         total: undefined,
         roll: requireRoll(context),
-        operation: operationMetadata(request),
+        operation: operationMetadata(request, context),
       });
       break;
     case OPERATION_TYPES.COOLING:
       result = activeCooling(source.config, source.state, {
         ...request.payload,
-        operation: operationMetadata(request),
+        operation: operationMetadata(request, context),
       });
       break;
     case OPERATION_TYPES.VENT:
       result = emergencyVent(source.config, source.state, {
         ...request.payload,
-        operation: operationMetadata(request),
+        operation: operationMetadata(request, context),
+      });
+      break;
+    case OPERATION_TYPES.SET_CONDITION:
+      result = setConditionSeverity(source.config, source.state, {
+        conditionId: request.payload.conditionId,
+        severity: request.payload.severity,
       });
       break;
     case OPERATION_TYPES.REPOSITION: {

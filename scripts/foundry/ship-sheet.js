@@ -224,11 +224,10 @@ function rosterPayload(data, config, state) {
 function uiOperation(type, data, config, state) {
   const operatorId = data.operatorId || undefined;
   const payload = operatorId ? { operatorId } : {};
-  if (game.user.isGM) payload.gmOverride = true;
   switch (type) {
     case "setRoster":
       return {
-        payload: { gmOverride: true, roster: rosterPayload(data, config, state) },
+        payload: { roster: rosterPayload(data, config, state) },
         targetUuids: [],
       };
     case "advanceTurn":
@@ -392,6 +391,14 @@ function uiOperation(type, data, config, state) {
           ...payload,
           jobId: data.jobId,
           required: numeric(data.required, 1),
+        },
+        targetUuids: [],
+      };
+    case "setCondition":
+      return {
+        payload: {
+          conditionId: data.conditionId,
+          severity: data.severity,
         },
         targetUuids: [],
       };
@@ -1222,16 +1229,22 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const canInspect = isGM || actor.testUserPermission(game.user, observer);
     const assigned = assignedUserIds(config, state).has(game.user.id);
     const isOutsideCombat = state.phase === "outsideCombat";
-    const canOperate = isOutsideCombat ? canInspect : Boolean(token && (isGM || (canInspect && assigned)));
+    const canOperate = isGM
+      ? canInspect
+      : isOutsideCombat
+      ? canInspect
+      : Boolean(token && canInspect && assigned);
     const unavailableReason = !canInspect
       ? "Observer permission is required."
-      : !isOutsideCombat && !token
+      : !isGM && !isOutsideCombat && !token
       ? sourceUnavailableReason(actor)
       : !isOutsideCombat && !isGM && !assigned
       ? "No ship operator is assigned to your user."
       : "";
     const actReason = canOperate
-      ? (isOutsideCombat || state.phase === "active") ? "" : "Active Phase required."
+      ? (isGM || isOutsideCombat || state.phase === "active")
+        ? ""
+        : "Active Phase required."
       : unavailableReason || "Operational access required.";
     const rosterConflicts = rosterIdentityConflicts(config, state?.roster)
       .map((conflict) => ({
@@ -1279,6 +1292,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       targetLabels,
       operatorUserId: isGM ? null : game.user.id,
       radarScale: radarScales.get(actor.uuid) ?? null,
+      gmAuthority: isGM,
     });
     this.#aimedComponents = new Map(view.targetedContacts.map((contact) => [
       contact.targetUuid,
@@ -1287,7 +1301,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#view = view;
     this.#config = config;
     const tabIds = [...TABS, ...MAINTENANCE_TABS].map((tab) => tab.id);
-    this.#canAct = Boolean(canOperate && (isOutsideCombat || state.phase === "active"));
+    this.#canAct = Boolean(canOperate && (isGM || isOutsideCombat || state.phase === "active"));
     const preferredTab = selectedTabs.get(actor.uuid);
     const activeTab = tabIds.includes(preferredTab) ? preferredTab : tabIds[0];
     const rawActions = Object.keys(GROUPS).flatMap((tab) =>
@@ -1364,8 +1378,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       refitHardpoints,
       refitUnreferencedItems,
       canAdmin: Boolean(isGM && canOperate),
-      canAct: Boolean(canOperate && (isOutsideCombat || state.phase === "active")),
-      canAttack: Boolean(canOperate && !isOutsideCombat && state.phase === "active"),
+      canAct: Boolean(canOperate && (isGM || isOutsideCombat || state.phase === "active")),
+      canAttack: Boolean(canOperate && token && (isGM || (!isOutsideCombat && state.phase === "active"))),
       activePhase: state.phase === "active",
       isOutsideCombat,
       advanceCooldownRemaining,
@@ -1833,6 +1847,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     });
     html.querySelectorAll("button[data-ui-operation]").forEach((button) => {
       this.#on(button, "click", (event) => this.#submitUi(event, button));
+    });
+    this.#on(html.querySelector("[data-add-condition]"), "click", (event) => {
+      event.preventDefault();
+      void this.#addCondition();
     });
     html.querySelectorAll("form[data-live-preview]").forEach((form) => {
       const refresh = () => void this.#previewUi(form);
@@ -4527,6 +4545,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           attackerState: state,
           targetConfig,
           targetState,
+          bypassProcedure: game.user.isGM,
           declaration: {
             ...operation.payload,
             targetUuid,
@@ -4646,6 +4665,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           attackerState: state,
           targetConfig,
           targetState,
+          bypassProcedure: game.user.isGM,
           declaration: {
             ...payload,
             targetUuid,
@@ -4667,6 +4687,56 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       if (!current()) return;
       output.textContent = `Preview unavailable: ${errorText(error)}`;
       output.dataset.error = "true";
+    }
+  }
+
+  async #addCondition() {
+    if (!game.user.isGM) return;
+    const choices = this.#view?.conditionTargets ?? [];
+    if (!choices.length) {
+      ui.notifications.info("Every configured condition target is already active.");
+      return;
+    }
+    const content = document.createElement("div");
+    const label = document.createElement("label");
+    label.textContent = "Condition and severity";
+    const select = document.createElement("select");
+    select.name = "condition";
+    for (const target of choices) {
+      for (const severity of target.severities) {
+        const option = document.createElement("option");
+        option.value = JSON.stringify({
+          conditionId: target.id,
+          severity: severity.id,
+        });
+        option.textContent = `${target.label} · ${severity.label}`;
+        select.append(option);
+      }
+    }
+    label.append(select);
+    content.append(label);
+    const selection = await foundry.applications.api.DialogV2.wait({
+      window: { title: "Add ship condition" },
+      content: content.outerHTML,
+      buttons: [
+        {
+          action: "add",
+          label: "Add condition",
+          default: true,
+          callback: (_event, _button, dialog) =>
+            dialog.element.querySelector("select[name='condition']").value,
+        },
+        { action: "cancel", label: "Cancel" },
+      ],
+      rejectClose: false,
+    });
+    if (!selection || selection === "cancel") return;
+    try {
+      const payload = JSON.parse(selection);
+      const revision = Number(this.actor.system.shipCombat.state.revision ?? 0);
+      await this.#commitOperation("setCondition", payload, [], revision);
+    } catch (error) {
+      ui.notifications.error(errorText(error));
     }
   }
 

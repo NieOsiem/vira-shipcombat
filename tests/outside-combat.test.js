@@ -249,12 +249,19 @@ describe("operations outside combat", () => {
     expect(rotateResult.shipStates[SOURCE_TOKEN].facing).toBe(45);
   });
 
-  test("in-combat operations like attack fail outside combat", () => {
+  test("players cannot attack outside combat", () => {
     const testShip = createTestShip(SOURCE_TOKEN);
-    const ctx = createContext({ [SOURCE_TOKEN]: testShip });
+    testShip.state.roster.command = [{
+      operatorId: "canadensis-gunner-sensor",
+      slot: 0,
+      userId: "player-user",
+    }];
+    const ctx = createContext(
+      { [SOURCE_TOKEN]: testShip },
+      { isGM: false, userId: "player-user" },
+    );
 
     const attackReq = createRequest("attack", SOURCE_TOKEN, {
-      gmOverride: true,
       operatorId: "canadensis-gunner-sensor",
       weaponId: testShip.config.components.weapons[0].id,
     });

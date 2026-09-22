@@ -8,6 +8,7 @@ import {
   FAULT_CHANNELS,
   getFaultEffects,
   HAZARD_CHANNELS,
+  listConditionTargets,
   SEVERITY_RANK,
 } from "../rules/conditions.js";
 import {
@@ -241,6 +242,40 @@ function operatorViews(config, state) {
   }).sort((left, right) =>
     left.kind.localeCompare(right.kind) || left.slot - right.slot
   );
+}
+
+function authorityOperatorViews(config, state) {
+  const assigned = new Map(
+    operatorViews(config, state).map((operator) => [operator.id, operator]),
+  );
+  return (config?.operators ?? []).map((profile, slot) => {
+    const existing = assigned.get(profile.id);
+    return {
+      ...(existing ?? {
+        id: profile.id,
+        label: profile.label ?? profile.id,
+        slot,
+        img: profile.img ?? null,
+        actorId: profile.actorId ?? null,
+        type: profile.type ?? "npc",
+        typeLabel: (profile.type ?? "npc").toUpperCase(),
+        ratings: {
+          piloting: whole(profile?.ratings?.piloting),
+          gunnery: whole(profile?.ratings?.gunnery),
+          sensors: whole(profile?.ratings?.sensors),
+          engineering: whole(profile?.ratings?.engineering),
+        },
+        heldControls: [],
+        controlsLabel: "None",
+      }),
+      kind: "authority",
+      kindLabel: "GM",
+      resource: "",
+      remaining: null,
+      inactive: false,
+      userId: null,
+    };
+  });
 }
 
 function bestOperator(operators, rating, preferred) {
@@ -1009,6 +1044,10 @@ function conditionViews(config, state) {
     const work = state?.work?.[`recovery:${key}`];
     const severity = condition?.severity ?? "unknown";
     const workRequired = recoveryWorkRequirement(componentById, componentId, condition);
+    const tiers = kind === "hazard"
+      ? ["minor", "major", "critical", "catastrophic"]
+      : ["minor", "major", "critical", "destroyed"];
+    const tierIndex = tiers.indexOf(severity);
     return {
       id: key,
       label,
@@ -1033,12 +1072,59 @@ function conditionViews(config, state) {
         ? SEVERITY_RANK[severity]
         : SEVERITY_RANK.unknown,
       severityLabel: severity.charAt(0).toUpperCase() + severity.slice(1),
+      lowerSeverity: tierIndex <= 0 ? "healthy" : tiers[tierIndex - 1],
+      higherSeverity: tierIndex >= 0 && tierIndex < tiers.length - 1
+        ? tiers[tierIndex + 1]
+        : null,
+      canRaise: tierIndex >= 0 && tierIndex < tiers.length - 1,
       isFault: kind === "fault",
     };
   }).sort((left, right) =>
     right.severityRank - left.severityRank ||
     left.label.localeCompare(right.label)
   );
+}
+
+function conditionTargetViews(config, state) {
+  const active = new Set(Object.keys(state?.conditions ?? {}));
+  const components = config?.components ?? {};
+  const componentById = new Map(
+    [
+      components.reactor,
+      components.shield,
+      components.sensor,
+      components.cooling,
+      ...Object.values(components.drives ?? {}),
+      ...(components.weapons ?? []),
+    ].filter((component) => component?.id).map((component) => [
+      component.id,
+      component,
+    ]),
+  );
+  return listConditionTargets(config)
+    .filter((target) => !active.has(target.id))
+    .map((target) => {
+      const location = target.kind === "hazard"
+        ? SECTOR_LABELS[target.region] ?? target.region ?? "Ship"
+        : componentById.get(target.componentId)?.label ??
+          (target.sector
+            ? `${components.shield?.label ?? "Shields"} · ${
+              SECTOR_LABELS[target.sector] ?? target.sector
+            } emitter`
+            : target.componentId);
+      return {
+        ...target,
+        label: `${CONDITION_LABELS.get(target.channelId) ?? target.channelId} · ${location}`,
+        severities: (target.kind === "hazard"
+          ? ["minor", "major", "critical", "catastrophic"]
+          : ["minor", "major", "critical", "destroyed"])
+          .map((id) => ({
+            id,
+            label: id.charAt(0).toUpperCase() + id.slice(1),
+          })),
+      };
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
 }
 
 /**
@@ -1296,22 +1382,37 @@ function contactViews(state, token, sensorStats, labels = {}, requestedScale = n
 export function buildShipConsoleView(
   config,
   state,
-  { token = null, targetLabels = {}, operatorUserId = null, radarScale = null } = {},
+  {
+    token = null,
+    targetLabels = {},
+    operatorUserId = null,
+    radarScale = null,
+    gmAuthority = false,
+  } = {},
 ) {
   const power = powerView(config, state);
   const shields = shieldView(config, state);
   const sensor = getSensorStats(config, state);
   const signature = getCurrentSignature(config, state);
-  const allOperators = operatorViews(config, state);
+  const assignedOperators = operatorViews(config, state);
+  const allOperators = gmAuthority
+    ? authorityOperatorViews(config, state)
+    : assignedOperators;
   const operators = allOperators
     .filter((operator) =>
-      operatorUserId == null || operator.userId === operatorUserId
+      gmAuthority || operatorUserId == null || operator.userId === operatorUserId
     );
-  const commandOperators = operators.filter((op) => op.kind === "command");
-  const crewOperators = operators.filter((op) => op.kind === "crew");
-  const commandPool = commandOperators.length > 0 ? commandOperators : operators;
+  const commandOperators = gmAuthority
+    ? operators
+    : operators.filter((op) => op.kind === "command");
+  const crewOperators = gmAuthority
+    ? operators
+    : operators.filter((op) => op.kind === "crew");
+  const commandPool = gmAuthority
+    ? operators
+    : commandOperators.length > 0 ? commandOperators : operators;
   const viewerUserId = operatorUserId ?? globalThis.game?.user?.id ?? null;
-  const stationSlotsView = stationSlots(config, state, allOperators, viewerUserId);
+  const stationSlotsView = stationSlots(config, state, assignedOperators, viewerUserId);
   const controls = state?.controls ?? {};
   // Control is exclusive but not station-bound: a Crew operator may hold Helm, Power, or Defense.
   // The selector that has to commit a held control must therefore still offer its holder, even
@@ -1333,12 +1434,13 @@ export function buildShipConsoleView(
     engineering: bestOperator(operators, "engineering"),
   };
   const helmHolder = holderId(controls.helm);
-  const helmHolderProfile = allOperators.find((op) => op.id === helmHolder);
-  const helmHeld = Boolean(helmHolder);
+  const helmHolderProfile = assignedOperators.find((op) => op.id === helmHolder);
+  const helmHeld = gmAuthority || Boolean(helmHolder);
 
   const radar = contactViews(state, token, sensor, targetLabels, radarScale);
   const contacts = radar.contacts;
   const conditions = conditionViews(config, state);
+  const conditionTargets = conditionTargetViews(config, state);
   const combat = globalThis.game?.combat;
   const combatants = Array.isArray(combat?.combatants)
     ? combat.combatants
@@ -1400,16 +1502,18 @@ export function buildShipConsoleView(
   // The pool the board reports is ship-wide: a viewer-filtered subset would show
   // a player a different Orders total than the GM reads on the same ship.
   const isOutside = state?.phase === "outsideCombat";
-  const shipWideOrders = allOperators
+  const shipWideOrders = assignedOperators
     .filter((op) => op.kind === "crew")
     .reduce((sum, op) => sum + (op.remaining ?? 0), 0);
   const bestCrewOperator = bestOperator(crewOperators, "engineering") || bestOperator(operators, "engineering");
-  const actingOperator = allOperators.find((op) => op.id === bestCrewOperator) ?? null;
+  const actingOperator = operators.find((op) => op.id === bestCrewOperator) ?? null;
   const defaultOperatorLabel = actingOperator?.label ?? (isOutside ? "Outside Combat" : "");
   const defaultOperatorId = bestCrewOperator || (isOutside ? "outside-combat" : "");
-  const baseOrderCost = isOutside ? "Free" : "1 Order";
+  const baseOrderCost = gmAuthority ? "GM authority" : isOutside ? "Free" : "1 Order";
   // A Command operator spends all 3 Actions on Recovery Work; every other job costs its 1 Order.
-  const recoveryCostLabel = isOutside
+  const recoveryCostLabel = gmAuthority
+    ? "GM authority"
+    : isOutside
     ? "Free"
     : actingOperator?.kind === "command"
     ? "3 Actions"
@@ -1539,6 +1643,7 @@ export function buildShipConsoleView(
       turnLabel: turnLabel(state?.turnKey),
       revision: whole(state?.revision),
     },
+    gmAuthority,
     operators,
     commandOperators,
     crewOperators,
@@ -1547,7 +1652,9 @@ export function buildShipConsoleView(
     defaults,
     helmHeld,
     helmHolder,
-    helmHolderLabel: helmHolderProfile?.label ?? helmHolder ?? "None",
+    helmHolderLabel: gmAuthority
+      ? "GM authority"
+      : helmHolderProfile?.label ?? helmHolder ?? "None",
     roster: rosterSlots(config, state),
     power,
     shields,
@@ -1558,6 +1665,7 @@ export function buildShipConsoleView(
     targetedContacts: contacts.filter((contact) => contact.targeted),
     weapons: weaponsList,
     conditions,
+    conditionTargets,
     hasConditions: conditions.length > 0,
     work: Object.values(state?.work ?? {}),
     movement: {

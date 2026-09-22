@@ -2,7 +2,7 @@
   <header class="ship-console-header">
     <div class="ship-console-portrait"><img src="{{actor.img}}" alt=""></div>
     <div class="ship-console-heading">
-      <div class="ship-console-title-row"><h1>{{actor.name}}</h1><span class="ship-phase{{#unless view.combat.inCombat}} ship-phase--outsideCombat{{/unless}}" data-phase-chip title="{{view.status.phaseLabel}}{{#if view.status.turnLabel}} · {{view.status.turnLabel}}{{/if}}">{{view.combat.label}}</span></div>
+      <div class="ship-console-title-row"><h1>{{actor.name}}</h1><span class="ship-phase{{#unless view.combat.inCombat}} ship-phase--outsideCombat{{/unless}}" data-phase-chip title="{{view.status.phaseLabel}}{{#if view.status.turnLabel}} · {{view.status.turnLabel}}{{/if}}">{{view.combat.label}}</span>{{#if isGM}}<span class="ship-readout" title="Active-GM operations bypass crew procedure, resources, held controls, and phase timing. Mechanical limits still apply.">GM AUTHORITY</span>{{/if}}</div>
     </div>
     <section class="ship-status-strip" aria-label="Ship resources">
       <article class="ship-status-meter"><div><span>Hull</span><strong>{{view.status.hull.value}} / {{view.status.hull.maximum}}</strong></div><div class="ship-meter ship-meter--{{view.status.hull.tone}}" style="{{view.status.hull.style}}"><span></span></div></article>
@@ -260,18 +260,20 @@
       <div class="ship-panel-heading">
         <h2>Helm</h2>
         {{#if isGM}}
-          <label class="ship-page-operator">Pilot<select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+          <label class="ship-page-operator">Pilot<select name="operatorId" data-page-operator="helm" data-default="{{view.defaults.helm}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Pilot {{ratings.piloting}}</option>{{/each}}</select></label>
         {{else}}
           <span class="ship-page-operator">Pilot <span class="ship-helm-holder-name">{{view.helmHolderLabel}}</span></span>
         {{/if}}
-        <div class="ship-helm-actions-inline">
-          <span class="ship-readout" title="Helm Station Status">{{#if view.helmHeld}}ACTIVE{{else}}VACANT{{/if}}</span>
-          {{#if view.helmHeld}}
-            <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Release Helm</button>
-          {{else}}
-            <button type="button" class="ship-station-btn ship-station-btn--take ship-primary" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-hand" aria-hidden="true"></i> Take Helm</button>
-          {{/if}}
-        </div>
+        {{#unless isGM}}
+          <div class="ship-helm-actions-inline">
+            <span class="ship-readout" title="Helm Station Status">{{#if view.helmHeld}}ACTIVE{{else}}VACANT{{/if}}</span>
+            {{#if view.helmHeld}}
+              <button type="button" class="ship-station-btn ship-station-btn--release" data-ui-operation="releaseControl" data-control="helm" data-operator-id="{{view.helmHolder}}" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i> Release Helm</button>
+            {{else}}
+              <button type="button" class="ship-station-btn ship-station-btn--take ship-primary" data-ui-operation="takeControl" data-control="helm" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}><i class="fa-solid fa-hand" aria-hidden="true"></i> Take Helm</button>
+            {{/if}}
+          </div>
+        {{/unless}}
       </div>
 
       <form class="ship-helm-body" data-ui-operation="maneuver" data-live-preview="maneuver">
@@ -391,8 +393,8 @@
     <section id="panel-power-defense" class="ship-console-panel" role="tabpanel" aria-label="Power" data-tab-panel="power-defense" {{#unless tabState.power-defense.active}}hidden{{/unless}}>
       <div class="ship-panel-heading ship-panel-heading--power">
         <h2>Power</h2>
-        <label class="ship-page-operator">Engineer<select data-page-operator="power" data-default="{{view.defaults.power}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
-        <label class="ship-page-operator">Defense<select data-page-operator="defense" data-default="{{view.defaults.defense}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <label class="ship-page-operator">Engineer<select data-page-operator="power" data-default="{{view.defaults.power}}">{{#each view.operators}}<option value="{{id}}">{{label}}{{#if ../isGM}} · Engineering {{ratings.engineering}}{{else}} · {{remaining}} {{resource}}{{/if}}</option>{{/each}}</select></label>
+        <label class="ship-page-operator">Defense<select data-page-operator="defense" data-default="{{view.defaults.defense}}">{{#each view.operators}}<option value="{{id}}">{{label}}{{#if ../isGM}} · Engineering {{ratings.engineering}}{{else}} · {{remaining}} {{resource}}{{/if}}</option>{{/each}}</select></label>
         <span class="ship-readout {{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</span>
       </div>
       <div class="ship-systems-layout">
@@ -461,7 +463,7 @@
           </div>
           <div class="ship-power-footer">
             <details class="ship-power-priorities" data-sync="power-priorities"><summary>Automatic shedding priorities</summary><p class="ship-muted">First is protected longest; last sheds first.</p><div class="ship-form-grid">{{#each view.power.sheddingPriority}}<label>System {{label}}<select name="sheddingPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div><p class="ship-muted">Weapon priority uses the same highest-to-lowest order.</p><div class="ship-form-grid">{{#each view.power.weaponPriority}}<label>Weapon {{label}}<select name="weaponPriority-{{index}}">{{#each options}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>{{/each}}</div></details>
-            <div class="ship-action-row ship-power-actions"><button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take power</button><button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Commit and release</button></div>
+            <div class="ship-action-row ship-power-actions">{{#unless isGM}}<button type="button" data-ui-operation="takeControl" data-control="power" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take power</button>{{/unless}}<button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>{{#if isGM}}Commit power route{{else}}Commit and release{{/if}}</button></div>
           </div>
           <p class="ship-preview-line" data-preview aria-live="polite"></p>
         </form>
@@ -546,8 +548,8 @@
               <button type="button" data-distribute="allocation" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Balance charge</button>
               <button type="button" data-distribute="regen" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Balance regen</button>
             {{/if}}
-            <button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take defense</button>
-            <button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Commit and release</button>
+            {{#unless isGM}}<button type="button" data-ui-operation="takeControl" data-control="defense" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>Take defense</button>{{/unless}}
+            <button class="ship-primary" type="submit" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>{{#if isGM}}Commit defense route{{else}}Commit and release{{/if}}</button>
           </div>
         </form>
       {{/if}}
@@ -556,7 +558,7 @@
     <section id="panel-sensors" class="ship-console-panel ship-radar-panel" role="tabpanel" aria-label="Sensors" data-tab-panel="sensors" {{#unless tabState.sensors.active}}hidden{{/unless}}>
       <div class="ship-panel-heading">
         <h2>Sensors</h2>
-        <label class="ship-page-operator">Sensor operator<select name="operatorId" data-page-operator="sensors" data-default="{{view.defaults.sensors}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Sensors {{ratings.sensors}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <label class="ship-page-operator">Sensor operator<select name="operatorId" data-page-operator="sensors" data-default="{{view.defaults.sensors}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Sensors {{ratings.sensors}}{{#unless ../isGM}} · {{remaining}} {{resource}}{{/unless}}</option>{{/each}}</select></label>
         <span class="ship-readout" data-radar-status>{{#if view.radar.online}}ONLINE · {{view.radar.activeRange}} / {{view.radar.passiveRange}} DU · {{view.radar.liveCount}} CONTACTS{{else}}SENSORS OFFLINE{{/if}}</span>
       </div>
       <form class="ship-radar-stage" data-radar-stage data-sensor-form role="group" aria-label="Sensor radar. Selecting a contact focuses it independently of weapon targeting.">
@@ -601,7 +603,7 @@
     <section id="panel-weapons" class="ship-console-panel" role="tabpanel" aria-label="Weapons" data-tab-panel="weapons" {{#unless tabState.weapons.active}}hidden{{/unless}}>
       <div class="ship-panel-heading">
         <h2>Weapons</h2>
-        <label class="ship-page-operator">Gunner<select data-page-operator="weapons" data-default="{{view.defaults.gunnery}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Gunnery {{ratings.gunnery}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <label class="ship-page-operator">Gunner<select data-page-operator="weapons" data-default="{{view.defaults.gunnery}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Gunnery {{ratings.gunnery}}{{#unless ../isGM}} · {{remaining}} {{resource}}{{/unless}}</option>{{/each}}</select></label>
         <span class="ship-readout">{{view.power.weaponReserved}} / {{view.power.allocation.weapons}} POWER</span>
       </div>
       <div class="ship-weapon-layout">
@@ -651,7 +653,7 @@
     <section id="panel-damage" class="ship-console-panel" role="tabpanel" aria-label="Damage control" data-tab-panel="damage" {{#unless tabState.damage.active}}hidden{{/unless}}>
       <div class="ship-panel-heading">
         <h2>Damage Control</h2>
-        <label class="ship-page-operator">Engineer<select data-page-operator="damage" data-default="{{view.defaults.engineering}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Engineering {{ratings.engineering}} · {{remaining}} {{resource}}</option>{{else}}<option value="" disabled selected>Select an operator…</option>{{/each}}</select></label>
+        <label class="ship-page-operator">Engineer<select data-page-operator="damage" data-default="{{view.defaults.engineering}}">{{#each view.operators}}<option value="{{id}}">{{label}} · Engineering {{ratings.engineering}}{{#unless ../isGM}} · {{remaining}} {{resource}}{{/unless}}</option>{{else}}<option value="" disabled selected>Select an operator…</option>{{/each}}</select></label>
         <span class="ship-readout">{{view.status.hull.value}} / {{view.status.hull.maximum}} HULL</span>
       </div>
       <div class="ship-damage-layout">
@@ -659,8 +661,8 @@
           <header><h3>Thermal Management</h3><strong>{{view.status.heat.value}} / {{view.status.heat.maximum}}</strong></header>
           <div class="ship-meter ship-meter--heat" style="{{view.status.heat.style}}"><span></span></div>
           <div class="ship-button-grid">
-            <button type="button" data-ui-operation="cooling" {{#unless view.cooling.available}}disabled title="{{view.cooling.unavailableReason}}"{{else}}{{#unless canAct}}disabled title="{{actReason}}"{{/unless}}{{/unless}}><span>Active cooling</span><small>1 Action/Order · removes up to {{view.cooling.output}} Heat</small></button>
-            <button type="button" data-ui-operation="vent" {{#unless view.cooling.available}}disabled title="{{view.cooling.unavailableReason}}"{{else}}{{#unless canAct}}disabled title="{{actReason}}"{{/unless}}{{/unless}}><span>Emergency vent</span><small>1 Action/Order · removes {{view.cooling.ventAmount}} Heat · −{{view.cooling.signaturePenalty}} Signature until next Start · cooldown {{view.cooling.ventCooldown}}</small></button>
+            <button type="button" data-ui-operation="cooling" {{#unless view.cooling.available}}disabled title="{{view.cooling.unavailableReason}}"{{else}}{{#unless canAct}}disabled title="{{actReason}}"{{/unless}}{{/unless}}><span>Active cooling</span><small>{{#unless isGM}}1 Action/Order · {{/unless}}removes up to {{view.cooling.output}} Heat</small></button>
+            <button type="button" data-ui-operation="vent" {{#unless view.cooling.available}}disabled title="{{view.cooling.unavailableReason}}"{{else}}{{#unless canAct}}disabled title="{{actReason}}"{{/unless}}{{/unless}}><span>Emergency vent</span><small>{{#unless isGM}}1 Action/Order · {{/unless}}removes {{view.cooling.ventAmount}} Heat · −{{view.cooling.signaturePenalty}} Signature until next Start · cooldown {{view.cooling.ventCooldown}}</small></button>
           </div>
           <p class="ship-muted">Emergency vent: {{view.cooling.ventCooldownLabel}}</p>
         </form>
@@ -671,11 +673,14 @@
               <span class="ship-kicker">Structural Integrity</span>
               <h3>Damage Control &amp; Repairs</h3>
             </div>
-            <button type="button" class="ship-slot-action-btn" data-ui-operation="hullRepair" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>
-              <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Field-Patch Hull
-            </button>
+            <div class="ship-action-row">
+              {{#if isGM}}<button type="button" data-add-condition><i class="fa-solid fa-plus" aria-hidden="true"></i> Add condition</button>{{/if}}
+              <button type="button" class="ship-slot-action-btn" data-ui-operation="hullRepair" {{#unless canAct}}disabled title="{{actReason}}"{{/unless}}>
+                <i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i> Field-Patch Hull
+              </button>
+            </div>
           </header>
-          <p class="ship-action-facts ship-muted">Field-Patch Hull: 1 Order · d20 + Engineering vs DC {{view.hullRepair.dc}} · restores roll − {{view.hullRepair.offset}} Hull · also uses the turn's single Command repair</p>
+          <p class="ship-action-facts ship-muted">Field-Patch Hull: {{#unless isGM}}1 Order · {{/unless}}d20 + Engineering vs DC {{view.hullRepair.dc}} · restores roll − {{view.hullRepair.offset}} Hull{{#unless isGM}} · also uses the turn's single Command repair{{/unless}}</p>
           <p class="ship-damage-legend ship-muted" title="A fault damages one component; a hazard is an ongoing ship-wide threat.">Fault: one component is damaged. Hazard: an ongoing ship-wide threat, under a hazard clock that counts down to its next escalation. Recovery Work: the crew effort a destroyed component needs before it can be rebuilt.</p>
           <div class="ship-meter ship-meter--{{view.status.hull.tone}}" style="{{view.status.hull.style}}; margin-bottom: 0.5rem;"><span></span></div>
 
@@ -685,7 +690,8 @@
                 <header><div><span class="ship-kicker">{{kind}}{{#if sector}} · {{sector}}{{/if}}</span><h3>{{label}}</h3></div><span class="ship-status-chip ship-severity-chip" title="Severity runs minor, then major, then critical, then destroyed; a catastrophic hazard ranks with destroyed.">{{severityLabel}}</span></header>
                 {{#if componentLabel}}<p class="ship-muted">{{componentLabel}}</p>{{/if}}{{#if clock}}<p>Hazard clock: <strong>{{clock}}</strong></p>{{/if}}{{#if workLabel}}<p>Recovery Work: <strong>{{workLabel}}</strong></p>{{/if}}
                 <input type="hidden" name="conditionId" value="{{id}}"><input type="hidden" name="rating" value="engineering">
-                {{#if destroyed}}<p class="ship-action-facts ship-muted">1 Order · +1 toward {{workRequired}} Recovery Work · or all 3 Actions for a Command operator</p><button type="button" data-ui-operation="recoveryWork" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Contribute Recovery Work</button>{{else}}<p class="ship-action-facts ship-muted">1 Order · d20 + Engineering vs DC {{repairDc}} · reduces one tier, two tiers if beaten by 5 or more</p><button type="button" data-ui-operation="repair" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Attempt repair</button>{{/if}}
+                {{#if ../isGM}}<div class="ship-action-row" aria-label="GM condition controls"><button type="button" data-ui-operation="setCondition" data-severity="{{lowerSeverity}}" title="Reduce severity one tier">−</button>{{#if canRaise}}<button type="button" data-ui-operation="setCondition" data-severity="{{higherSeverity}}" title="Increase severity one tier">+</button>{{/if}}<button type="button" data-ui-operation="setCondition" data-severity="healthy">Remove</button></div>{{/if}}
+                {{#if destroyed}}<p class="ship-action-facts ship-muted">{{#unless ../isGM}}1 Order · {{/unless}}+1 toward {{workRequired}} Recovery Work{{#unless ../isGM}} · or all 3 Actions for a Command operator{{/unless}}</p><button type="button" data-ui-operation="recoveryWork" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Contribute Recovery Work</button>{{else}}<p class="ship-action-facts ship-muted">{{#unless ../isGM}}1 Order · {{/unless}}d20 + Engineering vs DC {{repairDc}} · reduces one tier, two tiers if beaten by 5 or more</p><button type="button" data-ui-operation="repair" {{#unless ../canAct}}disabled title="{{../actReason}}"{{/unless}}>Attempt repair</button>{{/if}}
               </form>
             {{else}}<div class="ship-card ship-empty"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><strong>No active faults or hazards</strong></div>{{/each}}
           </section>

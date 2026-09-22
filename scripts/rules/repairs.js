@@ -20,8 +20,9 @@ function assignmentId(assignment) {
   return typeof assignment === "string" ? assignment : assignment?.operatorId ?? assignment?.id;
 }
 
-function assignedOperator(config, draft, operatorId) {
+function assignedOperator(config, draft, operatorId, operation = {}) {
   const isOutside = draft?.phase === "outsideCombat";
+  const bypassProcedure = operation.bypassProcedure === true;
   let profile = profiles(config).find((entry) => entry?.id === operatorId);
   if (!profile && isOutside) {
     profile = profiles(config)[0] ?? { id: "crew", label: "Crew", ratings: { engineering: 5 } };
@@ -30,10 +31,17 @@ function assignedOperator(config, draft, operatorId) {
   for (const slot of ["command", "crew"]) {
     const assignment = (draft?.roster?.[slot] ?? []).find((entry) => assignmentId(entry) === operatorId);
     if (assignment) {
-      if (assignment.incapacitated || profile.incapacitated) throw new RuleViolation("OPERATOR_INCAPACITATED", "An incapacitated operator cannot act.", { operatorId });
-      if (assignment.disconnected || profile.disconnected) throw new RuleViolation("OPERATOR_DISCONNECTED", "A disconnected operator cannot act.", { operatorId });
+      if (!bypassProcedure && (assignment.incapacitated || profile.incapacitated)) {
+        throw new RuleViolation("OPERATOR_INCAPACITATED", "An incapacitated operator cannot act.", { operatorId });
+      }
+      if (!bypassProcedure && (assignment.disconnected || profile.disconnected)) {
+        throw new RuleViolation("OPERATOR_DISCONNECTED", "A disconnected operator cannot act.", { operatorId });
+      }
       return { profile, assignment, slot };
     }
+  }
+  if (bypassProcedure) {
+    return { profile, assignment: { operatorId: profile.id }, slot: "command" };
   }
   if (isOutside) {
     return { profile, assignment: { operatorId: profile.id }, slot: "crew" };
@@ -67,7 +75,10 @@ function validatePhysicalRepair(config, assigned, operation) {
   }
 }
 
-function resourcePlan(draft, assigned, cost = 1) {
+function resourcePlan(draft, assigned, cost = 1, operation = {}) {
+  if (operation.bypassProcedure === true) {
+    return { cost: 0, remaining: null, resource: null, bypassed: true };
+  }
   if (draft?.phase === "outsideCombat") {
     return { cost: 0, remaining: 1, resource: "order" };
   }
@@ -96,6 +107,7 @@ function releaseControls(draft, operatorId) {
 }
 
 function commitResource(draft, assigned, plan) {
+  if (plan.bypassed) return [];
   if (draft?.phase === "outsideCombat") {
     return releaseControls(draft, assigned.profile.id);
   }
@@ -220,8 +232,8 @@ function addVentEffect(draft, componentId) {
   return effect;
 }
 
-function validateRepairAttempt(draft, assigned) {
-  if (draft?.phase === "outsideCombat") return;
+function validateRepairAttempt(draft, assigned, operation = {}) {
+  if (operation.bypassProcedure === true || draft?.phase === "outsideCombat") return;
   if (assigned.slot === "command" && draft.repairAttemptUsed) {
     throw new RuleViolation("COMMAND_REPAIR_ATTEMPT_USED", "The ship has already committed its one Command Standard/Hull Repair attempt this turn.");
   }
@@ -245,15 +257,15 @@ export function standardRepair(config, draft, {
   const dc = REPAIR_DCS[target.condition.severity];
   if (!dc) throw new RuleViolation("INVALID_CONDITION_SEVERITY", "The condition cannot receive a Standard Repair.", { conditionId: target.key, severity: target.condition.severity });
 
-  const assigned = assignedOperator(config, draft, operatorId);
+  const assigned = assignedOperator(config, draft, operatorId, operation);
   validatePhysicalRepair(config, assigned, operation);
   validateRating(assigned, rating, allowedRatings);
-  validateRepairAttempt(draft, assigned);
+  validateRepairAttempt(draft, assigned, operation);
   const check = checkTotal(assigned.profile, rating, { roll, total, modifier });
-  const resource = resourcePlan(draft, assigned, 1);
+  const resource = resourcePlan(draft, assigned, 1, operation);
 
   const released = commitResource(draft, assigned, resource);
-  if (assigned.slot === "command") draft.repairAttemptUsed = true;
+  if (assigned.slot === "command" && !resource.bypassed) draft.repairAttemptUsed = true;
   const success = check.total >= dc;
   const tiers = success ? (check.total >= dc + 5 ? 2 : 1) : 0;
   const change = success ? reduceCondition(draft, target.key, target.condition, tiers) : null;
@@ -261,10 +273,10 @@ export function standardRepair(config, draft, {
     operation: "standardRepair",
     operatorId,
     conditionId: target.key,
-    slot: assigned.slot,
+    slot: resource.bypassed ? null : assigned.slot,
     resource: resource.resource,
-    spent: 1,
-    remaining: resource.remaining - 1,
+    spent: resource.cost,
+    remaining: resource.bypassed ? null : resource.remaining - resource.cost,
     released,
     check: { ...check, dc, success },
     change,
@@ -276,7 +288,7 @@ export function contributeRecoveryWork(config, draft, { operatorId, conditionId,
   if (conditionKind(target.condition) !== "fault" || target.condition.severity !== "destroyed") {
     throw new RuleViolation("RECOVERY_WORK_REQUIRES_DESTROYED_FAULT", "Recovery Work only applies to a currently Destroyed Fault.", { conditionId: target.key });
   }
-  const assigned = assignedOperator(config, draft, operatorId);
+  const assigned = assignedOperator(config, draft, operatorId, operation);
   validatePhysicalRepair(config, assigned, operation);
   if (config?.capabilityProfile?.work === false && operation.allowWork !== true) {
     const capabilities = profileSet(assigned.profile, "capabilities");
@@ -287,8 +299,8 @@ export function contributeRecoveryWork(config, draft, { operatorId, conditionId,
   const required = recoveryRequirement(config, target.condition);
   const isOutside = draft?.phase === "outsideCombat";
   const cost = assigned.slot === "command" && !isOutside ? 3 : 1;
-  const resource = resourcePlan(draft, assigned, cost);
-  if (!isOutside && assigned.slot === "command" && resource.remaining !== 3) {
+  const resource = resourcePlan(draft, assigned, cost, operation);
+  if (!resource.bypassed && !isOutside && assigned.slot === "command" && resource.remaining !== 3) {
     throw new RuleViolation("WORK_RESOURCE_UNAVAILABLE", "Command Recovery Work requires all 3 current Ship Actions unspent.", { operatorId, remaining: resource.remaining });
   }
   const jobId = `recovery:${target.key}`;
@@ -340,10 +352,10 @@ export function contributeRecoveryWork(config, draft, { operatorId, conditionId,
     required,
     complete,
     discarded: before + 1 > required ? before + 1 - required : 0,
-    slot: assigned.slot,
+    slot: resource.bypassed ? null : assigned.slot,
     resource: resource.resource,
-    spent: cost,
-    remaining: resource.remaining - cost,
+    spent: resource.cost,
+    remaining: resource.bypassed ? null : resource.remaining - resource.cost,
     released,
     events,
   };
@@ -364,15 +376,15 @@ export function repairHull(config, draft, {
     throw new RuleViolation("HULL_REPAIR_UNAVAILABLE", "Hull Repair requires a valid ship still above 0 Hull.", { hull, maxHull });
   }
   if (hull >= maxHull) throw new RuleViolation("HULL_ALREADY_FULL", "Hull Repair cannot raise Hull above Maximum Hull.", { hull, maxHull });
-  const assigned = assignedOperator(config, draft, operatorId);
+  const assigned = assignedOperator(config, draft, operatorId, operation);
   validatePhysicalRepair(config, assigned, operation);
   validateRating(assigned, rating, allowedRatings);
-  validateRepairAttempt(draft, assigned);
+  validateRepairAttempt(draft, assigned, operation);
   const check = checkTotal(assigned.profile, rating, { roll, total, modifier });
-  const resource = resourcePlan(draft, assigned, 1);
+  const resource = resourcePlan(draft, assigned, 1, operation);
 
   const released = commitResource(draft, assigned, resource);
-  if (assigned.slot === "command") draft.repairAttemptUsed = true;
+  if (assigned.slot === "command" && !resource.bypassed) draft.repairAttemptUsed = true;
   const success = check.total >= HULL_REPAIR.dc;
   const requested = success ? check.total - HULL_REPAIR.offset : 0;
   const repaired = Math.min(maxHull - hull, requested);
@@ -380,10 +392,10 @@ export function repairHull(config, draft, {
   return {
     operation: "hullRepair",
     operatorId,
-    slot: assigned.slot,
+    slot: resource.bypassed ? null : assigned.slot,
     resource: resource.resource,
-    spent: 1,
-    remaining: resource.remaining - 1,
+    spent: resource.cost,
+    remaining: resource.bypassed ? null : resource.remaining - resource.cost,
     released,
     check: { ...check, dc: HULL_REPAIR.dc, success },
     requested,
@@ -394,9 +406,9 @@ export function repairHull(config, draft, {
 
 export function activeCooling(config, draft, { operatorId, operation = {} }) {
   const cooling = effectiveCooling(config, draft);
-  const assigned = assignedOperator(config, draft, operatorId);
+  const assigned = assignedOperator(config, draft, operatorId, operation);
   validatePhysicalRepair(config, assigned, { ...operation, allowPhysicalRepair: operation.allowPhysicalRepair ?? true });
-  const resource = resourcePlan(draft, assigned, 1);
+  const resource = resourcePlan(draft, assigned, 1, operation);
   const heat = Math.max(0, Number(draft?.heat ?? 0));
   const removed = Math.min(heat, cooling.output);
   const released = commitResource(draft, assigned, resource);
@@ -404,10 +416,10 @@ export function activeCooling(config, draft, { operatorId, operation = {} }) {
   return {
     operation: "activeCooling",
     operatorId,
-    slot: assigned.slot,
+    slot: resource.bypassed ? null : assigned.slot,
     resource: resource.resource,
-    spent: 1,
-    remaining: resource.remaining - 1,
+    spent: resource.cost,
+    remaining: resource.bypassed ? null : resource.remaining - resource.cost,
     released,
     coolingPower: cooling.power,
     faultSeverity: cooling.severity,
@@ -428,9 +440,9 @@ export function emergencyVent(config, draft, { operatorId, operation = {} }) {
   if (!Number.isInteger(installedCooldown) || installedCooldown < 0) {
     throw new RuleViolation("INVALID_VENT_COOLDOWN", "The Cooling component must define a nonnegative Vent Cooldown.", { installedCooldown });
   }
-  const assigned = assignedOperator(config, draft, operatorId);
+  const assigned = assignedOperator(config, draft, operatorId, operation);
   validatePhysicalRepair(config, assigned, { ...operation, allowPhysicalRepair: operation.allowPhysicalRepair ?? true });
-  const resource = resourcePlan(draft, assigned, 1);
+  const resource = resourcePlan(draft, assigned, 1, operation);
   const heat = Math.max(0, Number(draft?.heat ?? 0));
   const removed = Math.min(heat, cooling.vent);
 
@@ -441,10 +453,10 @@ export function emergencyVent(config, draft, { operatorId, operation = {} }) {
   return {
     operation: "emergencyVent",
     operatorId,
-    slot: assigned.slot,
+    slot: resource.bypassed ? null : assigned.slot,
     resource: resource.resource,
-    spent: 1,
-    remaining: resource.remaining - 1,
+    spent: resource.cost,
+    remaining: resource.bypassed ? null : resource.remaining - resource.cost,
     released,
     faultSeverity: cooling.severity,
     available: cooling.vent,
