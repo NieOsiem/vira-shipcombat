@@ -776,6 +776,11 @@
   line-height: 1.2;
 }
 
+/* Power and Defense share this header: the title and status keep their width, the two console
+   pickers split what is left instead of squeezing either of them out. */
+.ship-panel-heading--power h2 { flex: 0 0 auto; }
+.ship-panel-heading--power .ship-page-operator { flex: 0 1 260px; }
+
 .ship-form-grid,
 .ship-power-grid {
   display: grid;

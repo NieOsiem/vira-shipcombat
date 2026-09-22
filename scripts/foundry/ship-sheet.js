@@ -167,13 +167,30 @@ function truthyFormValue(value) {
   return value === true || value === "true" || value === "on" || value === "1";
 }
 
+/**
+ * The console operator control an element's payload reads. A form-scoped control speaks for itself;
+ * otherwise the form reads the panel picker its `data-console` names, because two consoles — Power
+ * and Defense — share the Power tab and must never borrow each other's operator. A form with no
+ * console of its own falls back to the panel's only picker.
+ * @param {Element|null} panel enclosing tab panel
+ * @param {Element|null} form the submitting form
+ * @returns {HTMLSelectElement|null}
+ */
+function consoleOperator(panel, form) {
+  const own = form?.querySelector?.("[data-page-operator], select[name='operatorId']");
+  if (own) return own;
+  const key = form?.dataset?.console;
+  if (key) return panel?.querySelector(`[data-page-operator='${key}']`) ?? null;
+  return panel?.querySelector("[data-page-operator], select[name='operatorId']") ?? null;
+}
+
 function elementFormData(element) {
   const form = element.matches?.("form")
     ? element
     : (element.closest?.("form[data-ui-operation]") ?? element.closest?.("form"));
   const values = form ? Object.fromEntries(new FormData(form).entries()) : {};
   const panel = element?.closest?.("[data-tab-panel]") ?? form?.closest?.("[data-tab-panel]");
-  const operator = panel?.querySelector("[data-page-operator], select[name='operatorId']");
+  const operator = consoleOperator(panel, form);
   if (!values.operatorId && operator?.value) values.operatorId = operator.value;
   const aimedComponent = form?.elements?.namedItem("aimedComponentId");
   if (
@@ -2663,20 +2680,21 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const denial = (state.phase !== "active" && state.phase !== "outsideCombat")
       ? "Active Phase required."
       : "Operational access required.";
-    const operator = html.querySelector("[data-page-operator='power']");
+    const panel = html.querySelector("[data-tab-panel='power-defense']");
     const refreshControls = () => {
       for (const control of ["power", "defense"]) {
-        const take = html.querySelector(
-          `[data-tab-panel='power-defense'] [data-control='${control}']`,
-        );
+        const take = panel?.querySelector(`[data-control='${control}']`);
         if (!take) continue;
+        // The label and the disabled state must describe the operator this click would actually
+        // send, so the button reads the same console picker the payload does.
+        const source = consoleOperator(panel, take.closest("form[data-ui-operation]"));
         const holder = typeof state.controls?.[control] === "string"
           ? state.controls[control]
           : state.controls?.[control]?.operatorId;
         const label = this.#config.operators?.find((entry) =>
           entry.id === holder
         )?.label ?? holder ?? "Unheld";
-        const held = Boolean(holder && holder === operator?.value);
+        const held = Boolean(holder && holder === source?.value);
         take.textContent = held
           ? "Held — commit below"
           : `Take ${control} · ${label} (costs 1 Action/Order)`;
@@ -2684,7 +2702,8 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         take.title = !this.#canAct ? denial : `Current holder: ${label}`;
       }
     };
-    this.#on(operator, "change", refreshControls);
+    panel?.querySelectorAll("[data-page-operator]")
+      .forEach((select) => this.#on(select, "change", refreshControls));
     refreshControls();
     for (const prefix of ["sheddingPriority", "weaponPriority"]) {
       const selects = Array.from(

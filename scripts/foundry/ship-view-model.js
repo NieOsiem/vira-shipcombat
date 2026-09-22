@@ -1313,10 +1313,21 @@ export function buildShipConsoleView(
   const viewerUserId = operatorUserId ?? globalThis.game?.user?.id ?? null;
   const stationSlotsView = stationSlots(config, state, allOperators, viewerUserId);
   const controls = state?.controls ?? {};
+  // Control is exclusive but not station-bound: a Crew operator may hold Helm, Power, or Defense.
+  // The selector that has to commit a held control must therefore still offer its holder, even
+  // though every other candidate comes from the Command stations the console belongs to.
+  const holder = (control) => holderId(controls[control]);
+  const withHolder = (pool, control) => {
+    const held = holder(control);
+    const extra = held
+      ? operators.find((operator) => operator.id === held)
+      : undefined;
+    return extra && !pool.includes(extra) ? [...pool, extra] : pool;
+  };
   const defaults = {
-    helm: bestOperator(commandPool, "piloting", holderId(controls.helm)),
-    power: bestOperator(commandPool, "engineering", holderId(controls.power)),
-    defense: bestOperator(commandPool, "engineering", holderId(controls.defense)),
+    helm: bestOperator(withHolder(commandPool, "helm"), "piloting", holder("helm")),
+    power: bestOperator(withHolder(commandPool, "power"), "engineering", holder("power")),
+    defense: bestOperator(withHolder(commandPool, "defense"), "engineering", holder("defense")),
     sensors: bestOperator(commandPool, "sensors"),
     gunnery: bestOperator(commandPool, "gunnery"),
     engineering: bestOperator(operators, "engineering"),

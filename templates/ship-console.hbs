@@ -392,10 +392,11 @@
       <div class="ship-panel-heading ship-panel-heading--power">
         <h2>Power</h2>
         <label class="ship-page-operator">Engineer<select data-page-operator="power" data-default="{{view.defaults.power}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
+        <label class="ship-page-operator">Defense<select data-page-operator="defense" data-default="{{view.defaults.defense}}">{{#each view.operators}}<option value="{{id}}">{{label}} · {{remaining}} {{resource}}</option>{{/each}}</select></label>
         <span class="ship-readout {{#if view.power.redlining}}ship-danger{{/if}}">{{view.power.status}}</span>
       </div>
       <div class="ship-systems-layout">
-        <form class="ship-card" data-ui-operation="routePower" data-live-preview="routePower">
+        <form class="ship-card" data-ui-operation="routePower" data-console="power" data-live-preview="routePower">
           <div class="ship-ftl-power">
             <div class="ship-ftl-reactor" aria-label="Reactor Reserve">
               <div class="ship-ftl-reactor-stack" data-reactor-stack role="meter" aria-label="Reactor power reserve" aria-valuemin="0" aria-valuemax="{{view.power.reactor.maximum}}" aria-valuenow="{{view.power.reactor.free}}"></div>
@@ -466,7 +467,7 @@
         </form>
       </div>
       {{#if view.shields.sectors.length}}
-        <form class="ship-shield-hud {{#unless view.shields.directional}}ship-shield-hud--bubble{{/unless}}" data-ui-operation="routeDefense" data-live-preview="routeDefense">
+        <form class="ship-shield-hud {{#unless view.shields.directional}}ship-shield-hud--bubble{{/unless}}" data-ui-operation="routeDefense" data-console="defense" data-live-preview="routeDefense">
           <div class="ship-shield-hud-grid">
             <p class="ship-shield-total"><span>Total</span><output data-shield-total-hp>{{view.shields.totalHp}}</output><span aria-hidden="true">/</span><output data-shield-total-budget>{{view.shields.budget}}</output></p>
             {{#each view.shields.sectors}}

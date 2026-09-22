@@ -223,6 +223,29 @@ describe("ship console stationSlots view model", () => {
   });
 });
 
+describe("ship console operator defaults", () => {
+  test("a control console defaults to the operator holding that control, whatever station they fill", () => {
+    const config = structuredClone(CANADENSIS_CONFIG);
+    const state = createInitialState(config);
+    const [pilot, gunner] = state.roster.command.map((entry) => entry.operatorId);
+    // The Damage-Control Crew is the ship's best Engineer, but it sits in a Crew station.
+    const crew = state.roster.crew[0].operatorId;
+
+    // An unheld console still draws from the Command stations.
+    const unheld = buildShipConsoleView(config, state);
+    expect(unheld.defaults.helm).toBe(pilot);
+    expect(unheld.defaults.defense).toBe(gunner);
+
+    // Control is exclusive but not station-bound, so a held control keeps its own operator:
+    // the console that commits it must offer the holder instead of whoever it would otherwise pick.
+    state.controls.defense = { operatorId: crew, operationId: "takeControl" };
+    const held = buildShipConsoleView(config, state);
+    expect(held.defaults.defense).toBe(crew);
+    // Holding defense leaves the power console's own picker alone.
+    expect(held.defaults.power).toBe(unheld.defaults.power);
+  });
+});
+
 describe("crew qualification feature persistence and sync", () => {
   test("ensureActorCrewFeature creates or updates embedded item document", async () => {
     let createdPayload = null;
