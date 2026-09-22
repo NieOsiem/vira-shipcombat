@@ -5476,3 +5476,12 @@
 .ship-helm-actions > button.ship-primary > span > small {
   opacity: 0.8;
 }
+
+.color-chip {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  border-radius: 2px;
+  vertical-align: middle;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}

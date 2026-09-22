@@ -17,6 +17,9 @@ const BARRAGE_PROFILES = deepFreeze([
 function macrocannonDefinition() {
   return {
     category: "hardpoint",
+    visualStyle: "bullet",
+    coreColor: "#ff8844",
+    glowColor: "#ffcc66",
     accuracy: 0,
     damage: { shield: 7, hull: 9, heat: 0 },
     armorPiercing: 1,
@@ -204,6 +207,9 @@ export const CANADENSIS_RAILGUN_SOURCE = componentSource({
   componentClass: "weapon",
   definition: {
     category: "hardpoint",
+    visualStyle: "railgun",
+    coreColor: "#44ddff",
+    glowColor: "#88eeff",
     accuracy: -1,
     damage: { shield: 6, hull: 12, heat: 0 },
     armorPiercing: 3,
@@ -241,6 +247,9 @@ export const CANADENSIS_LASER_SOURCE = componentSource({
   componentClass: "weapon",
   definition: {
     category: "hardpoint",
+    visualStyle: "laser",
+    coreColor: "#44ff88",
+    glowColor: "#88ffaa",
     accuracy: 2,
     damage: { shield: 12, hull: 6, heat: 2 },
     armorPiercing: 0,

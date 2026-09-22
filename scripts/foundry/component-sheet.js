@@ -9,6 +9,7 @@ import {
   READINESS_TYPES,
   SCHEMA_VERSION,
   SECTORS,
+  VISUAL_STYLES,
 } from "../constants.js";
 import { materializeShipConfig } from "../model/equipment.js";
 import {
@@ -173,6 +174,9 @@ function defaultDefinition(componentClass) {
         damage: { shield: 0, hull: 0, heat: 0 },
         armorPiercing: 0,
         projectileClass: "medium",
+        visualStyle: "bullet",
+        coreColor: "#ffffff",
+        glowColor: "#ffaa00",
         range: { optimal: 0, maximum: 0 },
         arc: 0,
         powerRating: 0,
@@ -534,6 +538,21 @@ function normalizeWeapon(form, existingDefinition) {
     form,
     "definition.projectileClass",
     definition.projectileClass ?? "medium",
+  );
+  definition.visualStyle = text(
+    form,
+    "definition.visualStyle",
+    definition.visualStyle ?? "bullet",
+  );
+  definition.coreColor = text(
+    form,
+    "definition.coreColor",
+    definition.coreColor ?? "#ffffff",
+  );
+  definition.glowColor = text(
+    form,
+    "definition.glowColor",
+    definition.glowColor ?? "#ffaa00",
   );
   definition.range = clone(definition.range ?? {});
   definition.range.optimal = number(form, "definition.range.optimal", definition.range?.optimal ?? 0);
@@ -1065,6 +1084,10 @@ export class ShipComponentSheet
       projectileOptions: optionList(
         PROJECTILE_CLASSES,
         system.definition.projectileClass,
+      ),
+      visualStyleOptions: optionList(
+        VISUAL_STYLES,
+        system.definition.visualStyle,
       ),
       readinessTypeOptions: optionList(
         READINESS_TYPES,

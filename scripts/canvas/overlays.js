@@ -1,6 +1,11 @@
 import { SHIP_TYPE } from "../constants.js";
 import { materializeActorConfig } from "../foundry/refit.js";
 import { sceneGridGeometry } from "../foundry/scene-geometry.js";
+import {
+  createEffectsContainer,
+  destroyEffectsContainer,
+  playAttackEffects,
+} from "./effects.js";
 import { isAssignedOperator, registerShipVisibility } from "./visibility.js";
 
 const MODULE_ID = "vira-shipcombat";
@@ -983,6 +988,7 @@ function createContainer() {
   trajectoryGraphics.sortLayer =
     foundry.canvas.groups.PrimaryCanvasGroup.SORT_LAYERS.TOKENS - 1;
   canvas.primary.addChild(trajectoryGraphics);
+  createEffectsContainer();
   installShieldTicker();
   refreshTokenShields();
   redraw();
@@ -1002,6 +1008,7 @@ function destroyContainer() {
   overlayLabels.clear();
   overlayGhosts.clear();
   destroyTokenShields();
+  destroyEffectsContainer();
   overlayGraphics = null;
 }
 
@@ -1115,9 +1122,10 @@ export function registerCanvasIntegration() {
       redraw();
     }
   });
-  registerHook("viraShipCombatOperationCommitted", () => {
+  registerHook("viraShipCombatOperationCommitted", (fullResult, request) => {
     refreshTokenShields();
     redraw();
+    playAttackEffects(fullResult, request);
   });
   if (globalThis.canvas?.ready) createContainer();
 }

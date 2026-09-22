@@ -273,6 +273,16 @@
             {{/if}}
           </div>
 
+          {{!-- Visual Styling --}}
+          <div class="hud-card fx-card">
+            <div class="hud-card-header"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Visual Styling</div>
+            <div class="hud-card-body">
+              <div class="hud-stat"><span class="stat-label">Effect Style</span><span class="stat-value capitalize">{{definition.visualStyle}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Core Color</span><span class="stat-value"><span class="color-chip" style="background:{{definition.coreColor}}"></span> {{definition.coreColor}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Glow Color</span><span class="stat-value"><span class="color-chip" style="background:{{definition.glowColor}}"></span> {{definition.glowColor}}</span></div>
+            </div>
+          </div>
+
           {{!-- Overclock Mode Card --}}
           {{#if definition.hasOverclock}}
             <div class="hud-card overclock-card">
@@ -765,6 +775,24 @@
               </table>
               <button class="btn-add-row" type="button" data-row-action="add-barrage"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add barrage profile</button>
             </fieldset>
+          </div>
+
+          {{!-- Visual Styling --}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Visual Styling</div>
+            <div class="form-grid-3">
+              <label>Visual style
+                <select name="definition.visualStyle">
+                  {{#each visualStyleOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                </select>
+              </label>
+              <label>Core color
+                <input type="color" name="definition.coreColor" value="{{definition.coreColor}}">
+              </label>
+              <label>Glow color
+                <input type="color" name="definition.glowColor" value="{{definition.glowColor}}">
+              </label>
+            </div>
           </div>
 
           {{!-- Modes & Overclock --}}

@@ -50,6 +50,17 @@ export const PROJECTILE_CLASSES = Object.freeze([
 ]);
 export const WEAPON_STATUSES = Object.freeze(["off", "booting", "online"]);
 export const WEAPON_MODES = Object.freeze(["nominal", "overclock"]);
+export const VISUAL_STYLES = Object.freeze([
+  "bullet",
+  "laser",
+  "blaster",
+  "orb",
+  "railgun",
+  "energy",
+  "plasma",
+  "lance",
+  "flak",
+]);
 export const READINESS_TYPES = Object.freeze(["readyShot", "charges", "magazine"]);
 export const READINESS_RECOVERY = Object.freeze(["automaticStart", "manualWork"]);
 export const CONDITION_TIERS = Object.freeze([

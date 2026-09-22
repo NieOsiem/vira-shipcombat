@@ -156,6 +156,9 @@ export const PEREGRINUS_LIGHT_CANNON_SOURCE = componentSource({
   size: "small",
   definition: {
     category: "hardpoint",
+    visualStyle: "blaster",
+    coreColor: "#ff4444",
+    glowColor: "#ff8866",
     accuracy: 1,
     damage: { shield: 4, hull: 5, heat: 0 },
     armorPiercing: 0,
