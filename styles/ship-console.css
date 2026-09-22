@@ -3348,9 +3348,39 @@
   --ship-amber-soft: rgb(255 189 82 / 12%);
   --ship-red: #ff5267;
   --ship-red-soft: rgb(255 82 103 / 12%);
-  min-width: 340px;
+  min-width: 480px;
+  min-height: 580px;
   color: var(--ship-text);
   color-scheme: dark;
+}
+
+/* Blend Foundry's window header into the component sheet chrome */
+.vira-shipcombat.ship-component-sheet .window-header {
+  background: linear-gradient(90deg, #101a22, #0b1218);
+  border-bottom: none;
+  color: var(--ship-muted);
+  padding: 0.25rem 0.6rem 0.15rem;
+}
+
+.vira-shipcombat.ship-component-sheet .window-header .window-title {
+  color: var(--ship-cyan);
+  font-family: var(--font-monospace, monospace);
+  font-size: 0.59rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: normal;
+}
+
+.vira-shipcombat.ship-component-sheet .window-header button.header-control {
+  --button-text-color: var(--ship-muted);
+  color: var(--ship-muted);
+  border: none;
+  background: none;
+}
+
+.vira-shipcombat.ship-component-sheet .window-header button.header-control:hover {
+  color: var(--ship-cyan);
 }
 
 .vira-shipcombat.ship-component-sheet .window-content {
@@ -3389,24 +3419,30 @@
 /* -------------------------------------------- */
 .ship-component-header {
   display: grid;
-  grid-template-columns: 5.25rem 1fr auto;
+  grid-template-columns: 3.5rem 1fr auto;
   gap: 0.8rem;
-  align-items: start;
-  padding: 0.8rem 0.9rem;
-  background: rgb(16 24 32 / 70%);
+  align-items: center;
+  padding: 0.45rem 0.85rem 0.65rem;
+  background: linear-gradient(90deg, #101a22, #0b1218);
   border-bottom: 1px solid var(--ship-border);
 }
 
 .header-image-box {
-  width: 5.25rem;
-  height: 5.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
   position: relative;
-  border: 1px solid var(--ship-border-bright);
-  border-radius: 5px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
-  background: #060a0e;
+  background: transparent;
   cursor: pointer;
   flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+  box-shadow: none;
 }
 
 .header-image-box > * {
@@ -3416,7 +3452,8 @@
 .ship-component-portrait {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  border: none;
   display: block;
 }
 
@@ -3426,11 +3463,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 60%);
+  background: rgb(0 0 0 / 55%);
   color: var(--ship-cyan);
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   opacity: 0;
   transition: opacity 0.15s ease;
+  border-radius: 4px;
 }
 
 .header-image-box:is(:hover, :focus-visible) .image-edit-overlay {

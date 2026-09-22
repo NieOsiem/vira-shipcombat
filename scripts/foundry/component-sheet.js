@@ -719,7 +719,7 @@ export class ShipComponentSheet
 
   static DEFAULT_OPTIONS = {
     classes: [MODULE_ID, "ship-component-sheet"],
-    position: { width: 780, height: 780 },
+    position: { width: 685, height: 775 },
     actions: {
       toggleMode: ShipComponentSheet.#onToggleMode,
       editImage: ShipComponentSheet.#onEditImage,
@@ -786,9 +786,10 @@ export class ShipComponentSheet
   }
 
   get title() {
-    return `${
-      this.item?.name ?? this.document?.name ?? "Ship Component"
-    } · Ship Component`;
+    const item = this.item ?? this.document;
+    const cls = item?.system?.componentClass;
+    const label = cls ? cls.replace(/^./, (c) => c.toUpperCase()) : "Ship";
+    return `${label} Component`;
   }
 
   /** @override */
