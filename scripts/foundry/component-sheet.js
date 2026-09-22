@@ -542,18 +542,18 @@ function normalizeWeapon(form, existingDefinition) {
   definition.visualStyle = text(
     form,
     "definition.visualStyle",
-    definition.visualStyle ?? "bullet",
-  );
+    definition.visualStyle || "bullet",
+  ) || "bullet";
   definition.coreColor = text(
     form,
     "definition.coreColor",
-    definition.coreColor ?? "#ffffff",
-  );
+    definition.coreColor || "#ffffff",
+  ) || "#ffffff";
   definition.glowColor = text(
     form,
     "definition.glowColor",
-    definition.glowColor ?? "#ffaa00",
-  );
+    definition.glowColor || "#ffaa00",
+  ) || "#ffaa00";
   definition.range = clone(definition.range ?? {});
   definition.range.optimal = number(form, "definition.range.optimal", definition.range?.optimal ?? 0);
   definition.range.maximum = number(form, "definition.range.maximum", definition.range?.maximum ?? 0);
@@ -933,6 +933,11 @@ export class ShipComponentSheet
     system.componentClass = componentClass;
     system.driveRole ??= "";
     system.definition ??= defaultDefinition(componentClass);
+    if (componentClass === "weapon") {
+      system.definition.visualStyle ||= "bullet";
+      system.definition.coreColor ||= "#ffffff";
+      system.definition.glowColor ||= "#ffaa00";
+    }
     system.description ??= { value: "", chat: "" };
     system.price ??= { value: 0, denomination: "gp" };
     system.weight ??= { value: 0, units: "tn" };

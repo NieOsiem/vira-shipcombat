@@ -787,10 +787,10 @@
                 </select>
               </label>
               <label>Core color
-                <input type="color" name="definition.coreColor" value="{{definition.coreColor}}">
+                <input type="color" name="definition.coreColor" value="{{#if definition.coreColor}}{{definition.coreColor}}{{else}}#ffffff{{/if}}">
               </label>
               <label>Glow color
-                <input type="color" name="definition.glowColor" value="{{definition.glowColor}}">
+                <input type="color" name="definition.glowColor" value="{{#if definition.glowColor}}{{definition.glowColor}}{{else}}#ffaa00{{/if}}">
               </label>
             </div>
           </div>
