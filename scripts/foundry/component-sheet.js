@@ -1395,7 +1395,6 @@ export class ShipComponentSheet
       }
       this.#clearDraft();
       this.#mode = ShipComponentSheet.MODES.PLAY;
-      ui.notifications.info("Ship component saved.");
       await this.render();
     } catch (error) {
       showValidationSummary(form, error, source);

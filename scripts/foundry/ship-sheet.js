@@ -688,99 +688,6 @@ const CONTROL_LABELS = Object.freeze({
   power: "Power",
   defense: "Defense",
 });
-/** Console operations whose type name reads badly as a sentence. */
-const OPERATION_LABELS = Object.freeze({
-  advanceTurn: "Turn advanced.",
-  cycleRound: "Turn advanced.",
-  setRoster: "Station updated.",
-  spendResource: "Resource spent.",
-  contributeWork: "Work contributed.",
-  resolveFate: "Fate resolved.",
-});
-/** Engine event details name the rules function, not the console operation. */
-const DAMAGE_RESULT_TYPES = Object.freeze({
-  repair: "standardRepair",
-  recoveryWork: "recoveryWork",
-  hullRepair: "hullRepair",
-  cooling: "activeCooling",
-  vent: "emergencyVent",
-});
-const DAMAGE_LABELS = Object.freeze({
-  repair: "Repair",
-  recoveryWork: "Recovery Work",
-  hullRepair: "Hull patch",
-  cooling: "Active cooling",
-  vent: "Emergency vent",
-});
-
-/** The engine rolls the d20 on the GM side, so the number is only known from the event. */
-function damageResult(type, response) {
-  const operation = DAMAGE_RESULT_TYPES[type];
-  if (!operation) return null;
-  const events = [
-    ...(response?.result?.publicEvents ?? []),
-    ...(response?.result?.gmEvents ?? []),
-  ];
-  return events.find((event) => event?.detail?.operation === operation)?.detail ??
-    null;
-}
-
-function checkLine(check) {
-  if (!check || !Number.isFinite(Number(check.total))) return "";
-  const bonus = Number(check.rating) + Number(check.modifier ?? 0);
-  return `d20${bonus < 0 ? "" : "+"}${bonus} = ${check.total} vs DC ${
-    check.dc ?? "—"
-  }`;
-}
-
-function damageOutcome(type, detail, config) {
-  const check = detail?.check ?? null;
-  const capacity = Number(config?.heatCapacity);
-  const heatCapacity = Number.isFinite(capacity) ? capacity : "—";
-  switch (type) {
-    case "repair": {
-      const line = checkLine(check);
-      if (!line) return "";
-      const change = detail?.change;
-      if (!check.success || !change) return `${line} — no change`;
-      const before = titleCase(change.before);
-      if (change.removed) return `${line} — ${before} cleared`;
-      return `${line} — ${before} reduced to ${titleCase(change.after)}`;
-    }
-    case "hullRepair": {
-      const line = checkLine(check);
-      if (!line) return "";
-      if (!check.success || !detail.repaired) {
-        return `${line} — no Hull restored`;
-      }
-      return `${line} — +${detail.repaired} Hull (${detail.hull} / ${
-        config?.maxHull ?? "—"
-      })`;
-    }
-    case "cooling":
-      if (!Number.isFinite(Number(detail?.removed))) return "";
-      return `−${detail.removed} Heat (${detail.heat} / ${heatCapacity})`;
-    case "vent":
-      if (!Number.isFinite(Number(detail?.removed))) return "";
-      return `−${detail.removed} Heat (${detail.heat} / ${heatCapacity}) — signature penalty until next Start`;
-    case "recoveryWork":
-      if (!Number.isFinite(Number(detail?.contributed))) return "";
-      if (detail.complete) return "Recovery complete — fault reduced to Critical";
-      return `+${detail.contributed} Recovery Work (${detail.current} / ${detail.required})`;
-    default:
-      return "";
-  }
-}
-
-function commitMessage(type, payload, response, config) {
-  const detail = damageResult(type, response);
-  const outcome = detail ? damageOutcome(type, detail, config) : "";
-  if (outcome) return `${DAMAGE_LABELS[type] ?? titleCase(type)}: ${outcome}`;
-  const control = CONTROL_LABELS[payload?.control];
-  if (type === "takeControl") return `${control ?? "Control"} taken.`;
-  if (type === "releaseControl") return `${control ?? "Control"} released.`;
-  return OPERATION_LABELS[type] ?? `${titleCase(type)} committed.`;
-}
 
 function refitStatus(itemId, state) {
   if (!itemId) return "Empty · systems degraded";
@@ -4182,15 +4089,9 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
           { gmOverride: true, roster: currentRoster },
           [],
           state.revision,
-          {
-            message: `Station cleared — ${
-              kind === "command" ? "Command" : "Crew"
-            } ${slotIndex + 1} is now vacant.`,
-          },
         );
       } else {
         await ship.update({ "system.shipCombat.state.roster": currentRoster });
-        ui.notifications.info("Station cleared.");
       }
 
       await this.render();
@@ -4254,9 +4155,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
 
   async #editRosterActor(actorId) {
     if (!actorId) {
-      ui.notifications.info(
-        "This station holds a preset NPC profile — drop a character Actor onto the slot to give it a sheet.",
-      );
       return;
     }
     const actor = globalThis.game?.actors?.get(actorId);
@@ -4931,9 +4829,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     this.#epoch++;
     this.#movementInput = null;
     if (token) clearMovementPreview(token.uuid);
-    ui.notifications.info(
-      message || commitMessage(type, payload, response, this.#config),
-    );
+    if (message) ui.notifications.info(message);
     await this.render();
   }
 
@@ -4958,9 +4854,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         Number(event.currentTarget.dataset.revision),
       );
       this.#hullDraft = null;
-      ui.notifications.info(
-        "Hull configuration saved and installed components rematerialized.",
-      );
       await this.render();
     } catch (error) {
       ui.notifications.error(errorText(error));
@@ -4991,9 +4884,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       ) return;
       await resetShipToReferenceBuild(this.actor, build.id);
       this.#hullDraft = null;
-      ui.notifications.info(
-        `${build.label} hull and fresh component copies restored.`,
-      );
       await this.render();
     } catch (error) {
       if (error?.code === "REFIT_CLEANUP_FAILED") this.#hullDraft = null;

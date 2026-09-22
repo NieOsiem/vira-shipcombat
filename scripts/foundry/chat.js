@@ -103,29 +103,6 @@ function collisionSummary(detail) {
   }).join(" ");
 }
 
-function endPhaseSummary(detail) {
-  const parts = [];
-  for (const event of detail.events ?? []) {
-    if (event.type === "overspeedDamage" && event.hullDamage > 0) parts.push(`Overspeed caused ${event.hullDamage} hull damage.`);
-    if (event.type === "heatOverflow" && event.hullDamage > 0) parts.push(`Heat overflow caused ${event.hullDamage} hull damage.`);
-    if (event.type === "hazardDamage") {
-      for (const hazard of event.events ?? []) {
-        if (hazard.type === "fireHullDamage" && hazard.hullDamage > 0) parts.push(`Fire caused ${hazard.hullDamage} hull damage.`);
-        if (hazard.type === "breachReminder") parts.push(`Hull breach in ${hazard.region}; severity: ${hazard.severity}.`);
-        if (hazard.type === "fireFault" && hazard.applied) parts.push(`Fire damaged a subsystem; severity: ${hazard.severity}.`);
-      }
-    }
-    if (event.type === "persistentEffects") {
-      for (const effect of event.applied ?? []) {
-        if (effect.hullDamage > 0 || effect.heat > 0) parts.push(`Ongoing effect: ${effect.hullDamage} hull damage and ${effect.heat} heat.`);
-      }
-    }
-  }
-  const fate = fateSummary(detail.fate?.public);
-  if (fate) parts.push(fate);
-  return parts.join(" ");
-}
-
 /** Only deliberate player-facing summaries belong in chat; full events remain in the audit log. */
 function eventPresentation(event) {
   if (typeof event === "string") return { title: "Ship event", message: event };
@@ -137,16 +114,6 @@ function eventPresentation(event) {
     case "attack": title = "Ship attack"; message = attackSummary(detail); break;
     case "maneuver":
     case "coast": title = "Ship collision"; message = collisionSummary(detail); break;
-    case "endPhase": title = "End-of-turn damage"; message = endPhaseSummary(detail); break;
-    case "startPhase": {
-      const notices = detail.deferredPassiveNotices ?? [];
-      const acquired = notices.filter((notice) => notice.type === "passiveContactAcquired").length;
-      const lost = notices.filter((notice) => notice.type === "trackLost").length;
-      title = "Sensor contacts";
-      message = acquired || lost ? `${acquired} contact(s) acquired; ${lost} track(s) lost.` : "";
-      break;
-    }
-    case "resolveFate": title = "Ship fate"; message = fateSummary(detail); break;
     case "ping": title = "Active sensor ping"; message = `Detected ${detail.detected?.length ?? 0} contact(s).`; break;
     case "acquire": title = "Target acquisition"; message = detail.acquired ? "Target acquired." : "Target acquisition failed."; break;
     case "analyze": title = "Defense analysis"; message = "Target defenses revealed."; break;
@@ -171,6 +138,17 @@ function eventPresentation(event) {
     case "hullRepair": title = "Hull repair"; message = `Restored ${detail.repaired} hull; hull now ${detail.hull}.`; break;
     case "cooling": title = "Active cooling"; message = `Removed ${detail.removed} heat; heat now ${detail.heat}.`; break;
     case "vent": title = "Emergency vent"; message = `Removed ${detail.removed} heat; heat now ${detail.heat}.`; break;
+    case "contributeWork": title = "Work"; message = detail.complete ? "Work job complete." : `Work progress: ${detail.current} of ${detail.required} work.`; break;
+    case "routePower": {
+      title = "Power routing";
+      const changes = detail.tierChanges ?? [];
+      message = changes.length
+        ? `Power: ${changes.map(({ system, from, to }) => `${system} ${from} → ${to}`).join("; ")}.`
+        : "Power routing unchanged.";
+      break;
+    }
+    case "toggleWeapon": title = "Weapon power"; message = `${detail.from?.status ?? "off"} → ${detail.to?.status ?? "off"}.`; break;
+    case "routeDefense": title = "Shield routing"; message = `Shields: ${detail.totalAllocation} routed, ${detail.totalHp} online.`; break;
     case "operation.rejected": title = event.title ?? "Ship operation failed"; message = event.message; break;
     // Bookkeeping and routine transforms are still persisted, but never produce chat cards.
     case "rotate":
@@ -181,10 +159,9 @@ function eventPresentation(event) {
     case "refreshResources":
     case "spendResource":
     case "takeControl":
-    case "contributeWork":
-    case "routePower":
-    case "toggleWeapon":
-    case "routeDefense":
+    case "endPhase":
+    case "startPhase":
+    case "resolveFate":
       return null;
     default:
       // Explicit prose notices are allowed; unknown technical event payloads are not.

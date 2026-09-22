@@ -292,6 +292,21 @@ const GM_EVENT_ONLY_TYPES = new Set([
   OPERATION_TYPES.ROUTE_DEFENSE,
 ]);
 
+/** Player-facing upkeep operations whose chat card is public; a GM whisper would duplicate it. */
+const PUBLIC_ONLY_EVENT_TYPES = new Set([
+  OPERATION_TYPES.CONTRIBUTE_WORK,
+  OPERATION_TYPES.REPAIR,
+  OPERATION_TYPES.RECOVERY_WORK,
+  OPERATION_TYPES.HULL_REPAIR,
+  OPERATION_TYPES.COOLING,
+  OPERATION_TYPES.VENT,
+  OPERATION_TYPES.ARM_EVASION,
+  OPERATION_TYPES.DISARM_EVASION,
+  OPERATION_TYPES.BEGIN_RELOAD,
+  OPERATION_TYPES.RELOAD,
+  OPERATION_TYPES.CANCEL_RELOAD,
+]);
+
 function clone(value) {
   if (value === undefined) return undefined;
   return structuredClone(value);
@@ -921,15 +936,17 @@ function addEvent(collections, type, result, options = {}) {
     sourceUuid: options.sourceUuid,
     targetUuids: options.targetUuids ?? [],
   };
-  if (
-    result && (Object.hasOwn(result, "public") || Object.hasOwn(result, "gm"))
-  ) {
-    if (result.public != null) {
+  if (result && (Object.hasOwn(result, "public") || Object.hasOwn(result, "gm"))) {
+    if (!options.publicOnly && !options.gmOnly && result.public != null) {
       collections.publicEvents.push({ ...base, detail: clone(result.public) });
     }
-    if (result.gm != null) {
+    if (!options.publicOnly && result.gm != null) {
       collections.gmEvents.push({ ...base, detail: clone(result.gm) });
     }
+    return;
+  }
+  if (options.publicOnly) {
+    collections.publicEvents.push({ ...base, detail: clone(result) });
     return;
   }
   collections.gmEvents.push({ ...base, detail: clone(result) });
@@ -1636,6 +1653,7 @@ export function executeShipOperation(operation, context) {
     sourceUuid: source.uuid,
     targetUuids: request.targetUuids,
     gmOnly: GM_EVENT_ONLY_TYPES.has(request.type),
+    publicOnly: PUBLIC_ONLY_EVENT_TYPES.has(request.type),
   });
 
   return {
