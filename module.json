@@ -59,6 +59,9 @@
   "styles": [
     {
       "src": "styles/ship-console.css"
+    },
+    {
+      "src": "styles/chat-card.css"
     }
   ],
   "url": "https://github.com/NieOsiem/vira-shipcombat",

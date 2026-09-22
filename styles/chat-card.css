@@ -1,0 +1,212 @@
+/* Structured ship attack chat cards (renderAttackCard). */
+.vira-attack-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Weapon header: item image, name, subtitle. */
+.vira-attack-card .vsa-weapon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border-dark, #444);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 6px 8px;
+}
+
+.vira-attack-card .vsa-weapon-img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border: 1px solid var(--color-border-dark, #444);
+  border-radius: 4px;
+  flex: none;
+}
+
+.vira-attack-card .vsa-weapon-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vira-attack-card .vsa-name {
+  font-weight: 700;
+  font-size: var(--font-size-15);
+}
+
+.vira-attack-card .vsa-subtitle {
+  font-size: var(--font-size-12);
+  color: var(--color-text-dark-secondary, #666);
+}
+
+/* Target row. */
+.vira-attack-card .vsa-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-size: var(--font-size-13);
+}
+
+.vira-attack-card .vsa-target-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+/* Shared stat box: small label above a large value. */
+.vira-attack-card .vsa-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 1px solid var(--color-border-dark, #444);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 4px 8px;
+  min-width: 3.2em;
+  text-align: center;
+}
+
+.vira-attack-card .vsa-box-label {
+  font-size: var(--font-size-10);
+  color: var(--color-text-dark-secondary, #666);
+  line-height: 1.1;
+}
+
+.vira-attack-card .vsa-box-value {
+  font-weight: 700;
+  font-size: var(--font-size-16);
+  line-height: 1.15;
+}
+
+/* Roll row: 1d20 + one box per non-zero modifier group. */
+.vira-attack-card .vsa-roll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.vira-attack-card .vsa-dice .vsa-box-value {
+  font-family: var(--font-mono, monospace);
+}
+
+/* Result row: total + AC, hull, heat. */
+.vira-attack-card .vsa-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.vira-attack-card .vsa-total {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  min-width: 5.5em;
+  padding: 4px 10px;
+}
+
+.vira-attack-card .vsa-total.vsa-hit .vsa-box-value {
+  color: #0a6b0a;
+}
+
+.vira-attack-card .vsa-total.vsa-hit {
+  background: rgba(0, 128, 0, 0.12);
+  border-color: rgba(0, 128, 0, 0.55);
+}
+
+.vira-attack-card .vsa-total.vsa-critical {
+  background: rgba(200, 120, 0, 0.16);
+  border-color: rgba(200, 120, 0, 0.65);
+}
+
+.vira-attack-card .vsa-total.vsa-critical .vsa-box-value {
+  color: #a35a00;
+}
+
+.vira-attack-card .vsa-total.vsa-miss {
+  background: rgba(160, 0, 0, 0.1);
+  border-color: rgba(160, 0, 0, 0.5);
+}
+
+.vira-attack-card .vsa-total.vsa-miss .vsa-box-value {
+  color: #a00;
+}
+
+.vira-attack-card .vsa-vs {
+  font-size: var(--font-size-12);
+  font-weight: 700;
+  color: var(--color-text-dark-secondary, #666);
+}
+
+.vira-attack-card .vsa-box.vsa-hull {
+  background: rgba(160, 0, 0, 0.1);
+  border-color: rgba(160, 0, 0, 0.45);
+}
+
+.vira-attack-card .vsa-box.vsa-shield {
+  background: rgba(0, 96, 160, 0.1);
+  border-color: rgba(0, 96, 160, 0.45);
+}
+
+.vira-attack-card .vsa-box.vsa-dim .vsa-box-value,
+.vira-attack-card .vsa-box.vsa-dim .vsa-box-label {
+  color: var(--color-text-dark-secondary, #666);
+}
+
+.vira-attack-card .vsa-hits {
+  font-size: var(--font-size-11);
+  color: var(--color-text-dark-secondary, #666);
+}
+
+/* Footer: hull integrity and impact arc. */
+.vira-attack-card .vsa-footer {
+  display: flex;
+  gap: 4px;
+}
+
+.vira-attack-card .vsa-foot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-top: 1px dashed var(--color-border-dark, #444);
+  padding: 4px 2px 0;
+}
+
+.vira-attack-card .vsa-foot-label {
+  font-size: var(--font-size-11);
+  color: var(--color-text-dark-secondary, #666);
+}
+
+.vira-attack-card .vsa-foot-value {
+  font-weight: 700;
+  font-size: var(--font-size-14);
+}
+
+.vira-attack-card .vsa-notes {
+  margin: 0;
+  font-size: var(--font-size-12);
+}
+
+.vira-attack-card .vsa-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.vira-attack-card .vsa-tag {
+  font-size: var(--font-size-10);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--color-border-dark, #444);
+  border-radius: 3px;
+  padding: 0 4px;
+  background: rgba(0, 0, 0, 0.04);
+}

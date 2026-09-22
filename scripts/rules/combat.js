@@ -1350,6 +1350,7 @@ function makePreview(context) {
     targetId,
     targetUuid: targetId,
     weaponId: weapon.id,
+    weaponLabel: weapon.label ?? weapon.name ?? weaponId,
     operatorId,
     attackerRevision: attackerState?.revision,
     targetRevision: targetState?.revision,
@@ -1376,6 +1377,7 @@ function makePreview(context) {
     aimedComponentId: declaration.aimedComponentId ?? null,
     aimedConditionId: aimedCondition,
     costs,
+    modifiers: modifierGroups,
   };
 
   const defensesRevealed = track?.defensesRevealed === true ||
@@ -1527,6 +1529,7 @@ export function commitAttack(context) {
     );
 
     const naturalRoll = rollD20();
+    const targetHullBefore = finite(targetDraft.hull);
     if (!Number.isInteger(naturalRoll) || naturalRoll < 1 || naturalRoll > 20) {
       throw new RuleViolation(
         "INVALID_D20",
@@ -1579,6 +1582,8 @@ export function commitAttack(context) {
         committed: true,
         commitment,
         roll,
+        weaponLabel: commitment.weaponLabel,
+        targetHull: { before: targetHullBefore, after: targetDraft.hull },
         spending: { operation: operationSpend, firingSolution: solutionSpend },
         damage: damage.gm,
       },

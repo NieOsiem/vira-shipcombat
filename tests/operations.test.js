@@ -89,9 +89,11 @@ function json(value) {
   return JSON.stringify(value);
 }
 
-async function withChat(callback) {
+async function withChat(callback, { ships = {}, setting = "shared" } = {}) {
   const previousFoundry = globalThis.foundry;
   const previousGame = globalThis.game;
+  const previousConst = globalThis.CONST;
+  const previousFromUuidSync = globalThis.fromUuidSync;
   const created = [];
   globalThis.foundry = {
     utils: {
@@ -111,7 +113,7 @@ async function withChat(callback) {
     documents: {
       ChatMessage: {
         implementation: {
-          getSpeaker: () => ({ alias: "Ship combat" }),
+          getSpeaker: (options) => ({ alias: options?.alias ?? "Ship combat" }),
           createDocuments: async (messages) => {
             created.push(...messages);
             return messages;
@@ -122,12 +124,20 @@ async function withChat(callback) {
   };
   globalThis.game = {
     users: [{ id: "gm", isGM: true }, { id: "player", isGM: false }],
+    settings: {
+      get: (_moduleId, key) =>
+        key === "attackCardVisibility" ? setting : undefined,
+    },
   };
+  globalThis.CONST = { DOCUMENT_OWNERSHIP_LEVELS: { OBSERVER: 20 } };
+  globalThis.fromUuidSync = (uuid) => ships[uuid];
   try {
     await callback(created);
   } finally {
     globalThis.foundry = previousFoundry;
     globalThis.game = previousGame;
+    globalThis.CONST = previousConst;
+    globalThis.fromUuidSync = previousFromUuidSync;
   }
 }
 
@@ -1226,30 +1236,82 @@ describe("multi-ship replacement scope and event privacy", () => {
     expect(result.publicEvents[0].detail).not.toEqual(
       result.gmEvents[0].detail,
     );
+    // Defenses are unrevealed, so the public channel payload stays sanitized even
+    // though the GM-channel chat card shows the full outcome.
+    expect(result.publicEvents[0].detail.damage).not.toHaveProperty("totals");
     const before = clone(result);
-    await withChat(async () => {
-      const { publicMessages, gmMessages } = await publishOperationEvents(
-        result,
-      );
-      const publicCard = publicMessages[0];
-      const gmCard = gmMessages[0];
-      expect(publicCard.content).toMatch(/[Hh]it!/);
-      expect(publicCard.content).toContain(
-        `total ${result.publicEvents[0].detail.roll.total}`,
-      );
-      expect(publicCard.content).not.toContain("Hull damage:");
-      expect(gmCard.content).toContain(
-        `Hull damage: ${result.gmEvents[0].detail.damage.totals.hullDamage}`,
-      );
-      expect(publicCard.whisper).toBeUndefined();
-      expect(gmCard.whisper).toEqual(["gm"]);
-      for (const card of [publicCard, gmCard]) {
+
+    const sharedShip = {
+      type: "vira-shipcombat.ship",
+      name: "Canadensis",
+      testUserPermission: () => true,
+    };
+    await withChat(
+      async () => {
+        const { publicMessages, gmMessages, attackMessages } =
+          await publishOperationEvents(result);
+        expect(publicMessages).toEqual([]);
+        expect(gmMessages).toEqual([]);
+        expect(attackMessages).toHaveLength(1);
+        const card = attackMessages[0];
+        expect(card.whisper).toBeUndefined();
+        expect(card.speaker).toEqual({ alias: "Canadensis" });
+        expect(card.content).toContain("vira-attack-card");
+        expect(card.content).toContain("Twin Railgun");
+        expect(card.content).toContain('class="vsa-box vsa-total vsa-hit"');
+        expect(card.content).toContain(
+          `>${result.gmEvents[0].detail.damage.totals.hullDamage}</span>`,
+        );
+        // Shield absorption leaves hull untouched, so no Hull Integrity footer is shown.
+        const { before, after } = result.gmEvents[0].detail.targetHull;
+        if (before !== after) {
+          expect(card.content).toContain(`${before} → ${after}`);
+        } else {
+          expect(card.content).not.toContain("Hull Integrity");
+        }
         expect(card.content).not.toContain("<pre");
         expect(card.content).not.toContain("commitment");
         expect(card.content).not.toContain("sourceUuid");
         expect(card.content).not.toContain("{");
-      }
-    });
+      },
+      { ships: { [SOURCE]: sharedShip } },
+    );
+
+    await withChat(
+      async () => {
+        const { publicMessages, gmMessages, attackMessages } =
+          await publishOperationEvents(result);
+        expect(publicMessages).toEqual([]);
+        expect(gmMessages).toEqual([]);
+        expect(attackMessages).toHaveLength(1);
+        expect(attackMessages[0].whisper).toEqual(["gm"]);
+        expect(attackMessages[0].speaker).toEqual({ alias: "Raider" });
+        expect(attackMessages[0].content).toContain("vira-attack-card");
+      },
+      {
+        ships: {
+          [SOURCE]: { type: "vira-shipcombat.ship", name: "Raider", testUserPermission: () => false },
+        },
+      },
+    );
+
+    await withChat(
+      async () => {
+        const { publicMessages, gmMessages, attackMessages } =
+          await publishOperationEvents(result);
+        expect(publicMessages).toEqual([]);
+        expect(gmMessages).toEqual([]);
+        expect(attackMessages).toHaveLength(1);
+        expect(attackMessages[0].whisper).toBeUndefined();
+        expect(attackMessages[0].content).toContain("Twin Railgun");
+      },
+      {
+        ships: {
+          [SOURCE]: { type: "vira-shipcombat.ship", name: "Raider", testUserPermission: () => false },
+        },
+        setting: "all",
+      },
+    );
     expect(result).toEqual(before);
   });
 
@@ -1336,6 +1398,7 @@ describe("administrative reposition", () => {
       expect(await publishOperationEvents(result)).toEqual({
         publicMessages: [],
         gmMessages: [],
+        attackMessages: [],
       });
       await publishOperationEvents({
         publicEvents: [],
@@ -1372,6 +1435,7 @@ describe("administrative reposition", () => {
       expect(await publishOperationEvents(result)).toEqual({
         publicMessages: [],
         gmMessages: [],
+        attackMessages: [],
       });
       expect(created).toHaveLength(1);
     });

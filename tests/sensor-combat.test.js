@@ -921,7 +921,7 @@ describe("attack previews, commitment, and damage", () => {
     expect(target.state.hull).toBe(44);
     expect(Object.hasOwn(result.public.damage, "projectiles")).toBe(false);
     expect(Object.hasOwn(result.public.damage, "totals")).toBe(false);
-    expect(result.gm.damage.totals).toEqual({ hullDamage: 6, heatDamage: 0 });
+    expect(result.gm.damage.totals).toEqual({ hullDamage: 6, heatDamage: 0, shieldDamage: 8 });
   });
 
   test("projectile resolution refuses to run without the shared shield implementation", () => {

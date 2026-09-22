@@ -62,11 +62,27 @@ function getEnvironmentError() {
   return null;
 }
 
+function registerModuleSettings() {
+  game.settings.register(MODULE_ID, "attackCardVisibility", {
+    name: "Attack card visibility",
+    hint: "Ships that players can observe or own always publish their attack cards. This controls ships players have no access to.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      shared: "GM whisper only (players see nothing)",
+      all: "Public card (reveals weapon names and damage)",
+    },
+    default: "shared",
+  });
+}
+
 function initializeDocuments() {
   if (initComplete) return;
   environmentError = getEnvironmentError();
   if (environmentError) return;
 
+  registerModuleSettings();
   registerShipComponent();
   registerShipActor();
   registerShipSheet();

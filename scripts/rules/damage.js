@@ -226,6 +226,7 @@ export function resolveAttack(config, draft, input, helpers = {}) {
   const bypass = shieldBypass(input.traits);
 
   const projectiles = [];
+  let totalShieldDamage = 0;
   let totalHullDamage = 0;
   let totalHeatDamage = 0;
   let zeroingProjectile = null;
@@ -239,6 +240,7 @@ export function resolveAttack(config, draft, input, helpers = {}) {
       revealDamage: input.revealDamage,
     }, helpers);
     projectiles.push(result.gm);
+    totalShieldDamage += number(result.gm.shield?.damage, 0);
     totalHullDamage += result.gm.hull.taken;
     totalHeatDamage += result.gm.heat.transmitted;
     if (!zeroingProjectile && result.gm.reducedHullToZero) {
@@ -274,7 +276,7 @@ export function resolveAttack(config, draft, input, helpers = {}) {
     effectiveHits: input.effectiveHits,
     sector: input.sector,
     projectiles,
-    totals: { hullDamage: totalHullDamage, heatDamage: totalHeatDamage },
+    totals: { hullDamage: totalHullDamage, heatDamage: totalHeatDamage, shieldDamage: totalShieldDamage },
     conditionEvent,
     traitEvents,
     fate,

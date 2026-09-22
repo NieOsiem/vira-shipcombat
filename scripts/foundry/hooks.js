@@ -24,7 +24,7 @@ import {
 } from "../state/action-queue.js";
 import { readShipRecord, writeShipState } from "../state/token-state.js";
 import { isActiveGM } from "../socket.js";
-import { createGmEventMessages, publishOperationEvents } from "./chat.js";
+import { createGmEventMessages, ensureChatCardStyles, publishOperationEvents } from "./chat.js";
 import {
   initializeShipActor,
   isInternalComponentMutation,
@@ -981,6 +981,7 @@ function sweepWhenActiveGm() {
 export function registerShipHooks() {
   if (hooksRegistered) return;
   hooksRegistered = true;
+  ensureChatCardStyles();
   installShipInitiative();
 
   foundry.applications.apps.DocumentSheetConfig.registerSheet(
