@@ -1049,7 +1049,7 @@ export function saveInstalledShipComponent(
         },
       );
     }
-    await updateShip(actor, hull, state, effective, observed, [{
+    const itemUpdate = {
       _id: itemIdValue,
       name: prepared.source.name,
       img: prepared.source.img,
@@ -1058,7 +1058,23 @@ export function saveInstalledShipComponent(
       "system.size": prepared.source.system.size,
       "system.driveRole": prepared.source.system.driveRole,
       "system.definition": forcedReplacement(prepared.source.system.definition),
-    }]);
+    };
+    if (prepared.source.system.description !== undefined) {
+      itemUpdate["system.description"] = clone(prepared.source.system.description);
+    }
+    if (prepared.source.system.price !== undefined) {
+      itemUpdate["system.price"] = clone(prepared.source.system.price);
+    }
+    if (prepared.source.system.weight !== undefined) {
+      itemUpdate["system.weight"] = clone(prepared.source.system.weight);
+    }
+    if (prepared.source.system.quantity !== undefined) {
+      itemUpdate["system.quantity"] = prepared.source.system.quantity;
+    }
+    if (prepared.source.system.rarity !== undefined) {
+      itemUpdate["system.rarity"] = prepared.source.system.rarity;
+    }
+    await updateShip(actor, hull, state, effective, observed, [itemUpdate]);
     return values(actor.items).find((candidate) =>
       itemId(candidate) === itemIdValue
     ) ?? null;

@@ -14,22 +14,33 @@ export function deepFreeze(value) {
 export function componentSource({
   _id,
   name,
+  img = "icons/svg/item-bag.svg",
   componentClass,
   size = "medium",
   driveRole = "",
   definition,
+  description = { value: "", chat: "" },
+  price = { value: 0, denomination: "gp" },
+  weight = { value: 0, units: "tn" },
+  quantity = 1,
+  rarity = "",
 }) {
   return deepFreeze({
     _id,
     name,
     type: COMPONENT_ITEM_TYPE,
-    img: "icons/svg/item-bag.svg",
+    img,
     system: {
       schemaVersion: SCHEMA_VERSION,
       componentClass,
       size,
       driveRole,
       definition,
+      description: typeof description === "string" ? { value: description, chat: "" } : description,
+      price,
+      weight,
+      quantity,
+      rarity,
     },
   });
 }

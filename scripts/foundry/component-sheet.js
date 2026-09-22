@@ -296,18 +296,24 @@ function showValidationSummary(form, error, source) {
 }
 
 function text(form, name, fallback = "") {
-  return String(field(form, name)?.value ?? fallback).trim();
+  const el = field(form, name);
+  if (!el) return fallback;
+  return String(el.value ?? fallback).trim();
 }
 
 function number(form, name, fallback = 0) {
-  const raw = field(form, name)?.value;
+  const el = field(form, name);
+  if (!el) return fallback;
+  const raw = el.value;
   if (raw === "" || raw == null) return fallback;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function optionalNumber(form, name) {
-  const raw = field(form, name)?.value;
+  const el = field(form, name);
+  if (!el) return undefined;
+  const raw = el.value;
   if (raw === "" || raw == null) return undefined;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : undefined;
@@ -318,7 +324,9 @@ function checked(form, name) {
 }
 
 function normalizeTiers(form, componentClass, existingTiers = []) {
-  return Array.from(form.querySelectorAll("[data-tier-row]")).map(
+  const rows = form.querySelectorAll("[data-tier-row]");
+  if (!rows.length) return clone(existingTiers);
+  return Array.from(rows).map(
     (row, index) => {
       const tier = clone(
         existingTiers[index] ?? tierDefault(componentClass) ?? {},
@@ -367,6 +375,7 @@ function normalizeTiers(form, componentClass, existingTiers = []) {
 }
 
 function normalizeWeaponTraits(form, existingTraits = []) {
+  if (!form.querySelector('[name^="trait."]')) return clone(existingTraits);
   const supportedIds = ["nonLethal", "shieldBypass", "barrage", "vicious"];
   const existingById = new Map();
   for (const trait of existingTraits) {
@@ -441,13 +450,18 @@ function normalizeWeaponTraits(form, existingTraits = []) {
 }
 
 function setOptionalNumber(object, key, form, fieldName) {
+  const el = field(form, fieldName);
+  if (!el) return;
   const value = optionalNumber(form, fieldName);
   if (value === undefined) delete object[key];
   else object[key] = value;
 }
 
-function normalizeWeaponModes(form, existingModes) {
+function normalizeWeaponModes(form, existingModes = {}) {
   const modes = clone(existingModes);
+  if (!field(form, "mode.overclock.enabled")) {
+    return modes;
+  }
   if (!modes.nominal || typeof modes.nominal !== "object") {
     modes.nominal = { overrides: {} };
   }
@@ -492,14 +506,14 @@ function normalizeWeaponModes(form, existingModes) {
 }
 
 function normalizeWeapon(form, existingDefinition) {
-  const definition = clone(existingDefinition);
-  const readiness = clone(definition.readiness);
-  readiness.type = text(form, "definition.readiness.type", "readyShot");
-  readiness.capacity = number(form, "definition.readiness.capacity");
+  const definition = clone(existingDefinition ?? defaultDefinition("weapon"));
+  const readiness = clone(definition.readiness ?? {});
+  readiness.type = text(form, "definition.readiness.type", readiness.type ?? "readyShot");
+  readiness.capacity = number(form, "definition.readiness.capacity", readiness.capacity ?? 1);
   readiness.recovery = text(
     form,
     "definition.readiness.recovery",
-    "automaticStart",
+    readiness.recovery ?? "automaticStart",
   );
   setOptionalNumber(readiness, "work", form, "definition.readiness.work");
   setOptionalNumber(
@@ -510,28 +524,28 @@ function normalizeWeapon(form, existingDefinition) {
   );
 
   definition.category = "hardpoint";
-  definition.accuracy = number(form, "definition.accuracy");
-  definition.damage = clone(definition.damage);
-  definition.damage.shield = number(form, "definition.damage.shield");
-  definition.damage.hull = number(form, "definition.damage.hull");
-  definition.damage.heat = number(form, "definition.damage.heat");
-  definition.armorPiercing = number(form, "definition.armorPiercing");
+  definition.accuracy = number(form, "definition.accuracy", definition.accuracy ?? 0);
+  definition.damage = clone(definition.damage ?? {});
+  definition.damage.shield = number(form, "definition.damage.shield", definition.damage?.shield ?? 0);
+  definition.damage.hull = number(form, "definition.damage.hull", definition.damage?.hull ?? 0);
+  definition.damage.heat = number(form, "definition.damage.heat", definition.damage?.heat ?? 0);
+  definition.armorPiercing = number(form, "definition.armorPiercing", definition.armorPiercing ?? 0);
   definition.projectileClass = text(
     form,
     "definition.projectileClass",
-    "medium",
+    definition.projectileClass ?? "medium",
   );
-  definition.range = clone(definition.range);
-  definition.range.optimal = number(form, "definition.range.optimal");
-  definition.range.maximum = number(form, "definition.range.maximum");
-  definition.arc = number(form, "definition.arc");
-  definition.powerRating = number(form, "definition.powerRating");
-  definition.bootTime = number(form, "definition.bootTime");
-  definition.firingHeat = clone(definition.firingHeat);
-  definition.firingHeat.amount = number(form, "definition.firingHeat.amount");
-  definition.firingHeat.per = text(form, "definition.firingHeat.per", "shot");
-  definition.signatureSpike = number(form, "definition.signatureSpike");
-  definition.recoveryWork = number(form, "definition.recoveryWork");
+  definition.range = clone(definition.range ?? {});
+  definition.range.optimal = number(form, "definition.range.optimal", definition.range?.optimal ?? 0);
+  definition.range.maximum = number(form, "definition.range.maximum", definition.range?.maximum ?? 0);
+  definition.arc = number(form, "definition.arc", definition.arc ?? 0);
+  definition.powerRating = number(form, "definition.powerRating", definition.powerRating ?? 0);
+  definition.bootTime = number(form, "definition.bootTime", definition.bootTime ?? 0);
+  definition.firingHeat = clone(definition.firingHeat ?? {});
+  definition.firingHeat.amount = number(form, "definition.firingHeat.amount", definition.firingHeat?.amount ?? 0);
+  definition.firingHeat.per = text(form, "definition.firingHeat.per", definition.firingHeat?.per ?? "shot");
+  definition.signatureSpike = number(form, "definition.signatureSpike", definition.signatureSpike ?? 0);
+  definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
   definition.readiness = readiness;
   definition.traits = normalizeWeaponTraits(form, definition.traits ?? []);
   definition.modes = normalizeWeaponModes(form, definition.modes);
@@ -539,52 +553,54 @@ function normalizeWeapon(form, existingDefinition) {
 }
 
 function normalizeDefinition(form, componentClass, existingDefinition) {
-  const definition = clone(existingDefinition);
+  const definition = clone(existingDefinition ?? defaultDefinition(componentClass));
   if (componentClass === "reactor") {
-    definition.nominalOutput = number(form, "definition.nominalOutput");
-    definition.redlineOutput = number(form, "definition.redlineOutput");
-    definition.overclockHeat = number(form, "definition.overclockHeat");
-    definition.recoveryWork = number(form, "definition.recoveryWork");
+    definition.nominalOutput = number(form, "definition.nominalOutput", definition.nominalOutput ?? 0);
+    definition.redlineOutput = number(form, "definition.redlineOutput", definition.redlineOutput ?? 0);
+    definition.overclockHeat = number(form, "definition.overclockHeat", definition.overclockHeat ?? 0);
+    definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
   } else if (componentClass === "drive") {
-    definition.base = clone(definition.base);
-    definition.base.thrust = number(form, "definition.base.thrust");
-    definition.base.rotation = number(form, "definition.base.rotation");
+    definition.base = clone(definition.base ?? {});
+    definition.base.thrust = number(form, "definition.base.thrust", definition.base?.thrust ?? 0);
+    definition.base.rotation = number(form, "definition.base.rotation", definition.base?.rotation ?? 0);
     definition.tiers = normalizeTiers(form, componentClass, definition.tiers);
-    definition.recoveryWork = number(form, "definition.recoveryWork");
+    definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
   } else if (componentClass === "shield") {
-    definition.topology = text(form, "definition.topology", "directional");
+    definition.topology = text(form, "definition.topology", definition.topology ?? "directional");
     definition.sectors = definition.topology === "bubble"
       ? ["bubble"]
       : [...SECTORS];
-    definition.totalBudget = number(form, "definition.totalBudget");
-    definition.sectorCap = number(form, "definition.sectorCap");
-    definition.rechargeDelay = number(form, "definition.rechargeDelay");
+    definition.totalBudget = number(form, "definition.totalBudget", definition.totalBudget ?? 0);
+    definition.sectorCap = number(form, "definition.sectorCap", definition.sectorCap ?? 0);
+    definition.rechargeDelay = number(form, "definition.rechargeDelay", definition.rechargeDelay ?? 0);
     definition.tiers = normalizeTiers(form, componentClass, definition.tiers);
-    definition.recoveryWork = number(form, "definition.recoveryWork");
+    definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
     delete definition.emitters;
   } else if (componentClass === "sensor") {
-    definition.base = clone(definition.base);
-    definition.base.passiveRange = number(form, "definition.base.passiveRange");
+    definition.base = clone(definition.base ?? {});
+    definition.base.passiveRange = number(form, "definition.base.passiveRange", definition.base?.passiveRange ?? 0);
     definition.base.passiveStrength = number(
       form,
       "definition.base.passiveStrength",
+      definition.base?.passiveStrength ?? 0,
     );
-    definition.base.activeRange = number(form, "definition.base.activeRange");
+    definition.base.activeRange = number(form, "definition.base.activeRange", definition.base?.activeRange ?? 0);
     definition.base.activeModifier = number(
       form,
       "definition.base.activeModifier",
+      definition.base?.activeModifier ?? 0,
     );
-    definition.base.ewModifier = number(form, "definition.base.ewModifier");
+    definition.base.ewModifier = number(form, "definition.base.ewModifier", definition.base?.ewModifier ?? 0);
     definition.tiers = normalizeTiers(form, componentClass, definition.tiers);
-    definition.recoveryWork = number(form, "definition.recoveryWork");
+    definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
   } else if (componentClass === "cooling") {
     definition.tiers = normalizeTiers(form, componentClass, definition.tiers);
-    definition.ventAmount = number(form, "definition.ventAmount");
-    definition.ventCooldown = number(form, "definition.ventCooldown");
-    definition.recoveryWork = number(form, "definition.recoveryWork");
+    definition.ventAmount = number(form, "definition.ventAmount", definition.ventAmount ?? 0);
+    definition.ventCooldown = number(form, "definition.ventCooldown", definition.ventCooldown ?? 0);
+    definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
   } else if (componentClass === "inertia") {
     definition.tiers = normalizeTiers(form, componentClass, definition.tiers);
-    definition.recoveryWork = number(form, "definition.recoveryWork");
+    definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
   } else if (componentClass === "weapon") {
     return normalizeWeapon(form, definition);
   }
@@ -595,22 +611,55 @@ function normalizeForm(form, forcedClass = null, existingSource = {}) {
   const source = clone(existingSource);
   const system = clone(source.system);
   const componentClass = forcedClass ??
-    text(form, "system.componentClass", "reactor");
+    (field(form, "system.componentClass") ? text(form, "system.componentClass") : (system.componentClass ?? "reactor"));
   system.schemaVersion = SCHEMA_VERSION;
   system.componentClass = componentClass;
-  system.size = text(form, "system.size", "medium");
+  system.size = field(form, "system.size") ? text(form, "system.size") : (system.size ?? "medium");
   system.driveRole = componentClass === "drive"
-    ? text(form, "system.driveRole")
+    ? (field(form, "system.driveRole") ? text(form, "system.driveRole") : (system.driveRole ?? ""))
     : "";
   system.definition = normalizeDefinition(
     form,
     componentClass,
     system.definition,
   );
+
+  const descField = field(form, "system.description.value");
+  const descriptionValue = descField ? descField.value : (system.description?.value ?? "");
+  system.description = {
+    value: descriptionValue,
+    chat: system.description?.chat ?? "",
+  };
+
+  const priceVal = field(form, "system.price.value");
+  system.price = {
+    value: priceVal ? number(form, "system.price.value") : (system.price?.value ?? 0),
+    denomination: field(form, "system.price.denomination")
+      ? text(form, "system.price.denomination")
+      : (system.price?.denomination ?? "gp"),
+  };
+
+  const weightVal = field(form, "system.weight.value");
+  system.weight = {
+    value: weightVal ? number(form, "system.weight.value") : (system.weight?.value ?? 0),
+    units: field(form, "system.weight.units")
+      ? text(form, "system.weight.units")
+      : (system.weight?.units ?? "tn"),
+  };
+
+  const qtyVal = field(form, "system.quantity");
+  system.quantity = qtyVal ? number(form, "system.quantity", 1) : (system.quantity ?? 1);
+
+  const rarityVal = field(form, "system.rarity");
+  system.rarity = rarityVal ? text(form, "system.rarity") : (system.rarity ?? "");
+
+  const nameVal = field(form, "name");
+  const imgVal = field(form, "img");
+
   return {
     ...source,
-    name: text(form, "name", "Ship Component"),
-    img: text(form, "img", "icons/svg/item-bag.svg"),
+    name: nameVal ? text(form, "name", source.name || "Ship Component") : (source.name || "Ship Component"),
+    img: imgVal ? text(form, "img", source.img || "icons/svg/item-bag.svg") : (source.img || "icons/svg/item-bag.svg"),
     system,
   };
 }
@@ -663,9 +712,20 @@ const { HandlebarsApplicationMixin } = foundry.applications.api;
 
 export class ShipComponentSheet
   extends HandlebarsApplicationMixin(ItemSheetV2) {
+  static MODES = {
+    PLAY: 1,
+    EDIT: 2,
+  };
+
   static DEFAULT_OPTIONS = {
     classes: [MODULE_ID, "ship-component-sheet"],
-    position: { width: 760, height: 760 },
+    position: { width: 780, height: 780 },
+    actions: {
+      toggleMode: ShipComponentSheet.#onToggleMode,
+      editImage: ShipComponentSheet.#onEditImage,
+      showIcon: ShipComponentSheet.#onShowIcon,
+      tab: ShipComponentSheet.#onTab,
+    },
     form: {
       closeOnSubmit: false,
       submitOnChange: false,
@@ -679,6 +739,19 @@ export class ShipComponentSheet
       template: `modules/${MODULE_ID}/templates/ship-component.hbs`,
     },
   };
+
+  #mode = ShipComponentSheet.MODES.PLAY;
+  tabGroups = {
+    primary: "description",
+  };
+
+  get mode() {
+    return this.#mode;
+  }
+
+  get isEditMode() {
+    return this.#mode === ShipComponentSheet.MODES.EDIT;
+  }
 
   #draft = null;
   #draftRevision = null;
@@ -718,6 +791,119 @@ export class ShipComponentSheet
     } · Ship Component`;
   }
 
+  /** @override */
+  _getFrameButtons(options) {
+    const buttons = super._getFrameButtons(options);
+    const item = this.item ?? this.document;
+    const denial = componentEditDenial(item);
+    if (!denial) {
+      const isEdit = this.#mode === ShipComponentSheet.MODES.EDIT;
+      buttons.unshift({
+        icon: isEdit ? "fa-solid fa-eye" : "fa-solid fa-pen-to-square",
+        label: isEdit ? "View Mode" : "Edit Mode",
+        action: "toggleMode",
+      });
+    }
+    return buttons;
+  }
+
+  /** @override */
+  _getHeaderControls() {
+    const controls = super._getHeaderControls();
+    const item = this.item ?? this.document;
+    const denial = componentEditDenial(item);
+    if (!denial) {
+      const isEdit = this.#mode === ShipComponentSheet.MODES.EDIT;
+      controls.unshift({
+        icon: isEdit ? "fa-solid fa-eye" : "fa-solid fa-pen-to-square",
+        label: isEdit ? "View Mode" : "Edit Mode",
+        action: "toggleMode",
+      });
+    }
+    return controls;
+  }
+
+  /** @override */
+  _onRender(context, options) {
+    super._onRender(context, options);
+    const btn = this.element?.querySelector('.window-header [data-action="toggleMode"]');
+    if (btn) {
+      const isEdit = this.#mode === ShipComponentSheet.MODES.EDIT;
+      btn.className = `header-control icon fa-solid ${isEdit ? "fa-eye" : "fa-pen-to-square"}`;
+      const label = isEdit ? "View Mode" : "Edit Mode";
+      btn.dataset.tooltip = label;
+      btn.setAttribute("aria-label", label);
+    }
+  }
+
+  /** @override */
+  changeTab(tab, group, options) {
+    if (this.#mode === ShipComponentSheet.MODES.EDIT && this.form) {
+      try {
+        const item = this.item ?? this.document;
+        this.#draft = normalizeForm(this.form, null, this.#draftSource(item));
+      } catch {}
+    }
+    return super.changeTab(tab, group, options);
+  }
+
+  static #onTab(_event, target) {
+    const tab = target?.dataset?.tab;
+    const group = target?.dataset?.group;
+    if (tab && group) {
+      this.changeTab(tab, group);
+    }
+  }
+
+  static async #onToggleMode(_event, _target) {
+    const item = this.item ?? this.document;
+    const denial = componentEditDenial(item);
+    if (denial) {
+      this.#mode = ShipComponentSheet.MODES.PLAY;
+      ui.notifications.warn(denial);
+      return;
+    }
+    if (this.#mode === ShipComponentSheet.MODES.EDIT && this.form) {
+      try {
+        this.#draft = normalizeForm(this.form, null, this.#draftSource(item));
+      } catch {}
+    }
+    this.#mode = this.#mode === ShipComponentSheet.MODES.EDIT
+      ? ShipComponentSheet.MODES.PLAY
+      : ShipComponentSheet.MODES.EDIT;
+    await this.render();
+  }
+
+  static async #onEditImage(_event, _target) {
+    const item = this.item ?? this.document;
+    const denial = componentEditDenial(item);
+    if (denial) {
+      ui.notifications.warn(denial);
+      return;
+    }
+    const draft = this.#draftSource(item);
+    const FilePickerClass = foundry.applications?.apps?.FilePicker?.implementation ?? globalThis.FilePicker;
+    const fp = new FilePickerClass({
+      type: "image",
+      current: draft.img ?? item.img ?? "",
+      callback: async (path) => {
+        draft.img = path;
+        this.#setDraft(draft);
+        await this.render();
+      },
+    });
+    return fp.browse();
+  }
+
+  static async #onShowIcon(_event, _target) {
+    const item = this.item ?? this.document;
+    const popout = new ImagePopout(item.img, {
+      title: item.name,
+      uuid: item.uuid,
+    });
+    return popout.render(true);
+  }
+
   async _prepareContext(options) {
     const context = await super._prepareContext(options);
     const item = this.item ?? this.document;
@@ -727,15 +913,138 @@ export class ShipComponentSheet
     system.componentClass = componentClass;
     system.driveRole ??= "";
     system.definition ??= defaultDefinition(componentClass);
+    system.description ??= { value: "", chat: "" };
+    system.price ??= { value: 0, denomination: "gp" };
+    system.weight ??= { value: 0, units: "tn" };
+    system.quantity ??= 1;
+    system.rarity ??= "";
+
     const denial = componentEditDenial(item);
+    const canEdit = !denial;
+    if (!canEdit) this.#mode = ShipComponentSheet.MODES.PLAY;
+    const isEditMode = canEdit && this.#mode === ShipComponentSheet.MODES.EDIT;
+    const isPlayMode = !isEditMode;
+
+    const TextEditorClass = foundry.applications?.ux?.TextEditor?.implementation ?? globalThis.TextEditor;
+    const enrichedDescription = await TextEditorClass?.enrichHTML?.(
+      system.description.value ?? "",
+      {
+        relativeTo: item,
+        secrets: item.isOwner,
+        rollData: item.getRollData?.() ?? {},
+      },
+    ) ?? (system.description.value ?? "");
+
+    const activeTab = this.tabGroups.primary ?? "description";
+
+    const currencies = CONFIG.DND5E?.currencies ?? {
+      cp: { label: "CP" },
+      sp: { label: "SP" },
+      ep: { label: "EP" },
+      gp: { label: "GP" },
+      pp: { label: "PP" },
+    };
+    const currencyOptions = Object.entries(currencies).map(([key, cfg]) => ({
+      value: key,
+      label: cfg.label ?? key.toUpperCase(),
+      selected: (system.price?.denomination ?? "gp") === key,
+    }));
+
+    const weightUnits = CONFIG.DND5E?.weightUnits ?? {
+      tn: { label: "Tons", abbreviation: "tn" },
+      lb: { label: "Pounds", abbreviation: "lb" },
+    };
+    const weightUnitOptions = Object.entries(weightUnits).map(([key, cfg]) => ({
+      value: key,
+      label: cfg.abbreviation ?? cfg.label ?? key,
+      selected: (system.weight?.units ?? "tn") === key,
+    }));
+
+    const rarities = CONFIG.DND5E?.itemRarity ?? {
+      common: "Common",
+      uncommon: "Uncommon",
+      rare: "Rare",
+      veryRare: "Very Rare",
+      legendary: "Legendary",
+      artifact: "Artifact",
+    };
+    const rarityOptions = [
+      { value: "", label: "Standard / None", selected: !system.rarity },
+      ...Object.entries(rarities).map(([key, label]) => ({
+        value: key,
+        label,
+        selected: system.rarity === key,
+      })),
+    ];
+
+    const definition = viewDefinition(system);
+
+    const classLabel = componentClass.replace(/^./, (c) => c.toUpperCase());
+    const sizeLabel = `${(system.size ?? "medium").replace(/^./, (c) => c.toUpperCase())} Mount`;
+    const driveRoleLabel = system.driveRole
+      ? `${system.driveRole.replace(/^./, (c) => c.toUpperCase())} Drive`
+      : "";
+    const rarityLabel = rarities[system.rarity] ?? (system.rarity ? system.rarity.toUpperCase() : "");
+    const priceFormatted = `${(system.price?.value ?? 0).toLocaleString()} ${(system.price?.denomination ?? "gp").toUpperCase()}`;
+    const weightFormatted = `${system.weight?.value ?? 0} ${weightUnits[system.weight?.units]?.abbreviation ?? system.weight?.units ?? "tn"}`;
+
+    const formatSigned = (val) => {
+      const num = Number(val) || 0;
+      return num > 0 ? `+${num}` : String(num);
+    };
+
+    let weaponTraitsList = [];
+    if (componentClass === "weapon") {
+      if (definition.traitState?.nonLethal) {
+        weaponTraitsList.push({ label: "Non-lethal", desc: "Attacks disable rather than destroy" });
+      }
+      if (definition.traitState?.vicious) {
+        weaponTraitsList.push({ label: "Vicious", desc: "Deals additional critical damage" });
+      }
+      if (definition.traitState?.shieldBypass) {
+        const channels = [];
+        if (definition.traitState.bypassHull) channels.push("Hull");
+        if (definition.traitState.bypassHeat) channels.push("Heat");
+        weaponTraitsList.push({
+          label: `Shield Bypass${channels.length ? ` (${channels.join(", ")})` : ""}`,
+          desc: definition.traitState.damageShield ? "Also damages shields" : "Does not damage shields",
+        });
+      }
+      if (definition.traitState?.barrage) {
+        weaponTraitsList.push({
+          label: "Barrage",
+          desc: `${definition.barrageProfiles?.length ?? 0} firing profile(s)`,
+        });
+      }
+    }
+
     return foundry.utils.mergeObject(context, {
       item,
       name: source.name,
       img: source.img,
       system,
-      definition: viewDefinition(system),
-      editable: !denial,
+      definition,
+      editable: canEdit,
+      canEdit,
       denial,
+      isEditMode,
+      isPlayMode,
+      activeTab,
+      isTabDescription: activeTab === "description",
+      isTabProfile: activeTab === "profile",
+      enrichedDescription,
+      classLabel,
+      sizeLabel,
+      driveRoleLabel,
+      rarityLabel,
+      priceFormatted,
+      weightFormatted,
+      currencyOptions,
+      weightUnitOptions,
+      rarityOptions,
+      accuracyFormatted: formatSigned(definition.accuracy),
+      signatureFormatted: formatSigned(definition.signatureSpike),
+      weaponTraitsList,
       isReactor: componentClass === "reactor",
       isDrive: componentClass === "drive",
       isShield: componentClass === "shield",
@@ -802,6 +1111,7 @@ export class ShipComponentSheet
     }
     root.querySelectorAll("[data-feature]").forEach((fieldset) => {
       const parent = field(form, fieldset.dataset.feature);
+      if (!parent) return;
       const sync = () => {
         fieldset.disabled = !parent.checked;
         if (parent.checked) fieldset.removeAttribute("title");
@@ -1026,7 +1336,7 @@ export class ShipComponentSheet
           this.#draftRevision,
         );
       } else {
-        await item.update({
+        const updateData = {
           name: update.name,
           img: update.img,
           "system.schemaVersion": update.system.schemaVersion,
@@ -1036,9 +1346,26 @@ export class ShipComponentSheet
           "system.definition": foundry.data.operators.ForcedReplacement.create(
             update.system.definition,
           ),
-        }, { diff: false });
+        };
+        if (update.system.description !== undefined) {
+          updateData["system.description"] = update.system.description;
+        }
+        if (update.system.price !== undefined) {
+          updateData["system.price"] = update.system.price;
+        }
+        if (update.system.weight !== undefined) {
+          updateData["system.weight"] = update.system.weight;
+        }
+        if (update.system.quantity !== undefined) {
+          updateData["system.quantity"] = update.system.quantity;
+        }
+        if (update.system.rarity !== undefined) {
+          updateData["system.rarity"] = update.system.rarity;
+        }
+        await item.update(updateData, { diff: false });
       }
       this.#clearDraft();
+      this.#mode = ShipComponentSheet.MODES.PLAY;
       ui.notifications.info("Ship component saved.");
       await this.render();
     } catch (error) {

@@ -1,327 +1,816 @@
-<div class="ship-component-editor" data-component-form data-component-class="{{system.componentClass}}">
+<div class="ship-component-editor {{#if isEditMode}}mode-edit{{else}}mode-play{{/if}}" data-component-form data-component-class="{{system.componentClass}}">
   {{#if denial}}<p class="ship-component-denial" role="status"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{denial}}</p>{{/if}}
 
-  <fieldset class="ship-component-section ship-component-identity" {{#unless editable}}disabled{{/unless}}>
-    <legend>Component identity</legend>
-    <div class="ship-component-identity-grid">
-      <img class="ship-component-portrait" src="{{img}}" alt="">
-      <div class="ship-component-form-grid">
-        <label class="ship-component-name">Name
-          <input type="text" name="name" value="{{name}}" autocomplete="off" required>
-        </label>
-        <label>Image path
-          <input type="text" name="img" value="{{img}}" autocomplete="off" required>
-        </label>
-        <label>Class
-          <select name="system.componentClass">
-            {{#each componentClassOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-          </select>
-        </label>
-        <label>Mount size
-          <select name="system.size">
-            {{#each sizeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-          </select>
-        </label>
-        {{#if isDrive}}
-          <label>Drive role
-            <select name="system.driveRole">
-              {{#each driveRoleOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+  {{!-- Sheet Header --}}
+  <header class="ship-component-header">
+    {{!-- Image with FilePicker trigger --}}
+    <button type="button" class="header-image-box {{#if isEditMode}}editable{{/if}}"
+         data-action="{{#if isEditMode}}editImage{{else}}showIcon{{/if}}"
+         title="{{#if isEditMode}}Click to choose artwork{{else}}Click to view artwork{{/if}}">
+      <img class="ship-component-portrait" src="{{img}}" alt="{{name}}">
+      {{#if isEditMode}}
+        <div class="image-edit-overlay"><i class="fa-solid fa-camera" aria-hidden="true"></i></div>
+      {{/if}}
+    </button>
+    <input type="hidden" name="img" value="{{img}}">
+
+    {{!-- Name & Subtitles --}}
+    <div class="header-identity">
+      {{#if isEditMode}}
+        <div class="name-edit-wrap">
+          <input class="ship-component-name-input" type="text" name="name" value="{{name}}" placeholder="Component Name" autocomplete="off" required>
+        </div>
+        <div class="header-subtitles-edit">
+          <label class="subtitle-field">
+            <span class="field-label">Class</span>
+            <select name="system.componentClass">
+              {{#each componentClassOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
             </select>
           </label>
+          <label class="subtitle-field">
+            <span class="field-label">Mount Size</span>
+            <select name="system.size">
+              {{#each sizeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+          {{#if isDrive}}
+            <label class="subtitle-field">
+              <span class="field-label">Drive Role</span>
+              <select name="system.driveRole">
+                {{#each driveRoleOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </label>
+          {{/if}}
+          <label class="subtitle-field">
+            <span class="field-label">Rarity</span>
+            <select name="system.rarity">
+              {{#each rarityOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+            </select>
+          </label>
+        </div>
+      {{else}}
+        <h1 class="ship-component-name">{{name}}</h1>
+        <div class="header-subtitles-view">
+          <span class="identity-badge class-badge"><i class="fa-solid fa-microchip" aria-hidden="true"></i> {{classLabel}}</span>
+          <span class="identity-badge size-badge"><i class="fa-solid fa-ruler-combined" aria-hidden="true"></i> {{sizeLabel}}</span>
+          {{#if driveRoleLabel}}<span class="identity-badge role-badge"><i class="fa-solid fa-angles-right" aria-hidden="true"></i> {{driveRoleLabel}}</span>{{/if}}
+          {{#if rarityLabel}}<span class="identity-badge rarity-badge {{system.rarity}}">{{rarityLabel}}</span>{{/if}}
+        </div>
+      {{/if}}
+    </div>
+
+    {{!-- Physical Stats (Price, Weight, Qty) & Mode Toggle --}}
+    <div class="header-metrics">
+      {{#if canEdit}}
+        <button type="button" class="ship-component-mode-btn {{#if isEditMode}}active{{/if}}" data-action="toggleMode" title="{{#if isEditMode}}Switch to View Mode{{else}}Switch to Edit Mode{{/if}}">
+          <i class="fa-solid {{#if isEditMode}}fa-eye{{else}}fa-pen-to-square{{/if}}" aria-hidden="true"></i>
+          <span>{{#if isEditMode}}View Mode{{else}}Edit Mode{{/if}}</span>
+        </button>
+      {{/if}}
+      <div class="header-physical-fields">
+        {{#if isEditMode}}
+          <div class="physical-field-row">
+            <label class="physical-label">Price</label>
+            <div class="physical-input-pair">
+              <input type="number" min="0" step="1" name="system.price.value" value="{{system.price.value}}" placeholder="0">
+              <select name="system.price.denomination">
+                {{#each currencyOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </div>
+          </div>
+          <div class="physical-field-row">
+            <label class="physical-label">Weight</label>
+            <div class="physical-input-pair">
+              <input type="number" min="0" step="any" name="system.weight.value" value="{{system.weight.value}}" placeholder="0">
+              <select name="system.weight.units">
+                {{#each weightUnitOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+              </select>
+            </div>
+          </div>
+          <div class="physical-field-row">
+            <label class="physical-label">Quantity</label>
+            <input type="number" min="0" step="1" name="system.quantity" value="{{system.quantity}}" placeholder="1">
+          </div>
+        {{else}}
+          <div class="physical-view-pill" title="Price">
+            <i class="fa-solid fa-coins" aria-hidden="true"></i>
+            <span class="value">{{priceFormatted}}</span>
+          </div>
+          <div class="physical-view-pill" title="Weight">
+            <i class="fa-solid fa-weight-hanging" aria-hidden="true"></i>
+            <span class="value">{{weightFormatted}}</span>
+          </div>
+          {{#if (gt system.quantity 1)}}
+            <div class="physical-view-pill" title="Quantity">
+              <span class="quantity-badge">&times;{{system.quantity}}</span>
+            </div>
+          {{/if}}
         {{/if}}
       </div>
     </div>
-  </fieldset>
+  </header>
 
-  {{#if isReactor}}
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Reactor</legend>
-      <p>
-        <label>Nominal output <input type="number" min="1" step="1" name="definition.nominalOutput" value="{{definition.nominalOutput}}"></label>
-        <label>Redline output <input type="number" min="1" step="1" name="definition.redlineOutput" value="{{definition.redlineOutput}}"></label>
-        <label>Redline heat <input type="number" min="0" step="any" name="definition.overclockHeat" value="{{definition.overclockHeat}}"></label>
-        <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
-      </p>
-    </fieldset>
-  {{/if}}
+  {{!-- Navigation Tabs --}}
+  <nav class="sheet-tabs tabs" aria-label="Component Navigation">
+    <button type="button" class="tab-btn {{#if isTabDescription}}active{{/if}}" data-action="tab" data-group="primary" data-tab="description">
+      <i class="fa-solid fa-book-open" aria-hidden="true"></i> <span>Description</span>
+    </button>
+    <button type="button" class="tab-btn {{#if isTabProfile}}active{{/if}}" data-action="tab" data-group="primary" data-tab="profile">
+      <i class="fa-solid fa-sliders" aria-hidden="true"></i> <span>Technical Profile</span>
+    </button>
+  </nav>
 
-  {{#if isDrive}}
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Drive</legend>
-      <p>
-        <label>Base thrust <input type="number" min="0" step="any" name="definition.base.thrust" value="{{definition.base.thrust}}"></label>
-        <label>Base rotation <input type="number" min="0" step="any" name="definition.base.rotation" value="{{definition.base.rotation}}"></label>
-        <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
-      </p>
-      <h3>Power tiers</h3>
-      <table>
-        <caption>Drive power tiers</caption>
-        <thead><tr><th scope="col">Power</th><th scope="col">Multiplier</th><th scope="col">Online</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col">Actions</th></tr></thead>
-        <tbody>
-          {{#each definition.tiers as |tier|}}
-            <tr data-tier-row>
-              <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="multiplier" value="{{tier.multiplier}}" aria-label="Multiplier"></td>
-              <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
-              <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
-              <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove drive power tier {{tier.power}}"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Remove</span></button></td>
-            </tr>
-          {{/each}}
-        </tbody>
-      </table>
-      <button type="button" data-row-action="add-tier">Add tier</button>
-    </fieldset>
-  {{/if}}
+  {{!-- ================================================================ --}}
+  {{!-- TAB 1: DESCRIPTION                                               --}}
+  {{!-- ================================================================ --}}
+  <section class="tab-content tab-description tab {{#if isTabDescription}}active{{/if}}" data-group="primary" data-tab="description">
+    {{#if isEditMode}}
+      <div class="description-edit-container">
+        <label class="field-section-title"><i class="fa-solid fa-pen-nib" aria-hidden="true"></i> Item Description & Lore</label>
+        <prose-mirror name="system.description.value" value="{{system.description.value}}" document-uuid="{{item.uuid}}" class="sized" compact>
+          {{{enrichedDescription}}}
+        </prose-mirror>
+      </div>
+    {{else}}
+      <div class="description-view-container">
+        {{!-- Quick specs bar for shop and overview --}}
+        <div class="description-quick-specs">
+          <div class="quick-spec-item"><span class="label">Class:</span> <span class="val">{{classLabel}}</span></div>
+          <div class="quick-spec-item"><span class="label">Mount Size:</span> <span class="val">{{sizeLabel}}</span></div>
+          {{#if isWeapon}}
+            <div class="quick-spec-item"><span class="label">Optimal Range:</span> <span class="val">{{definition.range.optimal}} hex</span></div>
+            <div class="quick-spec-item"><span class="label">Damage:</span> <span class="val">{{definition.damage.shield}} S / {{definition.damage.hull}} H</span></div>
+          {{/if}}
+          {{#if isReactor}}
+            <div class="quick-spec-item"><span class="label">Nominal Output:</span> <span class="val">{{definition.nominalOutput}} MW</span></div>
+          {{/if}}
+          {{#if isShield}}
+            <div class="quick-spec-item"><span class="label">Topology:</span> <span class="val">{{definition.topology}}</span></div>
+            <div class="quick-spec-item"><span class="label">Budget:</span> <span class="val">{{definition.totalBudget}} SP</span></div>
+          {{/if}}
+          {{#if isDrive}}
+            <div class="quick-spec-item"><span class="label">Base Thrust:</span> <span class="val">{{definition.base.thrust}}</span></div>
+          {{/if}}
+        </div>
 
-  {{#if isShield}}
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Shield</legend>
-      <p>
-        <label>Topology
-          <select name="definition.topology">
-            {{#each topologyOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-          </select>
-        </label>
-        <label>Total budget <input type="number" min="1" step="1" name="definition.totalBudget" value="{{definition.totalBudget}}"></label>
-        <label>Sector cap <input type="number" min="1" step="1" name="definition.sectorCap" value="{{definition.sectorCap}}"></label>
-        <label>Recharge delay <input type="number" min="1" step="1" name="definition.rechargeDelay" value="{{definition.rechargeDelay}}"></label>
-        <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
-      </p>
-      <fieldset class="ship-component-subsection">
-        <legend>Protected sectors</legend>
-        {{#if isDirectionalShield}}
-          <div class="ship-component-check-grid">{{#each sectorOptions}}<label><input type="checkbox" name="definition.sectors.{{value}}" checked disabled> {{label}}</label>{{/each}}</div>
+        {{#if enrichedDescription}}
+          <div class="editor-content prose-content">
+            {{{enrichedDescription}}}
+          </div>
         {{else}}
-          <label><input type="checkbox" name="definition.sectors.bubble" checked disabled> Bubble</label>
-          <p class="ship-component-help">Bubble shields protect the whole vessel as one sector.</p>
+          <div class="empty-notice">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            <p>No operational description or catalog lore provided for this component.</p>
+          </div>
         {{/if}}
-      </fieldset>
-      <h3>Power tiers</h3>
-      <table>
-        <caption>Shield power tiers</caption>
-        <thead><tr><th scope="col">Power</th><th scope="col">Online</th><th scope="col">Regeneration</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col">Actions</th></tr></thead>
-        <tbody>
-          {{#each definition.tiers as |tier|}}
-            <tr data-tier-row>
-              <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
-              <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="regeneration" value="{{tier.regeneration}}" aria-label="Regeneration"></td>
-              <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
-              <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove shield power tier {{tier.power}}"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Remove</span></button></td>
-            </tr>
-          {{/each}}
-        </tbody>
-      </table>
-      <button type="button" data-row-action="add-tier">Add tier</button>
-    </fieldset>
+      </div>
+    {{/if}}
+  </section>
+
+  {{!-- ================================================================ --}}
+  {{!-- TAB 2: TECHNICAL PROFILE                                         --}}
+  {{!-- ================================================================ --}}
+  <section class="tab-content tab-profile tab {{#if isTabProfile}}active{{/if}}" data-group="primary" data-tab="profile">
+
+    {{#if isPlayMode}}
+      {{!-- -------------------------------------------------------------- --}}
+      {{!-- VIEW MODE: SCI-FI HUD SPEC CARDS                               --}}
+      {{!-- -------------------------------------------------------------- --}}
+      <div class="hud-profile-grid">
+
+        {{#if isWeapon}}
+          {{!-- Damage Profile Card --}}
+          <div class="hud-card damage-card">
+            <div class="hud-card-header"><i class="fa-solid fa-burst" aria-hidden="true"></i> Damage Output</div>
+            <div class="hud-damage-metrics">
+              <div class="hud-damage-chip shield" title="Damage dealt to active shields">
+                <span class="chip-val">{{definition.damage.shield}}</span>
+                <span class="chip-lbl">Shield</span>
+              </div>
+              <div class="hud-damage-chip hull" title="Damage dealt to vessel hull">
+                <span class="chip-val">{{definition.damage.hull}}</span>
+                <span class="chip-lbl">Hull</span>
+              </div>
+              <div class="hud-damage-chip heat" title="Heat transferred on hit">
+                <span class="chip-val">{{definition.damage.heat}}</span>
+                <span class="chip-lbl">Heat</span>
+              </div>
+            </div>
+          </div>
+
+          {{!-- Range & Firing Arc Card --}}
+          <div class="hud-card range-card">
+            <div class="hud-card-header"><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> Targeting & Envelope</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat"><span class="stat-label">Optimal Range</span><span class="stat-value">{{definition.range.optimal}} <small>hex</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Maximum Range</span><span class="stat-value">{{definition.range.maximum}} <small>hex</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Firing Arc</span><span class="stat-value">{{definition.arc}}&deg;</span></div>
+              <div class="hud-stat"><span class="stat-label">Projectile Class</span><span class="stat-value capitalize">{{definition.projectileClass}}</span></div>
+            </div>
+          </div>
+
+          {{!-- Combat Characteristics Card --}}
+          <div class="hud-card combat-card">
+            <div class="hud-card-header"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Combat Specifications</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat"><span class="stat-label">Accuracy Modifier</span><span class="stat-value">{{accuracyFormatted}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Armor Piercing</span><span class="stat-value">{{definition.armorPiercing}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Power Rating</span><span class="stat-value">{{definition.powerRating}} <small>MW</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Boot Time</span><span class="stat-value">{{definition.bootTime}} <small>rnd</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Signature Spike</span><span class="stat-value">{{signatureFormatted}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>work</small></span></div>
+            </div>
+          </div>
+
+          {{!-- Readiness & Thermal Card --}}
+          <div class="hud-card readiness-card">
+            <div class="hud-card-header"><i class="fa-solid fa-fire" aria-hidden="true"></i> Readiness & Cycling</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat"><span class="stat-label">Firing Heat</span><span class="stat-value">{{definition.firingHeat.amount}} <small>/ {{definition.firingHeat.per}}</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Readiness Type</span><span class="stat-value capitalize">{{definition.readiness.type}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Magazine / Capacity</span><span class="stat-value">{{definition.readiness.capacity}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Recovery Method</span><span class="stat-value capitalize">{{definition.readiness.recovery}}</span></div>
+              {{#if definition.readiness.work}}
+                <div class="hud-stat"><span class="stat-label">Manual Work</span><span class="stat-value">{{definition.readiness.work}}</span></div>
+              {{/if}}
+              {{#if definition.readiness.eligibleStarts}}
+                <div class="hud-stat"><span class="stat-label">Eligible Starts</span><span class="stat-value">{{definition.readiness.eligibleStarts}}</span></div>
+              {{/if}}
+            </div>
+          </div>
+
+          {{!-- Weapon Traits Card --}}
+          <div class="hud-card traits-card">
+            <div class="hud-card-header"><i class="fa-solid fa-tag" aria-hidden="true"></i> Weapon Traits & Special Rules</div>
+            {{#if weaponTraitsList.length}}
+              <div class="hud-trait-pill-list">
+                {{#each weaponTraitsList}}
+                  <div class="hud-trait-pill">
+                    <span class="trait-name">{{label}}</span>
+                    <span class="trait-desc">{{desc}}</span>
+                  </div>
+                {{/each}}
+              </div>
+              {{#if definition.barrageProfiles.length}}
+                <div class="hud-barrage-table-wrap">
+                  <table class="hud-ladder-table">
+                    <caption>Barrage Fire Profiles</caption>
+                    <thead><tr><th scope="col">Rounds</th><th scope="col">Attack Penalty</th><th scope="col">Max Effective Hits</th></tr></thead>
+                    <tbody>
+                      {{#each definition.barrageProfiles}}
+                        <tr>
+                          <td><strong>{{rounds}}</strong></td>
+                          <td>{{attackPenalty}}</td>
+                          <td>{{maxEffectiveHits}}</td>
+                        </tr>
+                      {{/each}}
+                    </tbody>
+                  </table>
+                </div>
+              {{/if}}
+            {{else}}
+              <p class="hud-empty-text">No special weapon traits configured.</p>
+            {{/if}}
+          </div>
+
+          {{!-- Overclock Mode Card --}}
+          {{#if definition.hasOverclock}}
+            <div class="hud-card overclock-card">
+              <div class="hud-card-header overclock"><i class="fa-solid fa-bolt" aria-hidden="true"></i> Overclock Mode Overrides</div>
+              <div class="hud-stat-grid">
+                {{#if definition.overclock.powerRating}}
+                  <div class="hud-stat"><span class="stat-label">Power Rating</span><span class="stat-value">{{definition.overclock.powerRating}} <small>MW</small></span></div>
+                {{/if}}
+                {{#if definition.overclock.accuracy}}
+                  <div class="hud-stat"><span class="stat-label">Accuracy Override</span><span class="stat-value">{{definition.overclock.accuracy}}</span></div>
+                {{/if}}
+                {{#if definition.overclock.firingHeat.amount}}
+                  <div class="hud-stat"><span class="stat-label">Firing Heat</span><span class="stat-value">{{definition.overclock.firingHeat.amount}} <small>/ {{definition.overclock.firingHeat.per}}</small></span></div>
+                {{/if}}
+                {{#if definition.overclock.damage}}
+                  <div class="hud-stat full-width">
+                    <span class="stat-label">Damage Overrides</span>
+                    <span class="stat-value">
+                      {{#if definition.overclock.damage.shield}}Shield {{definition.overclock.damage.shield}} &nbsp;{{/if}}
+                      {{#if definition.overclock.damage.hull}}Hull {{definition.overclock.damage.hull}} &nbsp;{{/if}}
+                      {{#if definition.overclock.damage.heat}}Heat {{definition.overclock.damage.heat}}{{/if}}
+                    </span>
+                  </div>
+                {{/if}}
+              </div>
+            </div>
+          {{/if}}
+        {{/if}}
+
+        {{#if isReactor}}
+          <div class="hud-card">
+            <div class="hud-card-header"><i class="fa-solid fa-atom" aria-hidden="true"></i> Reactor Power Output</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat highlight"><span class="stat-label">Nominal Output</span><span class="stat-value">{{definition.nominalOutput}} <small>MW</small></span></div>
+              <div class="hud-stat highlight amber"><span class="stat-label">Redline Output</span><span class="stat-value">{{definition.redlineOutput}} <small>MW</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Redline Overclock Heat</span><span class="stat-value">{{definition.overclockHeat}} <small>Heat</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
+            </div>
+          </div>
+        {{/if}}
+
+        {{#if isDrive}}
+          <div class="hud-card">
+            <div class="hud-card-header"><i class="fa-solid fa-angles-right" aria-hidden="true"></i> Base Propulsion</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat highlight"><span class="stat-label">Base Thrust</span><span class="stat-value">{{definition.base.thrust}} <small>hex</small></span></div>
+              <div class="hud-stat highlight"><span class="stat-label">Base Rotation</span><span class="stat-value">{{definition.base.rotation}}&deg;</span></div>
+              <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
+            </div>
+          </div>
+          <div class="hud-card full-width">
+            <div class="hud-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Propulsion Power Tiers</div>
+            <table class="hud-ladder-table">
+              <thead><tr><th scope="col">Power (MW)</th><th scope="col">Thrust Multiplier</th><th scope="col">Online</th><th scope="col">Overclock</th><th scope="col">Heat</th></tr></thead>
+              <tbody>
+                {{#each definition.tiers}}
+                  <tr class="{{#if overclock}}overclock-row{{/if}}">
+                    <td><strong>{{power}} MW</strong></td>
+                    <td>&times;{{multiplier}}</td>
+                    <td>{{#if online}}<span class="status-badge on">Online</span>{{else}}<span class="status-badge off">Off</span>{{/if}}</td>
+                    <td>{{#if overclock}}<span class="status-badge oc">Yes</span>{{else}}&mdash;{{/if}}</td>
+                    <td>{{#if overclockHeat}}{{overclockHeat}} Heat{{else}}&mdash;{{/if}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        {{/if}}
+
+        {{#if isShield}}
+          <div class="hud-card">
+            <div class="hud-card-header"><i class="fa-solid fa-shield-virus" aria-hidden="true"></i> Shield Architecture</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat highlight"><span class="stat-label">Topology</span><span class="stat-value capitalize">{{definition.topology}}</span></div>
+              <div class="hud-stat highlight"><span class="stat-label">Total Shield Budget</span><span class="stat-value">{{definition.totalBudget}} <small>SP</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Sector Cap</span><span class="stat-value">{{#if isDirectionalShield}}{{definition.sectorCap}} <small>SP</small>{{else}}Single Bubble{{/if}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Recharge Delay</span><span class="stat-value">{{definition.rechargeDelay}} <small>rnd</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
+            </div>
+          </div>
+          <div class="hud-card">
+            <div class="hud-card-header"><i class="fa-solid fa-compass" aria-hidden="true"></i> Protected Sectors</div>
+            <div class="hud-sectors-list">
+              {{#if isDirectionalShield}}
+                <span class="sector-badge"><i class="fa-solid fa-arrow-up"></i> Fore</span>
+                <span class="sector-badge"><i class="fa-solid fa-arrow-left"></i> Port</span>
+                <span class="sector-badge"><i class="fa-solid fa-arrow-right"></i> Starboard</span>
+                <span class="sector-badge"><i class="fa-solid fa-arrow-down"></i> Aft</span>
+              {{else}}
+                <span class="sector-badge bubble"><i class="fa-solid fa-circle"></i> Omnidirectional Bubble</span>
+              {{/if}}
+            </div>
+          </div>
+          <div class="hud-card full-width">
+            <div class="hud-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Shield Power Tiers</div>
+            <table class="hud-ladder-table">
+              <thead><tr><th scope="col">Power (MW)</th><th scope="col">Online</th><th scope="col">Regeneration</th><th scope="col">Overclock</th><th scope="col">Heat</th></tr></thead>
+              <tbody>
+                {{#each definition.tiers}}
+                  <tr class="{{#if overclock}}overclock-row{{/if}}">
+                    <td><strong>{{power}} MW</strong></td>
+                    <td>{{#if online}}<span class="status-badge on">Online</span>{{else}}<span class="status-badge off">Off</span>{{/if}}</td>
+                    <td>+{{regeneration}} SP / rnd</td>
+                    <td>{{#if overclock}}<span class="status-badge oc">Yes</span>{{else}}&mdash;{{/if}}</td>
+                    <td>{{#if overclockHeat}}{{overclockHeat}} Heat{{else}}&mdash;{{/if}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        {{/if}}
+
+        {{#if isSensor}}
+          <div class="hud-card">
+            <div class="hud-card-header"><i class="fa-solid fa-satellite-dish" aria-hidden="true"></i> Sensor Array Specifications</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat"><span class="stat-label">Passive Range</span><span class="stat-value">{{definition.base.passiveRange}} <small>hex</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Passive Strength</span><span class="stat-value">{{definition.base.passiveStrength}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Active Range</span><span class="stat-value">{{definition.base.activeRange}} <small>hex</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Active Modifier</span><span class="stat-value">{{definition.base.activeModifier}}</span></div>
+              <div class="hud-stat"><span class="stat-label">EW Modifier</span><span class="stat-value">{{definition.base.ewModifier}}</span></div>
+              <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
+            </div>
+          </div>
+          <div class="hud-card full-width">
+            <div class="hud-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Sensor Power Tiers</div>
+            <table class="hud-ladder-table">
+              <thead><tr><th scope="col">Power (MW)</th><th scope="col">Online</th><th scope="col">Range &times;</th><th scope="col">Passive</th><th scope="col">Active</th><th scope="col">EW</th><th scope="col">Overclock</th><th scope="col">Heat</th></tr></thead>
+              <tbody>
+                {{#each definition.tiers}}
+                  <tr class="{{#if overclock}}overclock-row{{/if}}">
+                    <td><strong>{{power}} MW</strong></td>
+                    <td>{{#if online}}<span class="status-badge on">Online</span>{{else}}<span class="status-badge off">Off</span>{{/if}}</td>
+                    <td>&times;{{rangeMultiplier}}</td>
+                    <td>{{passiveStrength}}</td>
+                    <td>{{activeModifier}}</td>
+                    <td>{{ewModifier}}</td>
+                    <td>{{#if overclock}}<span class="status-badge oc">Yes</span>{{else}}&mdash;{{/if}}</td>
+                    <td>{{#if overclockHeat}}{{overclockHeat}} Heat{{else}}&mdash;{{/if}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        {{/if}}
+
+        {{#if isCooling}}
+          <div class="hud-card">
+            <div class="hud-card-header"><i class="fa-solid fa-snowflake" aria-hidden="true"></i> Thermal Venting Specifications</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat highlight"><span class="stat-label">Vent Capacity</span><span class="stat-value">{{definition.ventAmount}} <small>Heat</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Vent Cooldown</span><span class="stat-value">{{definition.ventCooldown}} <small>rnd</small></span></div>
+              <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
+            </div>
+          </div>
+          <div class="hud-card full-width">
+            <div class="hud-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Cooling Power Tiers</div>
+            <table class="hud-ladder-table">
+              <thead><tr><th scope="col">Power (MW)</th><th scope="col">Cooling Rate</th></tr></thead>
+              <tbody>
+                {{#each definition.tiers}}
+                  <tr>
+                    <td><strong>{{power}} MW</strong></td>
+                    <td>{{cooling}} Heat / rnd</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        {{/if}}
+
+        {{#if isInertia}}
+          <div class="hud-card">
+            <div class="hud-card-header"><i class="fa-solid fa-arrows-spin" aria-hidden="true"></i> Inertial Compensation</div>
+            <div class="hud-stat-grid">
+              <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
+            </div>
+          </div>
+          <div class="hud-card full-width">
+            <div class="hud-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Inertia Power Tiers</div>
+            <table class="hud-ladder-table">
+              <thead><tr><th scope="col">Power (MW)</th><th scope="col">Online</th><th scope="col">Pivot Modifier</th><th scope="col">Overclock</th><th scope="col">Heat</th></tr></thead>
+              <tbody>
+                {{#each definition.tiers}}
+                  <tr class="{{#if overclock}}overclock-row{{/if}}">
+                    <td><strong>{{power}} MW</strong></td>
+                    <td>{{#if online}}<span class="status-badge on">Online</span>{{else}}<span class="status-badge off">Off</span>{{/if}}</td>
+                    <td>{{pivot}}</td>
+                    <td>{{#if overclock}}<span class="status-badge oc">Yes</span>{{else}}&mdash;{{/if}}</td>
+                    <td>{{#if overclockHeat}}{{overclockHeat}} Heat{{else}}&mdash;{{/if}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        {{/if}}
+
+      </div>
+    {{else}}
+      {{!-- -------------------------------------------------------------- --}}
+      {{!-- EDIT MODE: RESPONSIVE FORM CARDS                                --}}
+      {{!-- -------------------------------------------------------------- --}}
+      <div class="edit-profile-container">
+
+        {{#if isReactor}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-atom" aria-hidden="true"></i> Reactor Parameters</div>
+            <div class="form-grid-4">
+              <label>Nominal output <input type="number" min="1" step="1" name="definition.nominalOutput" value="{{definition.nominalOutput}}"></label>
+              <label>Redline output <input type="number" min="1" step="1" name="definition.redlineOutput" value="{{definition.redlineOutput}}"></label>
+              <label>Redline heat <input type="number" min="0" step="any" name="definition.overclockHeat" value="{{definition.overclockHeat}}"></label>
+              <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+          </div>
+        {{/if}}
+
+        {{#if isDrive}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-angles-right" aria-hidden="true"></i> Drive Base Parameters</div>
+            <div class="form-grid-3">
+              <label>Base thrust <input type="number" min="0" step="any" name="definition.base.thrust" value="{{definition.base.thrust}}"></label>
+              <label>Base rotation <input type="number" min="0" step="any" name="definition.base.rotation" value="{{definition.base.rotation}}"></label>
+              <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+          </div>
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Power Tiers</div>
+            <table class="form-tier-table">
+              <thead><tr><th scope="col">Power</th><th scope="col">Multiplier</th><th scope="col">Online</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col"></th></tr></thead>
+              <tbody>
+                {{#each definition.tiers as |tier|}}
+                  <tr data-tier-row>
+                    <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="multiplier" value="{{tier.multiplier}}" aria-label="Multiplier"></td>
+                    <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
+                    <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
+                    <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove tier"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <button class="btn-add-row" type="button" data-row-action="add-tier"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add power tier</button>
+          </div>
+        {{/if}}
+
+        {{#if isShield}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-shield-virus" aria-hidden="true"></i> Shield Parameters</div>
+            <div class="form-grid-3">
+              <label>Topology
+                <select name="definition.topology">
+                  {{#each topologyOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                </select>
+              </label>
+              <label>Total budget <input type="number" min="1" step="1" name="definition.totalBudget" value="{{definition.totalBudget}}"></label>
+              <label>Sector cap <input type="number" min="1" step="1" name="definition.sectorCap" value="{{definition.sectorCap}}"></label>
+              <label>Recharge delay <input type="number" min="1" step="1" name="definition.rechargeDelay" value="{{definition.rechargeDelay}}"></label>
+              <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+            <div class="sub-form-group">
+              <span class="field-label">Protected sectors</span>
+              {{#if isDirectionalShield}}
+                <div class="ship-component-check-grid">{{#each sectorOptions}}<label><input type="checkbox" name="definition.sectors.{{value}}" checked disabled> {{label}}</label>{{/each}}</div>
+              {{else}}
+                <label class="checkbox-label"><input type="checkbox" name="definition.sectors.bubble" checked disabled> Bubble (protects the whole vessel as one sector)</label>
+              {{/if}}
+            </div>
+          </div>
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Power Tiers</div>
+            <table class="form-tier-table">
+              <thead><tr><th scope="col">Power</th><th scope="col">Online</th><th scope="col">Regeneration</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col"></th></tr></thead>
+              <tbody>
+                {{#each definition.tiers as |tier|}}
+                  <tr data-tier-row>
+                    <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
+                    <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="regeneration" value="{{tier.regeneration}}" aria-label="Regeneration"></td>
+                    <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
+                    <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove tier"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <button class="btn-add-row" type="button" data-row-action="add-tier"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add power tier</button>
+          </div>
+        {{/if}}
+
+        {{#if isSensor}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-satellite-dish" aria-hidden="true"></i> Sensor Array Parameters</div>
+            <div class="form-grid-3">
+              <label>Passive range <input type="number" min="0" step="any" title="Must be greater than zero" name="definition.base.passiveRange" value="{{definition.base.passiveRange}}"></label>
+              <label>Passive strength <input type="number" step="any" name="definition.base.passiveStrength" value="{{definition.base.passiveStrength}}"></label>
+              <label>Active range <input type="number" min="0" step="any" title="Must be greater than zero" name="definition.base.activeRange" value="{{definition.base.activeRange}}"></label>
+              <label>Active modifier <input type="number" step="any" name="definition.base.activeModifier" value="{{definition.base.activeModifier}}"></label>
+              <label>EW modifier <input type="number" step="any" name="definition.base.ewModifier" value="{{definition.base.ewModifier}}"></label>
+              <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+          </div>
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Power Tiers</div>
+            <table class="form-tier-table">
+              <thead><tr><th scope="col">Power</th><th scope="col">Online</th><th scope="col">Range &times;</th><th scope="col">Passive</th><th scope="col">Active</th><th scope="col">EW</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col"></th></tr></thead>
+              <tbody>
+                {{#each definition.tiers as |tier|}}
+                  <tr data-tier-row>
+                    <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
+                    <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="rangeMultiplier" value="{{tier.rangeMultiplier}}" aria-label="Range multiplier"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="passiveStrength" value="{{tier.passiveStrength}}" aria-label="Passive strength"></td>
+                    <td><input type="number" step="any" data-tier-field="activeModifier" value="{{tier.activeModifier}}" aria-label="Active modifier"></td>
+                    <td><input type="number" step="any" data-tier-field="ewModifier" value="{{tier.ewModifier}}" aria-label="EW modifier"></td>
+                    <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
+                    <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove tier"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <button class="btn-add-row" type="button" data-row-action="add-tier"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add power tier</button>
+          </div>
+        {{/if}}
+
+        {{#if isCooling}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-snowflake" aria-hidden="true"></i> Cooling Parameters</div>
+            <div class="form-grid-3">
+              <label>Vent amount <input type="number" min="0" step="any" title="Must be greater than zero" name="definition.ventAmount" value="{{definition.ventAmount}}"></label>
+              <label>Vent cooldown <input type="number" min="0" step="1" name="definition.ventCooldown" value="{{definition.ventCooldown}}"></label>
+              <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+          </div>
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Power Tiers</div>
+            <table class="form-tier-table">
+              <thead><tr><th scope="col">Power</th><th scope="col">Cooling Rate</th><th scope="col"></th></tr></thead>
+              <tbody>
+                {{#each definition.tiers as |tier|}}
+                  <tr data-tier-row>
+                    <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="cooling" value="{{tier.cooling}}" aria-label="Cooling"></td>
+                    <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove tier"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <button class="btn-add-row" type="button" data-row-action="add-tier"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add power tier</button>
+          </div>
+        {{/if}}
+
+        {{#if isInertia}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-arrows-spin" aria-hidden="true"></i> Inertia Parameters</div>
+            <div class="form-grid-2">
+              <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+          </div>
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Power Tiers</div>
+            <table class="form-tier-table">
+              <thead><tr><th scope="col">Power</th><th scope="col">Online</th><th scope="col">Pivot</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col"></th></tr></thead>
+              <tbody>
+                {{#each definition.tiers as |tier|}}
+                  <tr data-tier-row>
+                    <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
+                    <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="pivot" value="{{tier.pivot}}" aria-label="Pivot"></td>
+                    <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
+                    <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
+                    <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove tier"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <button class="btn-add-row" type="button" data-row-action="add-tier"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add power tier</button>
+          </div>
+        {{/if}}
+
+        {{#if isWeapon}}
+          {{!-- Weapon Profile Parameters --}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-crosshairs" aria-hidden="true"></i> Combat Parameters</div>
+            <input type="hidden" name="definition.category" value="hardpoint">
+            <div class="form-grid-3">
+              <label>Accuracy <input type="number" step="any" name="definition.accuracy" value="{{definition.accuracy}}"></label>
+              <label>Armor piercing <input type="number" min="0" step="any" name="definition.armorPiercing" value="{{definition.armorPiercing}}"></label>
+              <label>Projectile class
+                <select name="definition.projectileClass">
+                  {{#each projectileOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                </select>
+              </label>
+              <label>Arc (degrees) <input type="number" min="0" max="360" step="any" title="Must be greater than zero and at most 360" name="definition.arc" value="{{definition.arc}}"></label>
+              <label>Power rating <input type="number" min="0" step="1" name="definition.powerRating" value="{{definition.powerRating}}"></label>
+              <label>Boot time (rounds) <input type="number" min="0" step="1" name="definition.bootTime" value="{{definition.bootTime}}"></label>
+              <label>Signature spike <input type="number" step="any" name="definition.signatureSpike" value="{{definition.signatureSpike}}"></label>
+              <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+          </div>
+
+          {{!-- Damage & Range --}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-burst" aria-hidden="true"></i> Damage & Range</div>
+            <div class="sub-form-group">
+              <span class="field-label">Standard Damage</span>
+              <div class="form-grid-3">
+                <label>Shield damage <input type="number" min="0" step="any" name="definition.damage.shield" value="{{definition.damage.shield}}"></label>
+                <label>Hull damage <input type="number" min="0" step="any" name="definition.damage.hull" value="{{definition.damage.hull}}"></label>
+                <label>Heat damage <input type="number" min="0" step="any" name="definition.damage.heat" value="{{definition.damage.heat}}"></label>
+              </div>
+            </div>
+            <div class="sub-form-group">
+              <span class="field-label">Range Envelope</span>
+              <div class="form-grid-2">
+                <label>Optimal range <input type="number" min="0" step="any" name="definition.range.optimal" value="{{definition.range.optimal}}"></label>
+                <label>Maximum range <input type="number" min="0" step="any" name="definition.range.maximum" value="{{definition.range.maximum}}"></label>
+              </div>
+            </div>
+          </div>
+
+          {{!-- Firing Heat & Readiness --}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-fire" aria-hidden="true"></i> Thermal & Readiness</div>
+            <div class="sub-form-group">
+              <span class="field-label">Thermal Dissipation</span>
+              <div class="form-grid-2">
+                <label>Heat amount <input type="number" min="0" step="any" name="definition.firingHeat.amount" value="{{definition.firingHeat.amount}}"></label>
+                <label>Per interval
+                  <select name="definition.firingHeat.per">
+                    {{#each firingHeatOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="sub-form-group">
+              <span class="field-label">Readiness System</span>
+              <div class="form-grid-3">
+                <label>Type
+                  <select name="definition.readiness.type">
+                    {{#each readinessTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                  </select>
+                </label>
+                <label>Capacity <input type="number" min="1" step="1" name="definition.readiness.capacity" value="{{definition.readiness.capacity}}"></label>
+                <label>Recovery method
+                  <select name="definition.readiness.recovery">
+                    {{#each readinessRecoveryOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                  </select>
+                </label>
+                <label>Work (manual) <input type="number" min="1" step="1" name="definition.readiness.work" value="{{definition.readiness.work}}"></label>
+                <label>Eligible starts (automatic) <input type="number" min="1" step="1" name="definition.readiness.eligibleStarts" value="{{definition.readiness.eligibleStarts}}"></label>
+              </div>
+            </div>
+          </div>
+
+          {{!-- Weapon Traits --}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-tag" aria-hidden="true"></i> Weapon Traits</div>
+            <div class="trait-toggles-row">
+              <label class="toggle-pill"><input type="checkbox" name="trait.nonLethal" {{#if definition.traitState.nonLethal}}checked{{/if}}> Non-lethal</label>
+              <label class="toggle-pill"><input type="checkbox" name="trait.vicious" {{#if definition.traitState.vicious}}checked{{/if}}> Vicious</label>
+            </div>
+
+            {{!-- Shield Bypass Group --}}
+            <fieldset class="trait-expandable-box" data-feature="trait.shieldBypass" data-feature-label="Shield bypass" {{#unless definition.traitState.shieldBypass}}disabled title="Enable Shield bypass first"{{/unless}}>
+              <legend><label class="checkbox-label"><input type="checkbox" name="trait.shieldBypass" {{#if definition.traitState.shieldBypass}}checked{{/if}}> Shield bypass trait</label></legend>
+              <div class="checkbox-inline-wrap">
+                <label class="checkbox-label"><input type="checkbox" name="trait.shieldBypass.hull" {{#if definition.traitState.bypassHull}}checked{{/if}}> Hull bypasses shields</label>
+                <label class="checkbox-label"><input type="checkbox" name="trait.shieldBypass.heat" {{#if definition.traitState.bypassHeat}}checked{{/if}}> Heat bypasses shields</label>
+                <label class="checkbox-label"><input type="checkbox" name="trait.shieldBypass.damageShield" {{#if definition.traitState.damageShield}}checked{{/if}}> Also damage shields</label>
+              </div>
+            </fieldset>
+
+            {{!-- Barrage Group --}}
+            <fieldset class="trait-expandable-box" data-feature="trait.barrage" data-feature-label="Barrage" {{#unless definition.traitState.barrage}}disabled title="Enable Barrage first"{{/unless}}>
+              <legend><label class="checkbox-label"><input type="checkbox" name="trait.barrage" {{#if definition.traitState.barrage}}checked{{/if}}> Barrage fire trait</label></legend>
+              <table class="form-tier-table">
+                <thead><tr><th scope="col">Rounds</th><th scope="col">Attack penalty</th><th scope="col">Max effective hits</th><th scope="col"></th></tr></thead>
+                <tbody>
+                  {{#each definition.barrageProfiles as |profile|}}
+                    <tr data-barrage-row>
+                      <td><input type="number" min="1" step="1" data-barrage-field="rounds" value="{{profile.rounds}}" aria-label="Rounds"></td>
+                      <td><input type="number" step="any" data-barrage-field="attackPenalty" value="{{profile.attackPenalty}}" aria-label="Attack penalty"></td>
+                      <td><input type="number" min="1" step="1" data-barrage-field="maxEffectiveHits" value="{{profile.maxEffectiveHits}}" aria-label="Maximum effective hits"></td>
+                      <td><button class="ship-component-remove" type="button" data-row-action="remove-barrage" data-index="{{profile.index}}" aria-label="Remove barrage profile"><i class="fa-solid fa-trash" aria-hidden="true"></i></button></td>
+                    </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+              <button class="btn-add-row" type="button" data-row-action="add-barrage"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add barrage profile</button>
+            </fieldset>
+          </div>
+
+          {{!-- Modes & Overclock --}}
+          <div class="form-card">
+            <div class="form-card-header"><i class="fa-solid fa-bolt" aria-hidden="true"></i> Overclock Mode Configuration</div>
+            <fieldset class="trait-expandable-box" data-feature="mode.overclock.enabled" data-feature-label="Overclock" {{#unless definition.hasOverclock}}disabled title="Enable Overclock first"{{/unless}}>
+              <legend><label class="checkbox-label"><input type="checkbox" name="mode.overclock.enabled" {{#if definition.hasOverclock}}checked{{/if}}> Enable Overclock Mode</label></legend>
+              <div class="form-grid-2">
+                <label>Power rating override <input type="number" min="0" step="any" name="mode.overclock.powerRating" value="{{definition.overclock.powerRating}}"></label>
+                <label>Accuracy override <input type="number" step="any" name="mode.overclock.accuracy" value="{{definition.overclock.accuracy}}"></label>
+              </div>
+              <div class="sub-form-group">
+                <span class="field-label">Damage Overrides</span>
+                <div class="form-grid-3">
+                  <label>Shield <input type="number" min="0" step="any" name="mode.overclock.damage.shield" value="{{definition.overclock.damage.shield}}"></label>
+                  <label>Hull <input type="number" min="0" step="any" name="mode.overclock.damage.hull" value="{{definition.overclock.damage.hull}}"></label>
+                  <label>Heat <input type="number" min="0" step="any" name="mode.overclock.damage.heat" value="{{definition.overclock.damage.heat}}"></label>
+                </div>
+              </div>
+              <div class="sub-form-group">
+                <span class="field-label">Firing Heat Override</span>
+                <div class="form-grid-2">
+                  <label>Amount <input type="number" min="0" step="any" name="mode.overclock.firingHeat.amount" value="{{definition.overclock.firingHeat.amount}}"></label>
+                  <label>Per interval
+                    <select name="mode.overclock.firingHeat.per">
+                      <option value=""></option>
+                      {{#each overclockFiringHeatOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+        {{/if}}
+
+      </div>
+    {{/if}}
+
+  </section>
+
+  {{!-- Sticky Save Button (Edit Mode Only) --}}
+  {{#if isEditMode}}
+    <footer class="ship-component-actions">
+      <button class="ship-component-save" type="submit">
+        <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save component
+      </button>
+    </footer>
   {{/if}}
-
-  {{#if isSensor}}
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Sensor</legend>
-      <p>
-        <label>Passive range <input type="number" min="0" step="any" title="Must be greater than zero" name="definition.base.passiveRange" value="{{definition.base.passiveRange}}"></label>
-        <label>Passive strength <input type="number" step="any" name="definition.base.passiveStrength" value="{{definition.base.passiveStrength}}"></label>
-        <label>Active range <input type="number" min="0" step="any" title="Must be greater than zero" name="definition.base.activeRange" value="{{definition.base.activeRange}}"></label>
-        <label>Active modifier <input type="number" step="any" name="definition.base.activeModifier" value="{{definition.base.activeModifier}}"></label>
-        <label>EW modifier <input type="number" step="any" name="definition.base.ewModifier" value="{{definition.base.ewModifier}}"></label>
-        <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
-      </p>
-      <h3>Power tiers</h3>
-      <table>
-        <caption>Sensor power tiers</caption>
-        <thead><tr><th scope="col">Power</th><th scope="col">Online</th><th scope="col">Range ×</th><th scope="col">Passive</th><th scope="col">Active</th><th scope="col">EW</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col">Actions</th></tr></thead>
-        <tbody>
-          {{#each definition.tiers as |tier|}}
-            <tr data-tier-row>
-              <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
-              <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="rangeMultiplier" value="{{tier.rangeMultiplier}}" aria-label="Range multiplier"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="passiveStrength" value="{{tier.passiveStrength}}" aria-label="Passive strength"></td>
-              <td><input type="number" step="any" data-tier-field="activeModifier" value="{{tier.activeModifier}}" aria-label="Active modifier"></td>
-              <td><input type="number" step="any" data-tier-field="ewModifier" value="{{tier.ewModifier}}" aria-label="EW modifier"></td>
-              <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
-              <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove sensor power tier {{tier.power}}"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Remove</span></button></td>
-            </tr>
-          {{/each}}
-        </tbody>
-      </table>
-      <button type="button" data-row-action="add-tier">Add tier</button>
-    </fieldset>
-  {{/if}}
-
-  {{#if isCooling}}
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Cooling</legend>
-      <p>
-        <label>Vent amount <input type="number" min="0" step="any" title="Must be greater than zero" name="definition.ventAmount" value="{{definition.ventAmount}}"></label>
-        <label>Vent cooldown <input type="number" min="0" step="1" name="definition.ventCooldown" value="{{definition.ventCooldown}}"></label>
-        <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
-      </p>
-      <h3>Power tiers</h3>
-      <table>
-        <caption>Cooling power tiers</caption>
-        <thead><tr><th scope="col">Power</th><th scope="col">Cooling</th><th scope="col">Actions</th></tr></thead>
-        <tbody>
-          {{#each definition.tiers as |tier|}}
-            <tr data-tier-row>
-              <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="cooling" value="{{tier.cooling}}" aria-label="Cooling"></td>
-              <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove cooling power tier {{tier.power}}"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Remove</span></button></td>
-            </tr>
-          {{/each}}
-        </tbody>
-      </table>
-      <button type="button" data-row-action="add-tier">Add tier</button>
-    </fieldset>
-  {{/if}}
-
-  {{#if isInertia}}
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Inertia</legend>
-      <p>
-        <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
-      </p>
-      <h3>Power tiers</h3>
-      <table>
-        <caption>Inertia power tiers</caption>
-        <thead><tr><th scope="col">Power</th><th scope="col">Online</th><th scope="col">Pivot</th><th scope="col">Overclock</th><th scope="col">Heat</th><th scope="col">Actions</th></tr></thead>
-        <tbody>
-          {{#each definition.tiers as |tier|}}
-            <tr data-tier-row>
-              <td><input type="number" min="0" step="1" data-tier-field="power" value="{{tier.power}}" aria-label="Power"></td>
-              <td><input type="checkbox" data-tier-field="online" {{#if tier.online}}checked{{/if}} aria-label="Online"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="pivot" value="{{tier.pivot}}" aria-label="Pivot"></td>
-              <td><input type="checkbox" data-tier-field="overclock" {{#if tier.overclock}}checked{{/if}} aria-label="Overclock"></td>
-              <td><input type="number" min="0" step="any" data-tier-field="overclockHeat" value="{{tier.overclockHeat}}" aria-label="Overclock heat"></td>
-              <td><button class="ship-component-remove" type="button" data-row-action="remove-tier" data-index="{{tier.index}}" aria-label="Remove inertia power tier {{tier.power}}"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Remove</span></button></td>
-            </tr>
-          {{/each}}
-        </tbody>
-      </table>
-      <button type="button" data-row-action="add-tier">Add tier</button>
-    </fieldset>
-  {{/if}}
-
-  {{#if isWeapon}}
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Weapon profile</legend>
-      <p>
-        <label>Category <input type="text" name="definition.category" value="hardpoint" readonly></label>
-        <small>Hardpoint weapons only; Special weapons are not supported.</small>
-        <label>Accuracy <input type="number" step="any" name="definition.accuracy" value="{{definition.accuracy}}"></label>
-        <label>Armor piercing <input type="number" min="0" step="any" name="definition.armorPiercing" value="{{definition.armorPiercing}}"></label>
-        <label>Projectile class
-          <select name="definition.projectileClass">
-            {{#each projectileOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-          </select>
-        </label>
-        <label>Arc (degrees) <input type="number" min="0" max="360" step="any" title="Must be greater than zero and at most 360" name="definition.arc" value="{{definition.arc}}"></label>
-        <label>Power rating <input type="number" min="0" step="1" name="definition.powerRating" value="{{definition.powerRating}}"></label>
-        <label>Boot time <input type="number" min="0" step="1" name="definition.bootTime" value="{{definition.bootTime}}"></label>
-        <label>Signature spike <input type="number" step="any" name="definition.signatureSpike" value="{{definition.signatureSpike}}"></label>
-        <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
-      </p>
-      <fieldset>
-        <legend>Damage</legend>
-        <label>Shield <input type="number" min="0" step="any" name="definition.damage.shield" value="{{definition.damage.shield}}"></label>
-        <label>Hull <input type="number" min="0" step="any" name="definition.damage.hull" value="{{definition.damage.hull}}"></label>
-        <label>Heat <input type="number" min="0" step="any" name="definition.damage.heat" value="{{definition.damage.heat}}"></label>
-      </fieldset>
-      <fieldset>
-        <legend>Range</legend>
-        <label>Optimal <input type="number" min="0" step="any" name="definition.range.optimal" value="{{definition.range.optimal}}"></label>
-        <label>Maximum <input type="number" min="0" step="any" name="definition.range.maximum" value="{{definition.range.maximum}}"></label>
-      </fieldset>
-      <fieldset>
-        <legend>Firing heat</legend>
-        <label>Amount <input type="number" min="0" step="any" name="definition.firingHeat.amount" value="{{definition.firingHeat.amount}}"></label>
-        <label>Per
-          <select name="definition.firingHeat.per">
-            {{#each firingHeatOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-          </select>
-        </label>
-      </fieldset>
-    </fieldset>
-
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Readiness</legend>
-      <label>Type
-        <select name="definition.readiness.type">
-          {{#each readinessTypeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-        </select>
-      </label>
-      <label>Capacity <input type="number" min="1" step="1" name="definition.readiness.capacity" value="{{definition.readiness.capacity}}"></label>
-      <label>Recovery
-        <select name="definition.readiness.recovery">
-          {{#each readinessRecoveryOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-        </select>
-      </label>
-      <label>Work (manual) <input type="number" min="1" step="1" name="definition.readiness.work" value="{{definition.readiness.work}}"></label>
-      <label>Eligible starts (automatic) <input type="number" min="1" step="1" name="definition.readiness.eligibleStarts" value="{{definition.readiness.eligibleStarts}}"></label>
-    </fieldset>
-
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Traits</legend>
-      <p>
-        <label><input type="checkbox" name="trait.nonLethal" {{#if definition.traitState.nonLethal}}checked{{/if}}> Non-lethal</label>
-        <label><input type="checkbox" name="trait.vicious" {{#if definition.traitState.vicious}}checked{{/if}}> Vicious</label>
-      </p>
-      <fieldset data-feature="trait.shieldBypass" data-feature-label="Shield bypass" {{#unless definition.traitState.shieldBypass}}disabled title="Enable Shield bypass first"{{/unless}}>
-        <legend><label><input type="checkbox" name="trait.shieldBypass" {{#if definition.traitState.shieldBypass}}checked{{/if}}> Shield bypass</label></legend>
-        <label><input type="checkbox" name="trait.shieldBypass.hull" {{#if definition.traitState.bypassHull}}checked{{/if}}> Hull bypasses shields</label>
-        <label><input type="checkbox" name="trait.shieldBypass.heat" {{#if definition.traitState.bypassHeat}}checked{{/if}}> Heat bypasses shields</label>
-        <label><input type="checkbox" name="trait.shieldBypass.damageShield" {{#if definition.traitState.damageShield}}checked{{/if}}> Also damage shields</label>
-      </fieldset>
-      <fieldset data-feature="trait.barrage" data-feature-label="Barrage" {{#unless definition.traitState.barrage}}disabled title="Enable Barrage first"{{/unless}}>
-        <legend><label><input type="checkbox" name="trait.barrage" {{#if definition.traitState.barrage}}checked{{/if}}> Barrage</label></legend>
-        <table>
-          <caption>Barrage profiles</caption>
-          <thead><tr><th scope="col">Rounds</th><th scope="col">Attack penalty</th><th scope="col">Maximum effective hits</th><th scope="col">Actions</th></tr></thead>
-          <tbody>
-            {{#each definition.barrageProfiles as |profile|}}
-              <tr data-barrage-row>
-                <td><input type="number" min="1" step="1" data-barrage-field="rounds" value="{{profile.rounds}}" aria-label="Rounds"></td>
-                <td><input type="number" step="any" data-barrage-field="attackPenalty" value="{{profile.attackPenalty}}" aria-label="Attack penalty"></td>
-                <td><input type="number" min="1" step="1" data-barrage-field="maxEffectiveHits" value="{{profile.maxEffectiveHits}}" aria-label="Maximum effective hits"></td>
-                <td><button class="ship-component-remove" type="button" data-row-action="remove-barrage" data-index="{{profile.index}}" aria-label="Remove barrage profile {{profile.rounds}}"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Remove</span></button></td>
-              </tr>
-            {{/each}}
-          </tbody>
-        </table>
-        <button type="button" data-row-action="add-barrage">Add barrage profile</button>
-      </fieldset>
-    </fieldset>
-
-    <fieldset {{#unless editable}}disabled{{/unless}}>
-      <legend>Modes</legend>
-      <p>Nominal mode uses the weapon profile above.</p>
-      <fieldset data-feature="mode.overclock.enabled" data-feature-label="Overclock" {{#unless definition.hasOverclock}}disabled title="Enable Overclock first"{{/unless}}>
-        <legend><label><input type="checkbox" name="mode.overclock.enabled" {{#if definition.hasOverclock}}checked{{/if}}> Overclock mode</label></legend>
-        <label>Power rating override <input type="number" min="0" step="any" name="mode.overclock.powerRating" value="{{definition.overclock.powerRating}}"></label>
-        <label>Accuracy override <input type="number" step="any" name="mode.overclock.accuracy" value="{{definition.overclock.accuracy}}"></label>
-        <fieldset>
-          <legend>Damage overrides</legend>
-          <label>Shield <input type="number" min="0" step="any" name="mode.overclock.damage.shield" value="{{definition.overclock.damage.shield}}"></label>
-          <label>Hull <input type="number" min="0" step="any" name="mode.overclock.damage.hull" value="{{definition.overclock.damage.hull}}"></label>
-          <label>Heat <input type="number" min="0" step="any" name="mode.overclock.damage.heat" value="{{definition.overclock.damage.heat}}"></label>
-        </fieldset>
-        <fieldset>
-          <legend>Firing heat override</legend>
-          <label>Amount <input type="number" min="0" step="any" name="mode.overclock.firingHeat.amount" value="{{definition.overclock.firingHeat.amount}}"></label>
-          <label>Per
-            <select name="mode.overclock.firingHeat.per">
-              <option value=""></option>
-              {{#each overclockFiringHeatOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
-            </select>
-          </label>
-        </fieldset>
-      </fieldset>
-    </fieldset>
-  {{/if}}
-
-  {{#if editable}}<footer class="ship-component-actions"><button class="ship-component-save" type="submit"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save component</button></footer>{{/if}}
 </div>
