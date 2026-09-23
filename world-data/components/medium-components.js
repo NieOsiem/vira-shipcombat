@@ -99,6 +99,19 @@ export const MEDIUM_MAIN_DRIVE_FAST_SOURCE = componentSource({
   },
 });
 
+/** Budget: 4 thrust line cargo drive, simple civilian tractor mechanics. */
+export const MEDIUM_MAIN_DRIVE_CARGO_SOURCE = componentSource({
+  _id: "MedDriveMainCrg1",
+  name: "Surplus Cargo Main Drive",
+  componentClass: "drive",
+  driveRole: "main",
+  definition: {
+    base: { thrust: 4 },
+    tiers: driveTiers(1),
+    recoveryWork: 3,
+  },
+});
+
 export const MEDIUM_REVERSE_DRIVE_SOURCE = componentSource({
   _id: "MedDriveRevStd01",
   name: "Corvette Reverse Drive",
@@ -266,6 +279,24 @@ export const MEDIUM_COOLING_HEAVY_SOURCE = componentSource({
     ventAmount: 18,
     ventCooldown: 2,
     recoveryWork: 6,
+  },
+});
+
+/** Budget: 8 Heat a Start at Power 3, smaller emergency vent. */
+export const MEDIUM_COOLING_CIVILIAN_SOURCE = componentSource({
+  _id: "MedCoolingCiv001",
+  name: "Civilian Radiator Array",
+  componentClass: "cooling",
+  definition: {
+    tiers: [
+      { power: 0, cooling: 2 },
+      { power: 1, cooling: 4 },
+      { power: 2, cooling: 6 },
+      { power: 3, cooling: 8 },
+    ],
+    ventAmount: 8,
+    ventCooldown: 3,
+    recoveryWork: 3,
   },
 });
 
@@ -876,6 +907,7 @@ export const MEDIUM_COMPONENT_SOURCES = deepFreeze([
   MEDIUM_REACTOR_BATTERY_SOURCE,
   MEDIUM_MAIN_DRIVE_SOURCE,
   MEDIUM_MAIN_DRIVE_FAST_SOURCE,
+  MEDIUM_MAIN_DRIVE_CARGO_SOURCE,
   MEDIUM_REVERSE_DRIVE_SOURCE,
   MEDIUM_LATERAL_DRIVE_SOURCE,
   MEDIUM_SHIELD_SOURCE,
@@ -884,6 +916,7 @@ export const MEDIUM_COMPONENT_SOURCES = deepFreeze([
   MEDIUM_SENSOR_LONG_SOURCE,
   MEDIUM_COOLING_SOURCE,
   MEDIUM_COOLING_HEAVY_SOURCE,
+  MEDIUM_COOLING_CIVILIAN_SOURCE,
   MEDIUM_INERTIA_LIGHT_SOURCE,
   MEDIUM_INERTIA_SOURCE,
   MEDIUM_INERTIA_HEAVY_SOURCE,
