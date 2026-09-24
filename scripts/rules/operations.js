@@ -59,9 +59,12 @@ import {
   calculateFiringSolution,
   deepScan,
   fadeTrack,
+  getCurrentSignature,
   getSensorStats,
+  hasLiveContact,
   jamTarget,
   refreshObserverTracks,
+  trackKey,
 } from "./sensors.js";
 import {
   applyShieldCapacityClamping,
@@ -167,6 +170,10 @@ const TYPE_ALIASES = Object.freeze({
   fate: OPERATION_TYPES.RESOLVE_FATE,
   "resolve-fate": OPERATION_TYPES.RESOLVE_FATE,
 });
+/** Resolve a stable alias to its canonical type; leave other types unchanged. */
+export function canonicalOperationType(type) {
+  return TYPE_ALIASES[type] ?? type;
+}
 
 const KNOWN_TYPES = new Set(Object.values(OPERATION_TYPES));
 const GM_TYPES = new Set([
@@ -256,7 +263,7 @@ export const SPATIAL_OPERATION_TYPES = new Set([
 
 /** @param {string} type canonical or aliased operation type */
 export function requiresPlacedToken(type) {
-  return SPATIAL_OPERATION_TYPES.has(TYPE_ALIASES[type] ?? type);
+  return SPATIAL_OPERATION_TYPES.has(canonicalOperationType(type));
 }
 const SENSOR_TYPES = new Set([
   OPERATION_TYPES.PING,
@@ -268,6 +275,30 @@ const SENSOR_TYPES = new Set([
   OPERATION_TYPES.JAM,
   OPERATION_TYPES.BREAK_LOCK,
   OPERATION_TYPES.BURN_THROUGH,
+]);
+
+// Only operations that can alter a derived passive-detection input need to compare it.
+// Movement is handled separately, including collisions with other ships.
+const PASSIVE_CHANGE_TYPES = new Set([
+  OPERATION_TYPES.START_PHASE,
+  OPERATION_TYPES.COAST,
+  OPERATION_TYPES.END_PHASE,
+  OPERATION_TYPES.LEAVE_COMBAT,
+  OPERATION_TYPES.REFRESH_RESOURCES,
+  OPERATION_TYPES.MANEUVER,
+  OPERATION_TYPES.ROUTE_POWER,
+  OPERATION_TYPES.TOGGLE_WEAPON,
+  OPERATION_TYPES.PING,
+  OPERATION_TYPES.FADE,
+  OPERATION_TYPES.JAM,
+  OPERATION_TYPES.BURN_THROUGH,
+  OPERATION_TYPES.ATTACK,
+  OPERATION_TYPES.REPAIR,
+  OPERATION_TYPES.RECOVERY_WORK,
+  OPERATION_TYPES.COOLING,
+  OPERATION_TYPES.VENT,
+  OPERATION_TYPES.SET_CONDITION,
+  OPERATION_TYPES.ADVANCE_TURN,
 ]);
 const DRIVE_COMPONENT_ROLES = Object.freeze([
   "main",
@@ -345,7 +376,7 @@ function normalizeOperation(operation) {
       "A ship operation requires a stable type string.",
     );
   }
-  const type = TYPE_ALIASES[suppliedType] ?? suppliedType;
+  const type = canonicalOperationType(suppliedType);
   if (!KNOWN_TYPES.has(type)) {
     violation(
       "UNKNOWN_OPERATION",
@@ -549,7 +580,14 @@ function distanceBetween(source, target, context) {
     context?.geometry?.distance;
   if (typeof adapter === "function") {
     return Number(
-      adapter(source.source, target.source, source.state, target.state),
+      adapter(
+        source.source,
+        target.source,
+        source.state,
+        target.state,
+        source.token,
+        target.token,
+      ),
     );
   }
   const first = positionOf(source, context);
@@ -568,6 +606,8 @@ function lineOfSight(kind, source, target, operation, context) {
       operation,
       sourceState: source.state,
       targetState: target.state,
+      sourceToken: source.token,
+      targetToken: target.token,
     }) === true;
   }
   const payloadKey = kind === "weapon" ? "lineOfSight" : "sensorLineOfSight";
@@ -680,15 +720,15 @@ function movementInput(source, drafts, operation, context) {
   };
 }
 
-function targetObservation(source, target, operation, context) {
+function targetObservation(source, target, operation, context, knownDistance, skipSensorLineOfSight = false) {
   const position = positionOf(target, context);
   return {
     targetUuid: target.uuid,
     uuid: target.uuid,
     targetConfig: target.config,
     targetState: target.state,
-    distance: distanceBetween(source, target, context),
-    sensorLineOfSight: lineOfSight(
+    distance: knownDistance ?? distanceBetween(source, target, context),
+    sensorLineOfSight: skipSensorLineOfSight || lineOfSight(
       "sensor",
       source,
       target,
@@ -880,39 +920,104 @@ function applyImmediateConsequences(ship) {
 }
 
 /**
- * Rules 8.8 / 8.11 / 8.12: passive detection is event-driven, so a ship that moves is
- * re-detected by every observer (and re-detects everyone itself) instead of waiting for its
- * next Start. Only pairs that involve a ship which actually moved can change, and every such
- * pair is handed to `refreshObserverTracks`, which applies the §8.8/§8.11/§8.12 split itself:
- * a passive-only Contact whose detection fails (including by leaving Passive Range) downgrades
- * to Undetected with a visibly stale last-known marker, a Targeted track keeps its next-Start
- * range grace, and a still-live active-contact lifetime stays a Contact. Ranged-out pairs are
- * cheap there — no line-of-sight raycast, and unless a track really changed no observer write
- * and so no console rebuild on any client.
+ * Refresh only pairs affected by a move, a changed derived signature/sensor capability,
+ * or a changed per-target passive Jam. Compare against the untouched authority snapshot,
+ * after immediate power shedding has resolved on every mutated ship.
  */
-function refreshMovementDetection(drafts, moved, request, context, changed, events) {
-  if (!moved.size) return;
+function passiveJamModifier(state, targetUuid) {
+  const key = trackKey(targetUuid);
+  const track = state?.tracks?.[key] ?? state?.tracks?.[targetUuid];
+  let modifier = 0;
+  for (const jam of Array.isArray(track?.jams) ? track.jams : []) {
+    if (!jam || jam.active === false) continue;
+    const value = Number(jam.modifier);
+    modifier = Math.min(modifier, Number.isFinite(value) ? value : -4);
+  }
+  return modifier;
+}
+
+function refreshEventDetection(drafts, moved, request, context, changed, events) {
+  if (!moved.size && !PASSIVE_CHANGE_TYPES.has(request.type)) return;
+  const changedSignatures = new Set();
+  const changedSensors = new Set();
+  const jamPairs = new Map();
+  for (const uuid of changed) {
+    const ship = drafts.get(uuid);
+    const previous = recordState(ship.source);
+    if (getCurrentSignature(ship.config, previous).value !==
+      getCurrentSignature(ship.config, ship.state).value) changedSignatures.add(uuid);
+    const before = getSensorStats(ship.config, previous);
+    const after = getSensorStats(ship.config, ship.state);
+    if (before.online !== after.online ||
+      before.passiveRange !== after.passiveRange ||
+      before.passiveStrength !== after.passiveStrength) changedSensors.add(uuid);
+    if (request.type === OPERATION_TYPES.JAM || request.type === OPERATION_TYPES.BURN_THROUGH) {
+      const otherUuid = uuid === request.sourceUuid ? request.targetUuids[0] : request.sourceUuid;
+      if (otherUuid && drafts.has(otherUuid) &&
+        passiveJamModifier(previous, otherUuid) !== passiveJamModifier(ship.state, otherUuid)) {
+        jamPairs.set(uuid, otherUuid);
+      }
+    }
+  }
+  const changedTargets = new Set([...moved, ...changedSignatures]);
+  if (!changedTargets.size && !changedSensors.size && !jamPairs.size) return;
+
   for (const observer of drafts.values()) {
     const stats = getSensorStats(observer.config, observer.state);
-    if (!stats.online) continue;
-    const before = JSON.stringify(observer.state.tracks ?? {});
-    const targets = [];
-    for (const other of drafts.values()) {
-      if (other.uuid === observer.uuid) continue;
-      if (!moved.has(other.uuid) && !moved.has(observer.uuid)) continue;
-      targets.push(targetObservation(observer, other, request, context));
+    if (!stats.online) continue; // Immediate consequences already dropped its sensor tracks.
+    const allTargets = moved.has(observer.uuid) || changedSensors.has(observer.uuid);
+    const targets = allTargets ? drafts.values() : changedTargets;
+    const observations = [];
+    const before = new Map();
+    for (const entry of targets) {
+      const other = allTargets ? entry : drafts.get(entry);
+      if (!other || other.uuid === observer.uuid) continue;
+      const distance = distanceBetween(observer, other, context);
+      // Out-of-range pairs cannot detect passively. Only live tracks still need blockers checked,
+      // because complete obstruction invalidates Targeted, active, and physical contacts.
+      const storedTrack = observer.state.tracks?.[trackKey(other.uuid)] ??
+        observer.state.tracks?.[other.uuid];
+      observations.push(targetObservation(
+        observer,
+        other,
+        request,
+        context,
+        distance,
+        distance > stats.passiveRange && !hasLiveContact(storedTrack),
+      ));
+      before.set(other.uuid, JSON.stringify(storedTrack ?? null));
     }
-    if (!targets.length) continue;
+    const jammedTargetUuid = jamPairs.get(observer.uuid);
+    if (!allTargets && jammedTargetUuid && !changedTargets.has(jammedTargetUuid)) {
+      const other = drafts.get(jammedTargetUuid);
+      const distance = distanceBetween(observer, other, context);
+      const storedTrack = observer.state.tracks?.[trackKey(other.uuid)] ??
+        observer.state.tracks?.[other.uuid];
+      observations.push(targetObservation(
+        observer,
+        other,
+        request,
+        context,
+        distance,
+        distance > stats.passiveRange && !hasLiveContact(storedTrack),
+      ));
+      before.set(other.uuid, JSON.stringify(storedTrack ?? null));
+    }
+    if (!observations.length) continue;
     const result = refreshObserverTracks({
       observerConfig: observer.config,
       observerState: observer.state,
-      targets,
+      targets: observations,
     });
-    if (JSON.stringify(observer.state.tracks ?? {}) === before) continue;
+    const affected = observations.some(({ targetUuid }) =>
+      before.get(targetUuid) !== JSON.stringify(
+        observer.state.tracks?.[trackKey(targetUuid)] ?? observer.state.tracks?.[targetUuid] ?? null,
+      ));
+    if (!affected) continue;
     changed.add(observer.uuid);
     if (result.acquired.length || result.lost.length) {
       events.gmEvents.push({
-        type: "movement.detection",
+        type: moved.size ? "movement.detection" : "passive.detection",
         sourceUuid: observer.uuid,
         targetUuids: [...result.acquired, ...result.lost],
         detail: { acquired: result.acquired, lost: result.lost, moved: [...moved] },
@@ -1094,7 +1199,7 @@ function applyMovementResult(
  * Execute one authoritative operation exclusively against cloned ship and token snapshots.
  * @param {object} operation canonical operation request
  * @param {object} context pure authority context
- * @returns {{shipStates:object,tokenUpdates:object,publicEvents:object[],gmEvents:object[],changedUuids:string[]}}
+ * @returns {{shipStates:object,tokenUpdates:object,publicEvents:object[],gmEvents:object[],changedUuids:string[],telemetryOnlyUuids:string[]}}
  */
 export function executeShipOperation(operation, context) {
   const request = normalizeOperation(operation);
@@ -1660,8 +1765,16 @@ export function executeShipOperation(operation, context) {
   }
 
   changed.add(source.uuid);
-  refreshMovementDetection(drafts, tokenChanged, request, context, changed, events);
+  // Power shedding and sensor failure must settle before comparing the derived readings.
   for (const uuid of changed) applyImmediateConsequences(drafts.get(uuid));
+  const settled = new Set(changed);
+  refreshEventDetection(drafts, tokenChanged, request, context, changed, events);
+  const telemetryOnlyUuids = Array.from(changed)
+    .filter((uuid) => !settled.has(uuid))
+    .sort();
+  for (const uuid of changed) {
+    if (!settled.has(uuid)) applyImmediateConsequences(drafts.get(uuid));
+  }
   for (const ship of drafts.values()) {
     ship.state.revision = recordState(ship.source).revision;
   }
@@ -1682,5 +1795,6 @@ export function executeShipOperation(operation, context) {
     publicEvents: events.publicEvents,
     gmEvents: events.gmEvents,
     changedUuids: Array.from(changed).sort(),
+    telemetryOnlyUuids,
   };
 }

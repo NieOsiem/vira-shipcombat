@@ -327,8 +327,9 @@ describe("sensor signatures and tracks", () => {
 
     expect(rolls).toBe(1);
     expect(result.publicEvents).toEqual([]);
-    expect(result.gmEvents[0].detail).toMatchObject({ roll: 7, signatureSpikeApplied: true });
-    expect(result.gmEvents[0].detail.detected.map(({ targetUuid }) => targetUuid)).toEqual(["first", "second"]);
+    const pingEvent = result.gmEvents.find((event) => event.type === "ping");
+    expect(pingEvent.detail).toMatchObject({ roll: 7, signatureSpikeApplied: true });
+    expect(pingEvent.detail.detected.map(({ targetUuid }) => targetUuid)).toEqual(["first", "second"]);
     expect(result.shipStates.source.tracks).toMatchObject({
       first: { state: TRACK_STATUS.CONTACT },
       second: { state: TRACK_STATUS.CONTACT },

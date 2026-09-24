@@ -150,6 +150,7 @@ export function createInitialState(config) {
   return {
     schemaVersion: SCHEMA_VERSION,
     revision: 0,
+    telemetryRevision: 0,
     phase: "outsideCombat",
     turnKey: null,
     hull: config.maxHull ?? 0,

@@ -294,8 +294,9 @@ function markerLive(marker) {
   return marker != null && marker !== false;
 }
 
-function hasLiveContact(track) {
-  return track?.state !== TRACK_STATUS.UNDETECTED
+export function hasLiveContact(track) {
+  return track != null
+    && track.state !== TRACK_STATUS.UNDETECTED
     && (track.state === TRACK_STATUS.TARGETED
       || track.passiveContact === true
       || markerLive(track.activeUntilTurnKey)

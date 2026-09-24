@@ -1,5 +1,5 @@
 import { MODULE_ID, RuleViolation, SHIP_TYPE } from "../constants.js";
-import { executeShipOperation } from "../rules/operations.js";
+import { canonicalOperationType, executeShipOperation } from "../rules/operations.js";
 import { sceneGridGeometry } from "../foundry/scene-geometry.js";
 import {
   cloneDocumentData,
@@ -66,30 +66,24 @@ function validateRequest(request) {
   return request;
 }
 
-const SCENE_SNAPSHOT_TYPES = new Set(["maneuver", "setRoster", "refreshResources", "phase.start", "startPhase", "reposition", "advanceTurn"]);
+// These operations already expose scene participants as semantic targets.
+const SCENE_TARGET_TYPES = new Set(["maneuver", "setRoster", "refreshResources", "startPhase", "reposition", "advanceTurn"]);
+// Other operations need scene ships in their rule context without changing which ships were targeted.
+const SCENE_SNAPSHOT_TYPES = new Set([
+  ...SCENE_TARGET_TYPES,
+  "coast", "rotate", "routePower", "toggleWeapon", "ping", "fade", "attack",
+  "cooling", "vent", "setCondition", "repair", "recoveryWork", "endPhase",
+  "leaveCombat", "jam", "burnThrough",
+]);
 
-async function normalizeSceneParticipants(request) {
-  if (!SCENE_SNAPSHOT_TYPES.has(request.type)) return;
+async function sceneParticipantUuids(request, operationType) {
+  if (!SCENE_SNAPSHOT_TYPES.has(operationType)) return [];
   const source = await resolveTokenDocument(request.sourceUuid);
-  if (!isTokenDocument(source) || !source.parent?.tokens) return;
-  const sceneTokens = collectionValues(source.parent?.tokens)
+  if (!isTokenDocument(source) || !source.parent?.tokens) return [];
+  return collectionValues(source.parent.tokens)
     .filter((token) => token?.actor?.type === SHIP_TYPE && typeof token.uuid === "string")
-    .sort((left, right) => left.uuid.localeCompare(right.uuid));
-  const participants = new Map([[source.uuid, source]]);
-  for (const token of sceneTokens) participants.set(token.uuid, token);
-
-  const supplied = request.expectedRevisions;
-  const expectedRevisions = {};
-  for (const [uuid, token] of participants) {
-    if (Object.hasOwn(supplied, uuid)) {
-      expectedRevisions[uuid] = supplied[uuid];
-      continue;
-    }
-    const revision = token.actor?.system?.shipCombat?.state?.revision;
-    if (Number.isInteger(revision)) expectedRevisions[uuid] = revision;
-  }
-  request.targetUuids = [...participants.keys()].filter((uuid) => uuid !== source.uuid);
-  request.expectedRevisions = expectedRevisions;
+    .map((token) => token.uuid)
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function activeUser(userId) {
@@ -171,13 +165,12 @@ function recordAdvanceCooldown(request, records) {
 }
 
 /**
- * Scene participants the requester did not name join with the revision read after loading, so a ship
- * that was not yet initialized when the request was normalized still gets its revision. Targets the
- * requester named keep the requester's own snapshot and stay strict.
+ * Explicit source/target revisions belong to the requester and stay strict. Bystanders are
+ * authority-selected after the request entered the queue, so use their freshly loaded revisions.
  */
 function fillExpectedRevisions(request, records, requestedTargets) {
   for (const [uuid, record] of records) {
-    if (requestedTargets.has(uuid) || Number.isInteger(request.expectedRevisions[uuid])) continue;
+    if (uuid === request.sourceUuid || requestedTargets.has(uuid)) continue;
     const revision = record.state?.revision;
     if (Number.isInteger(revision)) request.expectedRevisions[uuid] = revision;
   }
@@ -209,11 +202,19 @@ function validateLiveRevisions(request, records) {
 
 function incrementChangedStates(result, records) {
   const changed = [...new Set([...(result.changedUuids ?? []), ...Object.keys(result.tokenUpdates ?? {})])];
+  const telemetryOnly = new Set(result.telemetryOnlyUuids ?? []);
+  for (const uuid of telemetryOnly) {
+    if (!changed.includes(uuid)) {
+      throw rule("INVALID_OPERATION_RESULT", "A telemetry-only ship must also be included in changedUuids.", { uuid });
+    }
+  }
   for (const uuid of changed) {
     const record = records.get(uuid);
     const next = result.shipStates?.[uuid];
     if (!record || !next) throw rule("INVALID_OPERATION_RESULT", "The rule result changed an unknown ship or omitted its replacement state.", { uuid });
-    next.revision = Number(record.state.revision) + 1;
+    const passiveOnly = telemetryOnly.has(uuid);
+    next.revision = Number(record.state.revision) + (passiveOnly ? 0 : 1);
+    next.telemetryRevision = Number(record.state.telemetryRevision ?? 0) + (passiveOnly ? 1 : 0);
   }
   result.changedUuids = changed;
 }
@@ -237,7 +238,13 @@ function assertResultScope(result, records) {
   result.publicEvents ??= [];
   result.gmEvents ??= [];
   result.changedUuids ??= [];
-  for (const uuid of [...Object.keys(result.shipStates), ...Object.keys(result.tokenUpdates), ...result.changedUuids]) {
+  result.telemetryOnlyUuids ??= [];
+  for (const uuid of [
+    ...Object.keys(result.shipStates),
+    ...Object.keys(result.tokenUpdates),
+    ...result.changedUuids,
+    ...result.telemetryOnlyUuids,
+  ]) {
     if (!records.has(uuid)) throw rule("INVALID_OPERATION_RESULT", "The ship rule dispatcher returned an uninvolved TokenDocument UUID.", { uuid });
   }
 }
@@ -343,15 +350,15 @@ function segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd) {
 
 function geometryAdapter(records) {
   const positionOf = (source, state, token) => tokenCenter(source, token, records);
-  const lineOfSight = (source, target) => {
+  const lineOfSight = (source, target, details = {}) => {
     const sourceScene = sceneForRecord(records, source);
     const targetScene = sceneForRecord(records, target);
     const sourceSceneId = sourceScene?.uuid ?? sourceScene?.id;
     const targetSceneId = targetScene?.uuid ?? targetScene?.id;
     if (!sourceScene || !targetScene) return false;
     if (sourceScene !== targetScene && (!sourceSceneId || sourceSceneId !== targetSceneId)) return false;
-    const start = tokenCenter(source, source?.token, records);
-    const end = tokenCenter(target, target?.token, records);
+    const start = tokenCenter(source, details.sourceToken ?? source?.token, records);
+    const end = tokenCenter(target, details.targetToken ?? target?.token, records);
     return !collectionValues(sourceScene.walls).some((wall) => {
       if (!sightWall(wall)) return false;
       const segment = wallSegment(wall, sourceScene);
@@ -364,9 +371,16 @@ function geometryAdapter(records) {
     collisionRadius: (source, state, token) => (
       Math.max(0, finiteNumber(token?.width, 1)) / 2
     ),
-    distanceBetween: (source, target) => {
-      const first = tokenCenter(source, source?.token, records);
-      const second = tokenCenter(target, target?.token, records);
+    distanceBetween: (
+      source,
+      target,
+      _sourceState,
+      _targetState,
+      sourceToken,
+      targetToken,
+    ) => {
+      const first = tokenCenter(source, sourceToken ?? source?.token, records);
+      const second = tokenCenter(target, targetToken ?? target?.token, records);
       return Math.hypot(second.x - first.x, second.y - first.y);
     },
     tokenUpdate: ({ uuid, token, position, facing }) => {
@@ -497,9 +511,13 @@ async function processRequest(request, submitterId) {
     const user = activeUser(submitterId);
     const cached = processed.get(request.id);
     if (cached) return cloneDocumentData(cached);
-    const requestedTargets = new Set(Array.isArray(request.targetUuids) ? request.targetUuids : []);
-    await normalizeSceneParticipants(request);
-    const uuids = operationUuids(request);
+    const requestedTargets = new Set(request.targetUuids);
+    const operationType = canonicalOperationType(request.type);
+    const sceneUuids = await sceneParticipantUuids(request, operationType);
+    if (SCENE_TARGET_TYPES.has(operationType)) {
+      request.targetUuids = [...new Set([...request.targetUuids, ...sceneUuids.filter((uuid) => uuid !== request.sourceUuid)])];
+    }
+    const uuids = [...new Set([...operationUuids(request), ...sceneUuids])];
     const records = await loadShipRecords(uuids, { requiredUuids: [request.sourceUuid] });
     fillExpectedRevisions(request, records, requestedTargets);
     validateExpectedRevisions(request, records);

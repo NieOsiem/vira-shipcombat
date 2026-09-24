@@ -215,6 +215,10 @@ export function registerShipVisibility({ onMarkersChanged } = {}) {
   registerHook("updateActor", (actor) => {
     if (isShipActor(actor)) refreshShipVisibility();
   });
+  registerHook("updateActorDelta", (delta) => {
+    const actor = delta?.parent?.actor ?? delta?.actor;
+    if (isShipActor(actor)) refreshShipVisibility();
+  });
   registerHook("updateUser", (user) => {
     if (user?.id === globalThis.game?.user?.id) refreshShipVisibility();
   });

@@ -21,7 +21,7 @@ import {
   repairHull,
   standardRepair,
 } from "../scripts/rules/repairs.js";
-import { getSensorStats, trackKey } from "../scripts/rules/sensors.js";
+import { getCurrentSignature, getSensorStats, trackKey } from "../scripts/rules/sensors.js";
 import { publishOperationEvents } from "../scripts/foundry/chat.js";
 
 const SOURCE = "Scene.test.Token.source";
@@ -1388,19 +1388,21 @@ describe("multi-ship replacement scope and event privacy", () => {
       [SOURCE, TARGET_A].sort(),
     );
     expect(result.publicEvents).toHaveLength(1);
-    expect(result.gmEvents).toHaveLength(1);
+    const gmAttackEvents = result.gmEvents.filter((event) => event.type === "attack");
+    expect(gmAttackEvents).toHaveLength(1);
+    expect(result.publicEvents.filter((event) => event.type.endsWith(".detection"))).toEqual([]);
     expect(result.publicEvents[0]).toMatchObject({
       type: "attack",
       sourceUuid: SOURCE,
       targetUuids: [TARGET_A],
     });
-    expect(result.gmEvents[0]).toMatchObject({
+    expect(gmAttackEvents[0]).toMatchObject({
       type: "attack",
       sourceUuid: SOURCE,
       targetUuids: [TARGET_A],
     });
     expect(result.publicEvents[0].detail).not.toEqual(
-      result.gmEvents[0].detail,
+      gmAttackEvents[0].detail,
     );
     // Defenses are unrevealed, so the public channel payload stays sanitized even
     // though the GM-channel chat card shows the full outcome.
@@ -1426,10 +1428,10 @@ describe("multi-ship replacement scope and event privacy", () => {
         expect(card.content).toContain("Twin Railgun");
         expect(card.content).toContain('class="vsa-box vsa-total vsa-hit"');
         expect(card.content).toContain(
-          `>${result.gmEvents[0].detail.damage.totals.hullDamage}</span>`,
+          `>${gmAttackEvents[0].detail.damage.totals.hullDamage}</span>`,
         );
         // Shield absorption leaves hull untouched, so no Hull Integrity footer is shown.
-        const { before, after } = result.gmEvents[0].detail.targetHull;
+        const { before, after } = gmAttackEvents[0].detail.targetHull;
         if (before !== after) {
           expect(card.content).toContain(`${before} → ${after}`);
         } else {
@@ -1806,6 +1808,129 @@ describe("movement-driven passive detection", () => {
       .toEqual([]);
     expect(result.shipStates[SOURCE].tracks ?? {}).toEqual({});
     expect(result.shipStates[TARGET_A].tracks ?? {}).toEqual({});
+  });
+  test("stale out-of-range tracks skip line of sight while live contacts still check blockers", () => {
+    const range = passiveRange();
+    const staleObserver = ship(SOURCE);
+    const liveObserver = ship(SOURCE);
+    const mover = ship(TARGET_A);
+    staleObserver.state.position = { x: 0, y: 0 };
+    liveObserver.state.position = { x: 0, y: 0 };
+    mover.state.position = { x: range * 3, y: 0 };
+    staleObserver.state.tracks[trackKey(TARGET_A)] = {
+      targetUuid: TARGET_A,
+      state: "undetected",
+      passiveContact: false,
+      remembered: {},
+      jams: [],
+      lastKnown: { position: { x: range, y: 0 }, stale: true },
+    };
+    liveObserver.state.tracks[trackKey(TARGET_A)] = {
+      targetUuid: TARGET_A,
+      state: "contact",
+      passiveContact: false,
+      activeUntilTurnKey: "next-start",
+      remembered: {},
+      jams: [],
+    };
+    let staleRaycasts = 0;
+    let liveRaycasts = 0;
+
+    executeShipOperation(
+      request("reposition", TARGET_A, [], {
+        position: { x: range * 4, y: 0 },
+        facing: 0,
+        resetVelocity: true,
+      }),
+      context([[SOURCE, staleObserver], [TARGET_A, mover]], {
+        geometry: {
+          sensorLineOfSight: () => {
+            staleRaycasts += 1;
+            return true;
+          },
+        },
+      }),
+    );
+    executeShipOperation(
+      request("reposition", TARGET_A, [], {
+        position: { x: range * 4, y: 0 },
+        facing: 0,
+        resetVelocity: true,
+      }),
+      context([[SOURCE, liveObserver], [TARGET_A, mover]], {
+        geometry: {
+          sensorLineOfSight: () => {
+            liveRaycasts += 1;
+            return true;
+          },
+        },
+      }),
+    );
+
+    expect(staleRaycasts).toBe(0);
+    expect(liveRaycasts).toBe(1);
+  });
+});
+
+describe("stationary passive detection changes", () => {
+  test("a Ping reveals a stationary ship, unrelated work does not scan, and sensor shutdown drops its Contact", () => {
+    const observer = ship(SOURCE);
+    const emitter = ship(TARGET_A);
+    const unrelated = ship(TARGET_B);
+    const stats = getSensorStats(observer.config, observer.state);
+    const distance = stats.passiveRange * 0.9;
+    observer.state.position = { x: 0, y: 0 };
+    emitter.state.position = { x: distance, y: 0 };
+    emitter.token.x = distance;
+    emitter.config.baseSignature += stats.passiveStrength + 2 -
+      getCurrentSignature(emitter.config, emitter.state).value;
+
+    const ping = executeShipOperation(
+      request("ping", TARGET_A, [], { operatorId: GUNNER }),
+      context([[SOURCE, observer], [TARGET_A, emitter], [TARGET_B, unrelated]]),
+    );
+    const contact = ping.shipStates[SOURCE].tracks[trackKey(TARGET_A)];
+    expect(contact).toMatchObject({
+      state: "contact",
+      passiveContact: true,
+      lastKnown: { position: { x: distance, y: 0 }, stale: false },
+    });
+    observer.state = ping.shipStates[SOURCE];
+    emitter.state = ping.shipStates[TARGET_A];
+    unrelated.state = ping.shipStates[TARGET_B];
+
+    let raycasts = 0;
+    const noDetection = executeShipOperation(
+      request("toggleWeapon", TARGET_B, [], {
+        operatorId: GUNNER,
+        weaponId: CANADENSIS_IDS.railgun,
+        status: "off",
+      }),
+      context([[SOURCE, observer], [TARGET_A, emitter], [TARGET_B, unrelated]], {
+        geometry: {
+          sensorLineOfSight: () => {
+            raycasts += 1;
+            return true;
+          },
+        },
+      }),
+    );
+    expect(raycasts).toBe(0);
+    expect(noDetection.changedUuids).toEqual([TARGET_B]);
+    observer.state = noDetection.shipStates[SOURCE];
+
+    const shutdown = executeShipOperation(
+      request("routePower", SOURCE, [], {
+        operatorId: GUNNER,
+        allocation: { sensors: 0 },
+      }),
+      context([[SOURCE, observer], [TARGET_A, emitter], [TARGET_B, unrelated]]),
+    );
+    expect(shutdown.shipStates[SOURCE].tracks[trackKey(TARGET_A)]).toMatchObject({
+      state: "undetected",
+      passiveContact: false,
+      lastKnown: { position: { x: distance, y: 0 }, stale: true },
+    });
   });
 });
 

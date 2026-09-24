@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { CANADENSIS_IDS } from "../scripts/data/canadensis.js";
 import {
@@ -8,9 +8,10 @@ import {
 import { executeShipOperation } from "../scripts/rules/operations.js";
 import { cycleOutsideCombatRound } from "../scripts/rules/lifecycle.js";
 import { resolveShipDocument, readShipRecord, writeShipState } from "../scripts/state/token-state.js";
-import { assertPermission, advanceCooldowns } from "../scripts/state/action-queue.js";
+import { assertPermission, advanceCooldowns, submitShipOperation } from "../scripts/state/action-queue.js";
 import { createDefaultShipActorData, createDefaultShipSystemData } from "../scripts/model/defaults.js";
 import { SHIP_TYPE } from "../scripts/constants.js";
+import { trackKey } from "../scripts/rules/sensors.js";
 
 const SOURCE_TOKEN = "Scene.test.Token.source";
 const SOURCE_ACTOR = "Actor.test.source";
@@ -427,3 +428,98 @@ describe("player permissions and advance cooldown outside combat", () => {
   });
 });
 
+test("authority loads every scene observer for the fadeTrack alias without widening an attack target", async () => {
+  const previous = {
+    game: globalThis.game,
+    foundry: globalThis.foundry,
+    fromUuid: globalThis.fromUuid,
+  };
+  const gm = { id: "scene-gm", isGM: true, active: true };
+  const users = new Map([[gm.id, gm]]);
+  users.activeGM = gm;
+  const scene = { tokens: new Map(), walls: [], grid: { size: 100 } };
+  const targetUuid = "Scene.test.Token.target";
+  const observerUuid = "Scene.test.Token.observer";
+  const documents = new Map();
+  function place(uuid, x, y = 0) {
+    const data = createDefaultShipActorData();
+    const actor = {
+      uuid: `Actor.${uuid.split(".").at(-1)}`,
+      type: SHIP_TYPE,
+      system: clone(data.system),
+      items: new Map(data.items.map((item) => [item._id, { ...clone(item), id: item._id }])),
+      async update(changes) {
+        if (changes["system.shipCombat.state"]) this.system.shipCombat.state = clone(changes["system.shipCombat.state"]);
+        return this;
+      },
+    };
+    const token = {
+      documentName: "Token", uuid, actor, parent: scene,
+      x, y, width: 1, height: 1, rotation: 0,
+      toObject() {
+        return { x: this.x, y: this.y, width: this.width, height: this.height, rotation: this.rotation };
+      },
+    };
+    scene.tokens.set(uuid, token);
+    documents.set(uuid, token);
+    return actor;
+  }
+  const source = place(SOURCE_TOKEN, 0);
+  const target = place(targetUuid, 0, -100); // The prow railgun faces north at rotation 0.
+  const observer = place(observerUuid, 200);
+  target.system.shipCombat.state.power.sensors = 0;
+  target.system.shipCombat.state.tracks[trackKey(SOURCE_TOKEN)] = {
+    targetUuid: SOURCE_TOKEN, state: "contact", passiveContact: true,
+  };
+  observer.system.shipCombat.state.power.sensors = 0;
+  observer.system.shipCombat.state.tracks[trackKey(SOURCE_TOKEN)] = {
+    targetUuid: SOURCE_TOKEN, state: "contact", passiveContact: true,
+  };
+  const random = spyOn(Math, "random").mockReturnValue(0.01); // rollD20: ceil((1 - 0.01) * 20) = 20.
+  globalThis.game = { user: gm, users, socket: { on() {} }, journal: [] };
+  globalThis.foundry = { data: { operators: { ForcedReplacement: { create: (value) => value } } } };
+  globalThis.fromUuid = async (uuid) => documents.get(uuid) ?? null;
+  try {
+    const fade = createRequest("fadeTrack", SOURCE_TOKEN);
+    fade.id = "scene-fade";
+    const faded = await submitShipOperation(fade);
+    expect(faded.ok).toBe(true);
+    expect(faded.result.changedUuids).toContain(observerUuid);
+    expect(faded.result.changedUuids).toContain(targetUuid);
+    expect(target.system.shipCombat.state.tracks[trackKey(SOURCE_TOKEN)].state).toBe("undetected");
+    expect(observer.system.shipCombat.state.tracks[trackKey(SOURCE_TOKEN)].state).toBe("undetected");
+
+    const ping = createRequest("ping", SOURCE_TOKEN);
+    ping.id = "scene-ping";
+    ping.expectedRevisions[SOURCE_TOKEN] = source.system.shipCombat.state.revision;
+    const pinged = await submitShipOperation(ping);
+    expect(pinged.ok).toBe(true);
+    expect(pinged.result.shipStates[SOURCE_TOKEN].tracks[trackKey(targetUuid)].state).toBe("contact");
+
+    const weaponId = CANADENSIS_IDS.railgun;
+    source.system.shipCombat.state.tracks[trackKey(targetUuid)] = {
+      targetUuid, state: "targeted", firingSolution: true,
+    };
+    source.system.shipCombat.state.weapons[weaponId].status = "online";
+    source.system.shipCombat.state.weapons[weaponId].readiness = 1;
+    const attack = createRequest("attack", SOURCE_TOKEN, {
+      weaponId, barrageRounds: 1,
+    }, [targetUuid]);
+    attack.id = "scene-attack";
+    const targetRevision = target.system.shipCombat.state.revision;
+    attack.expectedRevisions[SOURCE_TOKEN] = source.system.shipCombat.state.revision;
+    attack.expectedRevisions[targetUuid] = targetRevision;
+    attack.expectedRevisions[observerUuid] = -1; // Not an explicit target: use the authority's revision.
+    const fired = await submitShipOperation(attack);
+    expect(fired.ok).toBe(true);
+    expect(fired.result.publicEvents.find((event) => event.type === "attack").targetUuids).toEqual([targetUuid]);
+    expect(Object.hasOwn(fired.result.shipStates, observerUuid)).toBe(true);
+    expect(target.system.shipCombat.state.revision).toBe(targetRevision + 1);
+  } finally {
+    random.mockRestore();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete globalThis[key];
+      else globalThis[key] = value;
+    }
+  }
+});
