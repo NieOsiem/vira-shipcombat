@@ -706,7 +706,7 @@ const CONTROL_LABELS = Object.freeze({
 });
 
 function refitStatus(itemId, state) {
-  if (!itemId) return "Empty · systems degraded";
+  if (!itemId) return "Unfitted";
   const weapon = state?.weapons?.[itemId] ?? {};
   const conditions = Object.values(state?.conditions ?? {})
     .filter((condition) =>
@@ -726,7 +726,37 @@ function refitStatus(itemId, state) {
   if (condition?.severity === "destroyed") return "Destroyed";
   if (condition?.severity) return `${titleCase(condition.severity)} damage`;
   if (weapon.status) return titleCase(weapon.status);
-  return "Installed · nominal";
+  return "Nominal";
+}
+
+function missingMountEffect(mount, kind) {
+  if (kind === "hardpoint") return "No weapon at this mount";
+  if (mount.class === "drive") {
+    const role = {
+      main: "No forward thrust",
+      reverse: "No reverse thrust",
+      portLateral: "No port lateral thrust",
+      starboardLateral: "No starboard lateral thrust",
+    };
+    return role[mount.driveRole] ?? "No thrust from this drive";
+  }
+  return {
+    reactor: "Unpowered · coast only",
+    shield: "No shield protection",
+    sensor: "No ship sensors",
+    cooling: "No cooling or venting",
+    inertia: "No velocity pivot",
+  }[mount.class] ?? "This system is unavailable";
+}
+
+function refitSystemGroup(id, label, slots) {
+  return {
+    id,
+    label,
+    slots,
+    fitted: slots.filter((slot) => slot.installed).length,
+    total: slots.length,
+  };
 }
 
 function refitMountView(actor, state, mount, kind) {
@@ -737,28 +767,24 @@ function refitMountView(actor, state, mount, kind) {
       collectionValues(actor.items).find((entry) => entry?.id === itemId)
     : null;
   const installed = Boolean(item);
-  const role = hardpoint
-    ? "Weapon hardpoint"
-    : mount.class === "drive"
-    ? `${titleCase(mount.driveRole)} drive`
-    : titleCase(mount.class);
   return {
     id: mount.id,
     label: mount.label ?? mount.id,
-    kind,
-    role,
+    componentClass: mount.class,
     size: hardpoint ? mount.mountSize : mount.size,
     regions: (mount.regions ?? []).map(titleCase).join(" · ") || "None",
     orientation: `${Number(mount.orientation ?? 0)}°`,
     traverse: hardpoint ? titleCase(mount.traverse ?? "fixed") : "",
     itemId: installed ? itemId : "",
     itemName: installed ? item.name ?? itemId : "Empty mount",
-    itemImg: installed ? item.img : "",
     installed,
     status: refitStatus(installed ? itemId : null, state),
-    dropLabel: `Drop exact ${hardpoint ? mount.category : mount.class} · ${
-      hardpoint ? mount.mountSize : mount.size
-    }`,
+    effect: installed ? "" : missingMountEffect(mount, kind),
+    fit: hardpoint
+      ? `Weapon · ${mount.mountSize}`
+      : `${titleCase(mount.class)} · ${mount.size}${mount.class === "drive"
+        ? ` · ${titleCase(["portLateral", "starboardLateral"].includes(mount.driveRole) ? "lateral" : mount.driveRole)}`
+        : ""}`,
   };
 }
 
@@ -1331,9 +1357,24 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     const refitSlots = (hullConfig.slots ?? []).map((slot) =>
       refitMountView(actor, state, slot, "slot")
     );
-    const refitHardpoints = (hullConfig.hardpoints ?? []).map((hardpoint) =>
-      refitMountView(actor, state, hardpoint, "hardpoint")
-    );
+    const refitHardpoints = (hullConfig.hardpoints ?? []).map((hardpoint, index) => ({
+      ...refitMountView(actor, state, hardpoint, "hardpoint"),
+      number: index + 1,
+    }));
+    const refitSystemGroups = [
+      refitSystemGroup("power", "Power", refitSlots.filter((slot) =>
+        ["reactor", "cooling"].includes(slot.componentClass)
+      )),
+      refitSystemGroup("propulsion", "Propulsion", refitSlots.filter((slot) =>
+        ["drive", "inertia"].includes(slot.componentClass)
+      )),
+      refitSystemGroup("support", "Support", refitSlots.filter((slot) =>
+        !["reactor", "cooling", "drive", "inertia"].includes(slot.componentClass)
+      )),
+    ];
+    const refitPowerWarning = !config.components?.reactor
+      ? "No reactor fitted: the ship is unpowered and can coast only."
+      : "";
     const referencedItemIds = new Set([
       ...(hullConfig.slots ?? []).map((slot) => slot.itemId),
       ...(hullConfig.hardpoints ?? []).map((hardpoint) => hardpoint.weaponId),
@@ -1383,8 +1424,10 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       rosterConflicts,
       canRefit: !refitDenial,
       refitDenial,
-      refitSlots,
+      refitPowerWarning,
       refitHardpoints,
+      refitSystemGroups,
+      refitHardpointCount: refitHardpoints.filter((point) => point.installed).length,
       refitUnreferencedItems,
       canAdmin: Boolean(isGM && canOperate),
       canAct: Boolean(canOperate && (isGM || isOutsideCombat || state.phase === "active")),
@@ -1970,12 +2013,7 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
         () => void this.#removeComponent(button.dataset.refitRemove, button),
       );
     });
-    html.querySelectorAll("[data-refit-browse]").forEach((button) => {
-      this.#on(
-        button, "click",
-        () => void this.#browseComponents(button.dataset.refitBrowse, button),
-      );
-    });
+
     this.#on(html.querySelector("[data-native-vehicle-sheet]"), "click", () => {
       try {
         openNativeVehicleSheet(this.actor);
@@ -3906,108 +3944,6 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
     await this.render();
   }
 
-  async #browseComponents(mountId, button) {
-    button.disabled = true;
-    try {
-      const denial = getRefitDenial(this.actor);
-      if (denial) throw new Error(denial);
-      const hull = this.actor.system.shipCombat.config;
-      const referenced = new Set([
-        ...(hull.slots ?? []).map((mount) => mount.itemId),
-        ...(hull.hardpoints ?? []).map((mount) => mount.weaponId),
-      ]);
-      const candidates = collectionValues(this.actor.items).filter((item) =>
-        item.type === COMPONENT_ITEM_TYPE && !referenced.has(item.id)
-      ).map((item) => ({ item, origin: "Unreferenced ship Item" }));
-      const pack = game.packs.get(`${MODULE_ID}.ship-components`);
-      let packWarning = "";
-      if (pack) {
-        try {
-          for (const item of await pack.getDocuments()) {
-            if (item.type === COMPONENT_ITEM_TYPE) {
-              candidates.push({ item, origin: "Ship Components compendium" });
-            }
-          }
-        } catch (error) {
-          packWarning = `Compendium unavailable: ${errorText(error)}`;
-        }
-      } else packWarning = "Ship Components compendium is unavailable.";
-      const content = document.createElement("div");
-      const help = document.createElement("p");
-      help.textContent =
-        "Compatible components match this mount's class, exact size, and drive role. Installation creates a fresh embedded copy; source Items are retained.";
-      content.append(help);
-      if (packWarning) {
-        const warning = document.createElement("p");
-        warning.textContent = packWarning;
-        warning.setAttribute("role", "status");
-        content.append(warning);
-      }
-      const label = document.createElement("label");
-      label.textContent = "Compatible components";
-      const select = document.createElement("select");
-      select.name = "component";
-      select.required = true;
-      const mismatches = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = "Incompatible components and reasons";
-      mismatches.append(summary);
-      const list = document.createElement("ul");
-      candidates.forEach(({ item, origin }, index) => {
-        const reason = this.#componentMismatch(mountId, item);
-        if (reason) {
-          const row = document.createElement("li");
-          row.textContent = `${item.name} (${origin}): ${reason}`;
-          list.append(row);
-        } else {
-          const option = document.createElement("option");
-          option.value = String(index);
-          option.textContent = `${item.name} · ${origin}`;
-          select.append(option);
-        }
-      });
-      if (select.options.length) {
-        label.append(select);
-        content.append(label);
-      } else {
-        const empty = document.createElement("p");
-        empty.textContent = "No compatible components found for this mount.";
-        content.append(empty);
-      }
-      if (list.childElementCount) {
-        mismatches.append(list);
-        content.append(mismatches);
-      }
-      const buttons = [{ action: "cancel", label: "Cancel" }];
-      if (select.options.length) {
-        buttons.unshift({
-          action: "install",
-          label: "Install component",
-          default: true,
-          callback: (_event, _button, dialog) =>
-            dialog.element.querySelector("select[name='component']").value,
-        });
-      }
-      const selection = await foundry.applications.api.DialogV2.wait({
-        window: { title: "Browse components" },
-        content: content.outerHTML,
-        buttons,
-        rejectClose: false,
-      });
-      if (
-        selection === null || selection === undefined || selection === "cancel"
-      ) return;
-      const candidate = candidates[Number(selection)];
-      if (candidate) await this.#installComponent(mountId, candidate.item);
-    } catch (error) {
-      await this.#refitError(error);
-    } finally {
-      if (button.isConnected) {
-        button.disabled = Boolean(getRefitDenial(this.actor));
-      }
-    }
-  }
-
   async #dropComponent(event, drop) {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -4040,12 +3976,13 @@ class ShipConsole extends HandlebarsApplicationMixin(ActorSheetV2) {
       const removed = await removeShipComponent(this.actor, mountId);
       if (removed) {
         ui.notifications.info(
-          `${removed.name ?? "Component"} removed; the mount is now degraded.`,
+          `${removed.name ?? "Component"} removed; the mount is now empty.`,
         );
+        await this.render();
       }
-      await this.render();
     } catch (error) {
       await this.#refitError(error);
+    } finally {
       if (button.isConnected) {
         button.disabled = Boolean(getRefitDenial(this.actor));
       }

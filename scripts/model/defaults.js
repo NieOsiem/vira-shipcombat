@@ -73,7 +73,9 @@ function powerInstalled(config, system) {
 }
 
 function initialPower(config) {
-  const allocations = config?.initialPower ?? config?.powerPresets?.[0]?.allocations ?? {};
+  const allocations = config?.components?.reactor
+    ? (config?.initialPower ?? config?.powerPresets?.[0]?.allocations ?? {})
+    : {};
   const power = Object.fromEntries(
     POWER_SYSTEMS.map((system) => [
       system,
@@ -89,10 +91,10 @@ function initialPower(config) {
 function initialWeapons(config, weaponsPower) {
   const weapons = config?.components?.weapons ?? [];
   const byId = new Map(weapons.map((weapon) => [weapon.id, weapon]));
-  const priority = [
+  const priority = config?.components?.reactor ? [
     ...(config?.weaponPriority ?? []),
     ...weapons.map((weapon) => weapon.id).filter((id) => !(config?.weaponPriority ?? []).includes(id)).sort(),
-  ];
+  ] : [];
   const online = new Set();
   let reserved = 0;
 

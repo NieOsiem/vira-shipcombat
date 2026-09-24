@@ -5,6 +5,8 @@ import {
   createDefaultShipData,
   createInitialState,
 } from "../scripts/model/defaults.js";
+import { materializeShipConfig } from "../scripts/model/equipment.js";
+import { validateHullConfig } from "../scripts/model/validation.js";
 import { executeShipOperation } from "../scripts/rules/operations.js";
 import {
   applyMaintainedOverclockHeat,
@@ -111,6 +113,41 @@ describe("Power routing and weapon lifecycle", () => {
     );
 
     expect(state).toEqual(before);
+  });
+
+  test("an empty reactor slot starts legally unpowered and stays so through Start Phase", () => {
+    const defaults = createDefaultShipData();
+    defaults.hull.slots.find((slot) => slot.class === "reactor").itemId = null;
+    expect(validateHullConfig(defaults.hull).valid).toBe(true);
+    const config = materializeShipConfig(defaults.hull, defaults.items);
+    expect(config.components.reactor).toBeNull();
+
+    const state = createInitialState(config);
+    const allocation = {
+      engines: 0,
+      shields: 0,
+      sensors: 0,
+      cooling: 0,
+      inertia: 0,
+      weapons: 0,
+    };
+    const weaponStatuses = config.components.weapons.map(() => "off");
+    expect(state.hull).toBe(config.maxHull);
+    expect(state.power).toEqual({ ...allocation, redlining: false });
+    expect(Object.values(state.weapons).map(({ status }) => status)).toEqual(weaponStatuses);
+    expect(getPowerState(config, state)).toMatchObject({
+      allocation,
+      committed: 0,
+      legal: true,
+      weaponReserved: 0,
+    });
+
+    state.phase = "start";
+    runStartPhase(config, state, { turnKey: "reactorless-round" });
+    expect(state.phase).toBe("active");
+    expect(state.power).toEqual({ ...allocation, redlining: false });
+    expect(Object.values(state.weapons).map(({ status }) => status)).toEqual(weaponStatuses);
+    expect(getPowerState(config, state).legal).toBe(true);
   });
 
   test("a missing reactor accepts an all-zero route and rejects positive power atomically", () => {

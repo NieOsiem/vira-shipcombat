@@ -701,29 +701,48 @@
 
     <section id="panel-refit" class="ship-console-panel ship-refit-layout" role="tabpanel" aria-label="Refit" data-tab-panel="refit" {{#unless tabState.refit.active}}hidden{{/unless}}>
       <div class="ship-panel-heading"><h2>Refit</h2><span class="ship-readout">{{view.combat.label}}</span></div>
-      {{#if refitDenial}}<p class="ship-console-notice ship-refit-denial" data-refit-denial role="status"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{refitDenial}}</p>{{else}}<p class="ship-muted">Browse components for an empty mount or drop compatible component Items onto mounts. Drop onto an occupied row to replace its Item with a fresh embedded copy.</p>{{/if}}
+      {{#if refitDenial}}<p class="ship-console-notice ship-refit-denial" data-refit-denial role="status"><i class="fa-solid fa-lock" aria-hidden="true"></i> {{refitDenial}}</p>{{/if}}
+      <p class="ship-muted">Drag a component Item from the world or Ship Components compendium onto any mount to install or replace it. Class, exact size, and drive role must fit. Removing an Item deletes its embedded copy after confirmation.</p>
+      {{#if refitPowerWarning}}<p class="ship-refit-impact" role="status">{{refitPowerWarning}}</p>{{/if}}
       <section aria-labelledby="refit-slot-heading">
-        <h3 id="refit-slot-heading">Component slots</h3>
-        <div class="ship-refit-grid">
-          {{#each refitSlots}}
-            <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-refit-drop data-mount-id="{{id}}" {{#unless ../canRefit}}data-refit-disabled{{/unless}} aria-label="{{label}} · {{status}}">
-              <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span>{{size}}</span><span class="ship-status-chip">{{status}}</span></header>
-              {{#if installed}}<button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" aria-label="Open {{itemName}} component Item">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<strong>{{itemName}}</strong><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>{{else}}<div class="ship-refit-drop"><i class="fa-solid fa-download" aria-hidden="true"></i><span>Empty · {{dropLabel}}</span></div>{{/if}}
-              {{#unless installed}}<button type="button" data-refit-browse="{{id}}" aria-label="Browse components for {{label}}" {{#unless ../canRefit}}disabled{{/unless}}>Browse components</button>{{/unless}}
-              <details data-sync="refit-slot-{{id}}"><summary>Mount details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div></dl>{{#if installed}}<button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove component</button>{{/if}}</details>
-            </article>
-          {{else}}<p class="ship-empty">This hull defines no component slots.</p>{{/each}}
+        <h3 id="refit-slot-heading">Systems</h3>
+        <div class="ship-refit-systems">
+          {{#each refitSystemGroups}}
+            <section class="ship-refit-group" aria-labelledby="refit-group-{{id}}">
+              <header><h3 id="refit-group-{{id}}">{{label}}</h3><span class="ship-refit-count">{{fitted}} / {{total}} fitted</span></header>
+              <div class="ship-refit-system-grid">
+                {{#each slots}}
+                  <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-refit-drop data-mount-id="{{id}}" {{#unless @root.canRefit}}data-refit-disabled{{/unless}} aria-label="{{label}} · {{status}}{{#unless installed}} · {{effect}}{{/unless}}">
+                    <div class="ship-refit-card-head"><strong>{{label}}</strong><span class="ship-status-chip">{{status}}</span></div>
+                    <span class="ship-refit-fit">Fits {{fit}}</span>
+                    {{#if installed}}
+                      <button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" aria-label="Open {{itemName}} component Item"><strong>{{itemName}}</strong><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>
+                    {{else}}
+                      <span class="ship-refit-effect">{{effect}} <span class="ship-refit-hint">· Drop Item here</span></span>
+                    {{/if}}
+                    <div class="ship-refit-card-actions">
+                      <details data-sync="refit-slot-{{id}}"><summary aria-label="Details for {{label}}">Details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div></dl></details>
+                      {{#if installed}}<button type="button" data-refit-remove="{{id}}" aria-label="Remove {{itemName}} from {{label}}" {{#unless @root.canRefit}}disabled{{/unless}}>Remove</button>{{/if}}
+                    </div>
+                  </article>
+                {{else}}<p class="ship-muted">No {{label}} mounts.</p>{{/each}}
+              </div>
+            </section>
+          {{/each}}
         </div>
       </section>
       <section aria-labelledby="refit-hardpoint-heading">
-        <h3 id="refit-hardpoint-heading">Hardpoints</h3>
-        <div class="ship-refit-grid">
+        <div class="ship-refit-heading"><h3 id="refit-hardpoint-heading">Hardpoints</h3><span class="ship-refit-count">{{refitHardpointCount}} / {{refitHardpoints.length}} fitted</span></div>
+        <div class="ship-refit-hardpoints">
           {{#each refitHardpoints}}
-            <article class="ship-refit-card {{#unless installed}}ship-refit-card--empty{{/unless}}" data-refit-drop data-mount-id="{{id}}" {{#unless ../canRefit}}data-refit-disabled{{/unless}} aria-label="{{label}} · {{status}}">
-              <header><div><span class="ship-kicker">{{role}}</span><h3>{{label}}</h3></div><span>{{size}}</span><span class="ship-status-chip">{{status}}</span></header>
-              {{#if installed}}<button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" aria-label="Open {{itemName}} weapon Item">{{#if itemImg}}<img src="{{itemImg}}" alt="">{{/if}}<strong>{{itemName}}</strong><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>{{else}}<div class="ship-refit-drop"><i class="fa-solid fa-download" aria-hidden="true"></i><span>Empty · {{dropLabel}}</span></div>{{/if}}
-              {{#unless installed}}<button type="button" data-refit-browse="{{id}}" aria-label="Browse components for {{label}}" {{#unless ../canRefit}}disabled{{/unless}}>Browse components</button>{{/unless}}
-              <details data-sync="refit-hardpoint-{{id}}"><summary>Mount details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div><div><dt>Traverse</dt><dd>{{traverse}}</dd></div></dl>{{#if installed}}<button type="button" data-refit-remove="{{id}}" {{#unless ../canRefit}}disabled{{/unless}}>Remove weapon</button>{{/if}}</details>
+            <article class="ship-refit-hardpoint {{#unless installed}}ship-refit-card--empty{{/unless}}" data-refit-drop data-mount-id="{{id}}" {{#unless @root.canRefit}}data-refit-disabled{{/unless}} aria-label="Hardpoint {{number}} · {{label}} · {{status}}{{#unless installed}} · {{effect}}{{/unless}}">
+              <span class="ship-refit-number">{{number}}</span>
+              <strong class="ship-refit-mount" title="{{label}}">{{label}}</strong>
+              <span class="ship-refit-fit" title="Fits {{fit}}">{{fit}}</span>
+              {{#if installed}}<button type="button" class="ship-refit-installed" data-refit-item="{{itemId}}" aria-label="Open {{itemName}} weapon Item"><strong>{{itemName}}</strong><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>{{else}}<span class="ship-refit-effect">{{effect}} · Drop Item here</span>{{/if}}
+              <span class="ship-status-chip">{{status}}</span>
+              <details data-sync="refit-hardpoint-{{id}}"><summary aria-label="Details for hardpoint {{number}}, {{label}}">Details</summary><dl class="ship-refit-meta"><div><dt>Exact size</dt><dd>{{size}}</dd></div><div><dt>Regions</dt><dd>{{regions}}</dd></div><div><dt>Orientation</dt><dd>{{orientation}}</dd></div><div><dt>Traverse</dt><dd>{{traverse}}</dd></div></dl></details>
+              {{#if installed}}<button type="button" data-refit-remove="{{id}}" aria-label="Remove {{itemName}} from hardpoint {{number}}, {{label}}" {{#unless @root.canRefit}}disabled{{/unless}}>Remove</button>{{/if}}
             </article>
           {{else}}<p class="ship-empty">This hull defines no hardpoints.</p>{{/each}}
         </div>
@@ -731,7 +750,7 @@
       <details class="ship-card" data-sync="refit-unreferenced">
         <summary>Unreferenced component Items</summary>
         <p class="ship-muted">Advanced hull edits retain Items no longer referenced by a mount. These Items provide no ship capability while unreferenced.</p>
-        <div class="ship-refit-grid">{{#each refitUnreferencedItems}}<article class="ship-refit-card"><header><h3>{{name}}</h3><span class="ship-status-chip">Unreferenced</span></header><span>{{componentClass}} · {{size}}</span><button type="button" data-refit-item="{{id}}" aria-label="Open structured Item sheet for {{name}}">Open Item</button></article>{{else}}<p class="ship-empty">No unreferenced component Items.</p>{{/each}}</div>
+        <div class="ship-refit-orphans">{{#each refitUnreferencedItems}}<article class="ship-refit-orphan"><strong>{{name}}</strong><span class="ship-status-chip">Unreferenced</span><span>{{componentClass}} · {{size}}</span><button type="button" data-refit-item="{{id}}" aria-label="Open structured Item sheet for {{name}}">Open Item</button></article>{{else}}<p class="ship-empty">No unreferenced component Items.</p>{{/each}}</div>
       </details>
       <details class="ship-card ship-console-config" data-sync="hull-json">
         <summary>Advanced hull JSON</summary>
