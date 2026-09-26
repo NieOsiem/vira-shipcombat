@@ -366,6 +366,9 @@ function validateReactor(reactor, error, requireNumber, path = "components.react
   }
   requireNumber(reactor.overclockHeat, `${path}.overclockHeat`, { min: 0 });
   validateRecoveryWork(reactor.recoveryWork, `${path}.recoveryWork`, error);
+  if (reactor.dirtyCore !== undefined && typeof reactor.dirtyCore !== "boolean") {
+    error("INVALID_REACTOR_DIRTY_CORE", `${path}.dirtyCore`, "Dirty Core flag must be a boolean.");
+  }
 }
 
 function validateShieldTopology(shield, path, error) {
@@ -384,6 +387,12 @@ function validateShield(shield, error, requireNumber) {
   requireNumber(shield.sectorCap, "components.shield.sectorCap", { min: 0, strict: true, integer: true });
   requireNumber(shield.rechargeDelay, "components.shield.rechargeDelay", { min: 0, strict: true, integer: true });
   validateRecoveryWork(shield.recoveryWork, "components.shield.recoveryWork", error);
+  if (shield.cascadingCollapse !== undefined && typeof shield.cascadingCollapse !== "boolean") {
+    error("INVALID_SHIELD_CASCADING_COLLAPSE", "components.shield.cascadingCollapse", "Cascading Collapse flag must be a boolean.");
+  }
+  if (shield.thermalBleedFraction !== undefined && (!isFiniteNumber(shield.thermalBleedFraction) || shield.thermalBleedFraction < 0 || shield.thermalBleedFraction > 1)) {
+    error("INVALID_SHIELD_THERMAL_BLEED", "components.shield.thermalBleedFraction", "Thermal Bleed fraction must be a number between 0 and 1.");
+  }
   if (Array.isArray(shield.emitters)) {
     const ids = new Set();
     for (const [index, emitter] of shield.emitters.entries()) {
@@ -850,12 +859,21 @@ export function validateComponentItem(value) {
     requireNumber(definition.base?.thrust, `${path}.base.thrust`, { min: 0 });
     if (system.driveRole === "lateral") requireNumber(definition.base?.rotation, `${path}.base.rotation`, { min: 0 });
     validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+    if (definition.gasketBlowout !== undefined && typeof definition.gasketBlowout !== "boolean") {
+      error("INVALID_DRIVE_GASKET_BLOWOUT", `${path}.gasketBlowout`, "Gasket Blowout flag must be a boolean.");
+    }
   } else if (system.componentClass === "shield") {
     validateShieldTopology(definition, path, error);
     requireNumber(definition.totalBudget, `${path}.totalBudget`, { min: 0, strict: true, integer: true });
     requireNumber(definition.sectorCap, `${path}.sectorCap`, { min: 0, strict: true, integer: true });
     requireNumber(definition.rechargeDelay, `${path}.rechargeDelay`, { min: 0, strict: true, integer: true });
     validateRecoveryWork(definition.recoveryWork, `${path}.recoveryWork`, error);
+    if (definition.cascadingCollapse !== undefined && typeof definition.cascadingCollapse !== "boolean") {
+      error("INVALID_SHIELD_CASCADING_COLLAPSE", `${path}.cascadingCollapse`, "Cascading Collapse flag must be a boolean.");
+    }
+    if (definition.thermalBleedFraction !== undefined && (!isFiniteNumber(definition.thermalBleedFraction) || definition.thermalBleedFraction < 0 || definition.thermalBleedFraction > 1)) {
+      error("INVALID_SHIELD_THERMAL_BLEED", `${path}.thermalBleedFraction`, "Thermal Bleed fraction must be a number between 0 and 1.");
+    }
   } else if (system.componentClass === "sensor") {
     validateSensor(definition, error, requireNumber, path);
   } else if (system.componentClass === "cooling") {

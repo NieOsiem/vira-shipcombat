@@ -19,9 +19,9 @@
  * `normal` emission, and the Deep-Core array's 3 Heat a Start already covers the gun's 2 Heat a
  * shot, so the ship runs both quiet and cold.
  *
- * Defence is the band and the hull behind it: 22 hull with light plate, and the Vector Deflector's
- * four-way regeneration spread rather than a single bubble pool. The shield is not this hull's
- * argument — ignoring the other ship's shield is.
+ * Defence is the band and the hull behind it: 22 hull with light plate, and the Reinforced Bubble
+ * Deflector (40 budget, 4/7/10 regen). The shield is not this hull's argument — ignoring the other
+ * ship's shield is.
  *
  * Anti-regeneration (gate 2) — out-damages. The bypass gun lands 4 shield damage a hit against the
  * 4/turn the Vector funnels into one facet, a static ceiling of exactly 0; measured across the §5

@@ -7,10 +7,10 @@
  * `scripts/data/*-components.js` kits are untouched, so a stock Peregrinus keeps its own parts.
  *
  * Cheap/premium reading (there are no price fields by design — the shop is the GM's call):
- *   cheap    Light Reactor, Bubble Deflector, Segment Deflector, Light Sensor Array, Compact Cooling
+ *   cheap    Light Reactor, LH Bubble Deflector, Bubble Deflector, Light Sensor Array, Compact Cooling
  *            Array, Cutter Main Drive, Light Reverse Drive, Cutter Lateral Drive, Inertial Anchor
  *            Mk I, Storm Barrage Gun
- *   premium  Long-Base Reactor, Vector Deflector, Long-Base Sensor Array, Deep-Core Cooling Array,
+ *   premium  Long-Base Reactor, Reinforced Bubble Deflector, Long-Base Sensor Array, Deep-Core Cooling Array,
  *            Vector Main Drive, Inertial Anchor Mk II / Mk III, Light Railgun, Skipshot Gun
  *
  * Design notes that matter at the table:
@@ -19,12 +19,11 @@
  *   that fixes it (passive 80 / active 120 at the same single Power), and both wave-1 fighters ship
  *   with it; the cheap one stays in the catalogue as the budget refit for hulls that fight inside
  *   40 su.
- * - Both wave-1 fighters ship directional arrays (the Lance the premium Vector, the Wasp the cheap
- *   Segment) for a rules reason, not a flavour one: a Bubble Shield's single pool repairs whatever
- *   lands on it one-for-one out of its whole budget, so sustained fire below that budget is repaired
- *   exactly and the anti-regeneration measurement comes back at zero however hard the attacker hits.
- *   The bubble stays in the catalogue as the all-round refit for a hull that expects to be shot from
- *   every bearing at once — it is the tougher shield, and the one attrition maths cannot beat.
+ * - All small hulls install bubble shields across three clear tiers: the budget LH Bubble Deflector
+ *   (20 HP, 2/4/6 regen) on starter/militia craft like the Gnat and Wasp; the baseline Bubble Deflector
+ *   (30 HP, 3/6/8 regen) on the Peregrinus Interceptor; and the premium Reinforced Bubble Deflector
+ *   (40 HP, 4/7/10 regen) on snipers and strike craft like the Lance and Shrike. Bubble shields pool
+ *   all damage into a single shared capacity and regenerate without directional routing.
  * - The two small weapons that matter are the Lance's Light Railgun (one shot a turn, accuracy -1,
  *   AP 2, hull 9, `vicious` — the crit-fisher of the agreed weapon vocabulary, 60/120 su) and the
  *   Wasp's Storm Barrage Gun (25/75 su, 270° envelope, four-round barrage profiles, magazine 160,
@@ -157,59 +156,54 @@ export const SMALL_SHIELD_BUBBLE_SOURCE = componentSource({
 });
 
 /**
- * Premium: 48 points over four facets (12 each) with a better regeneration ladder than the bubble.
- * The trade is deliberate — a directional array never has 30 points of cushion on the bearing it is
- * being shot from, so one stripped facet takes hull hits, but the regeneration funnel is thinner and
- * sustained fire can out-damage it.
+ * Premium: 40 points single pool with a superior regeneration ladder.
+ * Installed on the Lance long-gun sniper and Shrike strike craft.
  */
 export const SMALL_SHIELD_VECTOR_SOURCE = componentSource({
   _id: "SmlShieldVector1",
-  name: "Vector Deflector",
+  name: "Reinforced Bubble Deflector",
   componentClass: "shield",
   size: "small",
   definition: {
-    topology: "directional",
-    sectors: [...SECTORS],
-    totalBudget: 48,
-    sectorCap: 14,
+    topology: "bubble",
+    sectors: ["bubble"],
+    totalBudget: 40,
+    sectorCap: 40,
     rechargeDelay: 1,
     tiers: [
       { power: 0, online: false, regeneration: 0 },
       { power: 1, online: true, regeneration: 0 },
       { power: 2, online: true, regeneration: 4 },
       { power: 3, online: true, regeneration: 7 },
-      { power: 4, online: true, regeneration: 9, overclock: true, overclockHeat: 2 },
+      { power: 4, online: true, regeneration: 10, overclock: true, overclockHeat: 2 },
     ],
     recoveryWork: 3,
   },
 });
 
 /**
- * Cheap: the budget directional array. 36 points, 9 a facet, and the same reason to exist as the
- * Vector — a segmented shield spreads its regeneration across four weights, so sustained fire is not
- * repaired one-for-one the way a single bubble pool repairs it. It is what the Wasp buys: less
- * cushion per bearing than the bubble, and the only small shield under the Vector that a knife gun
- * can actually beat.
+ * Cheap / Budget: 20 points single pool for starter and militia hulls.
+ * Installed on the Gnat militia fighter and Wasp knife brawler.
  */
 export const SMALL_SHIELD_SEGMENT_SOURCE = componentSource({
   _id: "SmlShieldSegmen1",
-  name: "Segment Deflector",
+  name: "LH Bubble Deflector",
   componentClass: "shield",
   size: "small",
   definition: {
-    topology: "directional",
-    sectors: [...SECTORS],
-    totalBudget: 36,
-    sectorCap: 12,
+    topology: "bubble",
+    sectors: ["bubble"],
+    totalBudget: 20,
+    sectorCap: 20,
     rechargeDelay: 1,
     tiers: [
       { power: 0, online: false, regeneration: 0 },
       { power: 1, online: true, regeneration: 0 },
-      { power: 2, online: true, regeneration: 3 },
-      { power: 3, online: true, regeneration: 5 },
-      { power: 4, online: true, regeneration: 7, overclock: true, overclockHeat: 2 },
+      { power: 2, online: true, regeneration: 2 },
+      { power: 3, online: true, regeneration: 4 },
+      { power: 4, online: true, regeneration: 6, overclock: true, overclockHeat: 2 },
     ],
-    recoveryWork: 3,
+    recoveryWork: 2,
   },
 });
 

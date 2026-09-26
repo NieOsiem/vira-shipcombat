@@ -321,9 +321,10 @@ globalThis.${REPAIR_GLOBAL} = async function (apply) {
     }
     const current = JSON.stringify(item.system?.definition ?? null);
     const wanted = JSON.stringify(source.system?.definition ?? null);
-    if (current !== wanted) {
-      report.definitions.push({ item: item.name, id: item.id, action: "sync definition" });
-      if (apply) await item.update({ "system.definition": structuredClone(source.system.definition) });
+    const nameMismatch = item.name !== source.name;
+    if (current !== wanted || nameMismatch) {
+      report.definitions.push({ item: item.name, id: item.id, action: nameMismatch ? ("sync definition & rename to " + source.name) : "sync definition" });
+      if (apply) await item.update({ name: source.name, "system.definition": structuredClone(source.system.definition) });
     }
   }
   // A mounted component keeps its own copy: a tweak to a design must reach the ships too.
@@ -336,9 +337,10 @@ globalThis.${REPAIR_GLOBAL} = async function (apply) {
       if (!item) continue;
       const current = JSON.stringify(item.system?.definition ?? null);
       const wanted = JSON.stringify(source.system?.definition ?? null);
-      if (current === wanted) continue;
-      report.definitions.push({ actor: actor.name, item: item.name, id: item.id, action: "sync mounted copy" });
-      if (apply) await item.update({ "system.definition": structuredClone(source.system.definition) }, { [\`\${MODULE_ID}InternalUpdate\`]: true, [\`\${MODULE_ID}Initialization\`]: true });
+      const nameMismatch = item.name !== source.name;
+      if (current === wanted && !nameMismatch) continue;
+      report.definitions.push({ actor: actor.name, item: item.name, id: item.id, action: nameMismatch ? ("sync mounted copy & rename to " + source.name) : "sync mounted copy" });
+      if (apply) await item.update({ name: source.name, "system.definition": structuredClone(source.system.definition) }, { [\`\${MODULE_ID}InternalUpdate\`]: true, [\`\${MODULE_ID}Initialization\`]: true });
     }
     void byId;
   }

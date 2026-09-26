@@ -1,6 +1,6 @@
 import { RuleViolation } from "../constants.js";
 
-const COMPLETE_CUSTOM_TRAITS = new Set(["incendiary", "unreliable", "unstableoverclock"]);
+const COMPLETE_CUSTOM_TRAITS = new Set(["incendiary", "unstableoverclock"]);
 const GM_FATE_OUTCOMES = Object.freeze(new Set(["destroyed", "disabled"]));
 
 function number(value, fallback = 0) {

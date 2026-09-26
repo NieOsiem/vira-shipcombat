@@ -1,12 +1,18 @@
 import { RuleViolation } from "../constants.js";
 import { advanceWeaponRecovery } from "./combat.js";
-import { processHazardEnd, getFaultEffects } from "./conditions.js";
+import { processHazardEnd, getFaultEffects, applyConditionTiers } from "./conditions.js";
 import { resolveShipFate } from "./damage.js";
 import { resetEvasionAtStart, resolveCoast, getOverspeedDamage } from "./movement.js";
 import { refreshResources, validateRoster } from "./operators.js";
 import { applyMaintainedOverclockHeat, applyPowerShedding } from "./power.js";
 import { refreshObserverTracks } from "./sensors.js";
 import { applyShieldCapacityClamping, applyShieldRegeneration, tickShieldRecharge } from "./shields.js";
+
+function checkRoll(random, index = 0) {
+  if (typeof random === "function") return random(index);
+  if (Array.isArray(random) && random.length > index && Number.isFinite(random[index])) return random[index];
+  return Math.random();
+}
 
 function clone(value) {
   if (Array.isArray(value)) return value.map(clone);
@@ -151,6 +157,7 @@ export function runStartPhase(config, state, {
   targets = [],
   nextStartKey = true,
   expiringJamSourceUuid,
+  random = null,
 } = {}) {
   return transaction(state, (draft) => {
     const events = [];
@@ -195,7 +202,23 @@ export function runStartPhase(config, state, {
     events.push(event(0, "openingHousekeeping", { expired, roster: rosterValidation, shedding }));
 
     events.push(event(1, "passiveCooling", passiveCooling(config, draft)));
-    events.push(event(2, "maintainedOverclockHeat", applyMaintainedOverclockHeat(config, draft)));
+    const overclockHeat = applyMaintainedOverclockHeat(config, draft);
+    events.push(event(2, "maintainedOverclockHeat", overclockHeat));
+
+    const mainDrive = config?.components?.drives?.main;
+    if (mainDrive?.gasketBlowout && (overclockHeat?.sources ?? []).some((s) => s.system === "engines")) {
+      const rollVal = checkRoll(random, 0);
+      if (rollVal < (1 / 6)) {
+        try {
+          const blowoutResult = applyConditionTiers(config, draft, {
+            conditionId: `${mainDrive.id}:driveFailure`,
+            tiers: 1,
+          });
+          events.push(event(2.5, "driveGasketBlowout", { mainDriveId: mainDrive.id, blowoutResult }));
+        } catch {}
+      }
+    }
+
     events.push(event(3, "shieldRecharge", tickShieldRecharge(config, draft)));
     const clamping = applyShieldCapacityClamping(config, draft);
     events.push(event(4, "shieldRegeneration", { clamping, regeneration: applyShieldRegeneration(config, draft) }));
@@ -260,6 +283,19 @@ export function runEndPhase(config, state, { random = [], endKey = state?.turnKe
     events.push(event(2, "hazardHeatPower", { events: heatEvents, shedding }));
     events.push(event(3, "hazardDamage", { events: damageEvents }));
     events.push(event(4, "hazardClocks", { events: clockEvents }));
+
+    if (config?.components?.reactor?.dirtyCore) {
+      const rollVal = checkRoll(random, 0);
+      if (rollVal < 0.1) {
+        try {
+          const conditionResult = applyConditionTiers(config, draft, {
+            conditionId: "reactorInstability",
+            tiers: 1,
+          });
+          events.push(event(4.5, "dirtyCoreInstability", { roll: Math.ceil(rollVal * 20), conditionResult }));
+        } catch {}
+      }
+    }
 
     const capacity = Number(config?.heatCapacity ?? config?.ratedHeatCapacity ?? 0);
     const overflow = Math.max(0, Number(draft.heat ?? 0) - capacity);

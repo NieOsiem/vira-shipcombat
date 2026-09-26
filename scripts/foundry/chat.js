@@ -88,6 +88,12 @@ function attackSummary(detail) {
   if (damage?.totals) parts.push(`Hull damage: ${damage.totals.hullDamage}; heat damage: ${damage.totals.heatDamage}.`);
   const condition = conditionSummary(damage?.conditionEvent);
   if (condition) parts.push(condition);
+  if (detail.drawback?.type === "jam") {
+    parts.push("⚠️ Misfire! Weapon jammed (weapon malfunction).");
+  }
+  if (detail.drawback?.backfire) {
+    parts.push(`🔥 Backfire! Fire hazard ignited in ${detail.drawback.sector ?? "weapon"} sector!`);
+  }
   const fate = fateSummary(damage?.fate);
   if (fate) parts.push(fate);
   return parts.join(" ");

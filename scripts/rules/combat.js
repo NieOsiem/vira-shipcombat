@@ -33,7 +33,6 @@ const BARRAGE_PROFILES = Object.freeze({
 
 const RESERVED_TRAITS = new Set([
   "incendiary",
-  "unreliable",
   "unstableoverclock",
 ]);
 const EPSILON = 1e-9;
@@ -1568,6 +1567,47 @@ export function commitAttack(context) {
       incrementRevision: false,
     }, helpers);
 
+    let drawback = null;
+    const attackerTraits = commitment.profile.traits ?? [];
+    const hasUnreliable = attackerTraits.some(
+      (t) => (typeof t === "string" ? t : t?.id) === "unreliable",
+    );
+    const hasIncendiaryBackfire = attackerTraits.some(
+      (t) => (typeof t === "string" ? t : t?.id) === "incendiaryBackfire",
+    );
+
+    if (hasUnreliable && naturalRoll === 1) {
+      if (typeof helpers.applyConditionTiers === "function") {
+        helpers.applyConditionTiers(attackerConfig, attackerDraft, {
+          conditionId: `${commitment.weaponId}:weaponMalfunction`,
+          tiers: 1,
+        });
+      }
+      drawback = {
+        type: "jam",
+        weaponId: commitment.weaponId,
+        weaponLabel: commitment.weaponLabel,
+      };
+    }
+
+    if (hasIncendiaryBackfire && naturalRoll === 1) {
+      const weaponObj = (attackerConfig?.components?.weapons ?? []).find(
+        (w) => w.id === commitment.weaponId,
+      );
+      const weaponRegion = weaponObj?.regions?.[0] ?? "fore";
+      if (typeof helpers.applyConditionTiers === "function") {
+        helpers.applyConditionTiers(attackerConfig, attackerDraft, {
+          conditionId: `fire:${weaponRegion}`,
+          tiers: 1,
+        });
+      }
+      drawback = {
+        ...(drawback ?? {}),
+        backfire: true,
+        sector: weaponRegion,
+      };
+    }
+
     attackerDraft.revision =
       Math.max(0, Math.trunc(finite(attackerDraft.revision))) + 1;
     targetDraft.revision =
@@ -1588,6 +1628,7 @@ export function commitAttack(context) {
         roll,
         costs: commitment.costs,
         damage: damage.public,
+        ...(drawback ? { drawback } : {}),
       },
       gm: {
         committed: true,
@@ -1597,6 +1638,7 @@ export function commitAttack(context) {
         targetHull: { before: targetHullBefore, after: targetDraft.hull },
         spending: { operation: operationSpend, firingSolution: solutionSpend },
         damage: damage.gm,
+        ...(drawback ? { drawback } : {}),
       },
     };
   } catch (error) {

@@ -380,7 +380,7 @@ function normalizeTiers(form, componentClass, existingTiers = []) {
 
 function normalizeWeaponTraits(form, existingTraits = []) {
   if (!form.querySelector('[name^="trait."]')) return clone(existingTraits);
-  const supportedIds = ["nonLethal", "shieldBypass", "barrage", "vicious"];
+  const supportedIds = ["nonLethal", "shieldBypass", "barrage", "vicious", "unreliable", "incendiaryBackfire"];
   const existingById = new Map();
   for (const trait of existingTraits) {
     const id = typeof trait === "string" ? trait : trait?.id;
@@ -392,6 +392,12 @@ function normalizeWeaponTraits(form, existingTraits = []) {
   const replacements = new Map();
   if (checked(form, "trait.nonLethal")) {
     replacements.set("nonLethal", { id: "nonLethal" });
+  }
+  if (checked(form, "trait.unreliable")) {
+    replacements.set("unreliable", { id: "unreliable" });
+  }
+  if (checked(form, "trait.incendiaryBackfire")) {
+    replacements.set("incendiaryBackfire", { id: "incendiaryBackfire" });
   }
   if (checked(form, "trait.shieldBypass")) {
     const existing = clone(existingById.get("shieldBypass"));
@@ -578,12 +584,20 @@ function normalizeDefinition(form, componentClass, existingDefinition) {
     definition.redlineOutput = number(form, "definition.redlineOutput", definition.redlineOutput ?? 0);
     definition.overclockHeat = number(form, "definition.overclockHeat", definition.overclockHeat ?? 0);
     definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
+    if (field(form, "definition.dirtyCore")) {
+      if (checked(form, "definition.dirtyCore")) definition.dirtyCore = true;
+      else delete definition.dirtyCore;
+    }
   } else if (componentClass === "drive") {
     definition.base = clone(definition.base ?? {});
     definition.base.thrust = number(form, "definition.base.thrust", definition.base?.thrust ?? 0);
     definition.base.rotation = number(form, "definition.base.rotation", definition.base?.rotation ?? 0);
     definition.tiers = normalizeTiers(form, componentClass, definition.tiers);
     definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
+    if (field(form, "definition.gasketBlowout")) {
+      if (checked(form, "definition.gasketBlowout")) definition.gasketBlowout = true;
+      else delete definition.gasketBlowout;
+    }
   } else if (componentClass === "shield") {
     definition.topology = text(form, "definition.topology", definition.topology ?? "directional");
     definition.sectors = definition.topology === "bubble"
@@ -594,6 +608,15 @@ function normalizeDefinition(form, componentClass, existingDefinition) {
     definition.rechargeDelay = number(form, "definition.rechargeDelay", definition.rechargeDelay ?? 0);
     definition.tiers = normalizeTiers(form, componentClass, definition.tiers);
     definition.recoveryWork = number(form, "definition.recoveryWork", definition.recoveryWork ?? 0);
+    if (field(form, "definition.cascadingCollapse")) {
+      if (checked(form, "definition.cascadingCollapse")) definition.cascadingCollapse = true;
+      else delete definition.cascadingCollapse;
+    }
+    if (field(form, "definition.thermalBleedFraction")) {
+      const val = optionalNumber(form, "definition.thermalBleedFraction");
+      if (val !== undefined && val > 0) definition.thermalBleedFraction = val;
+      else delete definition.thermalBleedFraction;
+    }
     delete definition.emitters;
   } else if (componentClass === "sensor") {
     definition.base = clone(definition.base ?? {});
@@ -715,6 +738,8 @@ function viewDefinition(system) {
         : true,
       barrage: Boolean(barrage),
       vicious: Boolean(vicious),
+      unreliable: Boolean(traitById(definition, "unreliable")),
+      incendiaryBackfire: Boolean(traitById(definition, "incendiaryBackfire")),
     };
     definition.barrageProfiles = (barrage?.profiles ?? []).map((
       profile,
@@ -1039,6 +1064,18 @@ export class ShipComponentSheet
         weaponTraitsList.push({
           label: "Barrage",
           desc: `${definition.barrageProfiles?.length ?? 0} firing profile(s)`,
+        });
+      }
+      if (definition.traitState?.unreliable) {
+        weaponTraitsList.push({
+          label: "Unreliable",
+          desc: "Natural 1 causes weapon malfunction (jam)",
+        });
+      }
+      if (definition.traitState?.incendiaryBackfire) {
+        weaponTraitsList.push({
+          label: "Incendiary Backfire",
+          desc: "Natural 1 ignites fire hazard in weapon bay",
         });
       }
     }

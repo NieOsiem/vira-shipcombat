@@ -19,12 +19,8 @@
  * range spends its reactor on drives, the shield and the 4-per-Start cooling that pays for a
  * four-round volley, not on a quiet signature.
  *
- * Shield: the cheap Segment Deflector, not the cheaper Bubble Deflector. A bubble's single pool
- * repairs whatever lands on it one-for-one out of its whole 3-per-Start budget, so no knife gun can
- * ever out-damage it — the attrition measurement comes back at exactly zero however hard the brawler
- * hits. A directional array spreads regeneration across four weights and leaves the bearing it is
- * not repairing to accumulate damage, which is the difference between a brawler that can win an
- * exchange and one that can only survive it.
+ * Shield: the cheap LH Bubble Deflector (20 capacity, 2/4/6 regen), providing compact all-round
+ * protection for a knife brawler without complex sector allocation.
  *
  * Coverage (gate 3) — 75 %. The 270° envelope leaves a 90° blind arc dead astern; nose, both beams
  * and both quarters are covered.

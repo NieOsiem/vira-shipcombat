@@ -15,10 +15,9 @@
  * `normal` emission. Weapons 2 exactly covers the railgun's Power Rating 2, so the single gun is
  * online at the shipped commit.
  *
- * Defence is the band, not the plate: 22 hull and 1 armour on every face. The Vector Deflector is
- * the premium directional array (48 total, 12 per facet) — it spreads the regeneration funnel
- * thinner than one pool, which is what makes the anti-regeneration gate reachable, and it pays for
- * that with a facet that can be stripped.
+ * Defence is the band, not the plate: 22 hull and 1 armour on every face. The Reinforced Bubble
+ * Deflector is the premium small bubble shield (40 total budget, 4/7/10 regen) — providing high
+ * cushion and strong regeneration to protect the fragile sniper airframe while picking at range.
  *
  * Coverage (gate 3) is deliberately narrow: one fixed 90° Prow gun covers 25 % of the circle with a
  * 270° dark arc across the sides and stern. A single-mount fixed-forward fighter is the case the

@@ -557,13 +557,24 @@ export function resolveShieldDamage(config, state, input = {}) {
   const effectiveArmor = Math.max(0, armor - armorPiercing);
   const hullDamageTaken = Math.max(0, transmittedHull - effectiveArmor);
   if (state.hull != null) state.hull = Math.max(0, state.hull - hullDamageTaken);
-  state.heat = (state.heat ?? 0) + transmittedHeat;
+  const shieldDamageApplied = active ? Math.min(activeShield, shieldDamage) : 0;
+  const bleedFraction = Number(shieldConfig(config).thermalBleedFraction ?? 0);
+  const thermalBleed = bleedFraction > 0 ? Math.round(shieldDamageApplied * bleedFraction) : 0;
+  state.heat = (state.heat ?? 0) + transmittedHeat + thermalBleed;
   state.shields ??= {};
   state.shields.hp ??= {};
   state.shields.hp[sector] = shieldAfter;
+  const isCascading = collapsed && shieldConfig(config).cascadingCollapse === true;
   if (collapsed) {
     state.shields.collapse ??= {};
-    state.shields.collapse[sector] = delay;
+    if (isCascading) {
+      for (const s of sectorsFor(config)) {
+        state.shields.collapse[s] = delay;
+        state.shields.hp[s] = 0;
+      }
+    } else {
+      state.shields.collapse[sector] = delay;
+    }
   }
   return {
     sector,
@@ -572,7 +583,9 @@ export function resolveShieldDamage(config, state, input = {}) {
     shieldBefore,
     activeShield,
     shieldAfter,
-    shieldDamageApplied: active ? Math.min(activeShield, shieldDamage) : 0,
+    shieldDamageApplied,
+    thermalBleed,
+    cascadingCollapse: isCascading,
     collapsed,
     rechargeCounter: state.shields?.collapse?.[sector] ?? 0,
     penetratingFraction,

@@ -96,6 +96,7 @@ export const TRAIT_IDS = Object.freeze({
   barrage: "barrage",
   vicious: "vicious",
   unreliable: "unreliable",
+  incendiaryBackfire: "incendiaryBackfire",
   incendiary: "incendiary",
   unstableOverclock: "unstableOverclock",
 });
@@ -105,10 +106,11 @@ export const SUPPORTED_TRAITS = Object.freeze([
   TRAIT_IDS.shieldBypass,
   TRAIT_IDS.barrage,
   TRAIT_IDS.vicious,
+  TRAIT_IDS.unreliable,
+  TRAIT_IDS.incendiaryBackfire,
 ]);
 
 export const RESERVED_INCOMPLETE_TRAITS = Object.freeze([
-  TRAIT_IDS.unreliable,
   TRAIT_IDS.incendiary,
   TRAIT_IDS.unstableOverclock,
 ]);

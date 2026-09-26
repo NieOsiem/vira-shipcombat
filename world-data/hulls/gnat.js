@@ -1,8 +1,8 @@
 /**
  * Gnat — small militia fighter (wave 2, world-side catalogue).
  *
- * Identity: the starter hull. Everything on it is the cheap shelf — Light Reactor, Segment
- * Deflector, Compact Cooling Array, Cutter main and lateral drives, Inertial Anchor Mk I — behind
+ * Identity: the starter hull. Everything on it is the cheap shelf — Light Reactor, LH
+ * Bubble Deflector, Compact Cooling Array, Cutter main and lateral drives, Inertial Anchor Mk I — behind
  * one Prow Storm Barrage Gun, the same four-round magazine gun the Wasp brawls with. It is the
  * cheapest way into the class: less hull than the Wasp (20 against 28), lighter plate, a slower
  * safe velocity, and the same 270° envelope that lets a hull with a budget anchor keep shooting
@@ -18,8 +18,7 @@
  * holdable ceiling, which is the number that matters for this gate.
  *
  * Anti-regeneration (gate 2) — out-damages. A four-round salvo is two effective hits of shield 5
- * against the 3/turn the Segment Deflector funnels into one facet; measured across the §5 mirrors it
- * is **+0.161** net shield damage/turn against 0.275 repaired/turn.
+ * against the 2/turn the LH Bubble Deflector funnels into its single pool.
  *
  * Power (10 of 11 nominal, 13 redline): engines 3 · shields 2 · sensors 1 · cooling 2 · inertia 1 ·
  * weapons 1. It reads `high` emission, and it does not care — a militia fighter's job is to be
@@ -31,11 +30,8 @@
  * harness and the encounter rules both use — a fighter that cannot form a track is not a cheaper
  * fighter, it is a target, so the array is the part a starter fit must not economise on.
  *
- * Shield: the cheap Segment Deflector, not the cheaper Bubble Deflector. A bubble's single pool
- * repairs whatever lands on it one-for-one out of its whole budget, so no barrage can ever out-
- * damage it and the anti-regeneration measurement comes back at zero however hard the Gnat hits. A
- * directional array spreads regeneration across four weights and leaves the bearing it is not
- * repairing to accumulate damage.
+ * Shield: the cheap LH Bubble Deflector (20 budget, 2/4/6 regen). Single-pool protection scaled for
+ * budget militia hulls under the Peregrinus standard.
  *
  * Coverage (gate 3) — 75 %. The 270° envelope leaves a 90° blind arc dead astern; nose, both beams
  * and both quarters answer.

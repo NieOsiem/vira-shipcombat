@@ -321,6 +321,12 @@
               <div class="hud-stat"><span class="stat-label">Redline Overclock Heat</span><span class="stat-value">{{definition.overclockHeat}} <small>Heat</small></span></div>
               <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
             </div>
+            {{#if definition.dirtyCore}}
+              <div class="hud-trait-pill alert" style="margin-top: 8px;">
+                <span class="trait-name"><i class="fa-solid fa-triangle-exclamation"></i> Dirty Core</span>
+                <span class="trait-desc">Risks reactor instability each End Phase</span>
+              </div>
+            {{/if}}
           </div>
         {{/if}}
 
@@ -332,6 +338,12 @@
               <div class="hud-stat highlight"><span class="stat-label">Base Rotation</span><span class="stat-value">{{definition.base.rotation}}&deg;</span></div>
               <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
             </div>
+            {{#if definition.gasketBlowout}}
+              <div class="hud-trait-pill alert" style="margin-top: 8px;">
+                <span class="trait-name"><i class="fa-solid fa-triangle-exclamation"></i> Gasket Blowout</span>
+                <span class="trait-desc">Risks drive failure when maintaining Overclock</span>
+              </div>
+            {{/if}}
           </div>
           <div class="hud-card full-width">
             <div class="hud-card-header"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Propulsion Power Tiers</div>
@@ -362,6 +374,18 @@
               <div class="hud-stat"><span class="stat-label">Recharge Delay</span><span class="stat-value">{{definition.rechargeDelay}} <small>rnd</small></span></div>
               <div class="hud-stat"><span class="stat-label">Recovery Work</span><span class="stat-value">{{definition.recoveryWork}} <small>Work</small></span></div>
             </div>
+            {{#if definition.cascadingCollapse}}
+              <div class="hud-trait-pill alert" style="margin-top: 8px;">
+                <span class="trait-name"><i class="fa-solid fa-triangle-exclamation"></i> Cascading Collapse</span>
+                <span class="trait-desc">When one sector falls, all sectors collapse</span>
+              </div>
+            {{/if}}
+            {{#if definition.thermalBleedFraction}}
+              <div class="hud-trait-pill alert" style="margin-top: 8px;">
+                <span class="trait-name"><i class="fa-solid fa-fire"></i> Thermal Bleed</span>
+                <span class="trait-desc">{{definition.thermalBleedFraction}} of absorbed damage becomes Heat</span>
+              </div>
+            {{/if}}
           </div>
           <div class="hud-card">
             <div class="hud-card-header"><i class="fa-solid fa-compass" aria-hidden="true"></i> Protected Sectors</div>
@@ -496,6 +520,9 @@
               <label>Redline heat <input type="number" min="0" step="any" name="definition.overclockHeat" value="{{definition.overclockHeat}}"></label>
               <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
             </div>
+            <div class="trait-toggles-row" style="margin-top: 8px;">
+              <label class="toggle-pill"><input type="checkbox" name="definition.dirtyCore" {{#if definition.dirtyCore}}checked{{/if}}> Dirty Core (Instability on End)</label>
+            </div>
           </div>
         {{/if}}
 
@@ -506,6 +533,9 @@
               <label>Base thrust <input type="number" min="0" step="any" name="definition.base.thrust" value="{{definition.base.thrust}}"></label>
               <label>Base rotation <input type="number" min="0" step="any" name="definition.base.rotation" value="{{definition.base.rotation}}"></label>
               <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+            <div class="trait-toggles-row" style="margin-top: 8px;">
+              <label class="toggle-pill"><input type="checkbox" name="definition.gasketBlowout" {{#if definition.gasketBlowout}}checked{{/if}}> Gasket Blowout (Fault on OC)</label>
             </div>
           </div>
           <div class="form-card">
@@ -542,6 +572,10 @@
               <label>Sector cap <input type="number" min="1" step="1" name="definition.sectorCap" value="{{definition.sectorCap}}"></label>
               <label>Recharge delay <input type="number" min="1" step="1" name="definition.rechargeDelay" value="{{definition.rechargeDelay}}"></label>
               <label>Recovery Work <input type="number" min="1" step="1" name="definition.recoveryWork" value="{{definition.recoveryWork}}"></label>
+            </div>
+            <div class="trait-toggles-row" style="margin-top: 8px; display: flex; align-items: center; gap: 12px;">
+              <label class="toggle-pill"><input type="checkbox" name="definition.cascadingCollapse" {{#if definition.cascadingCollapse}}checked{{/if}}> Cascading Collapse</label>
+              <label style="display: inline-flex; align-items: center; gap: 6px;">Thermal bleed <input type="number" min="0" max="1" step="0.05" name="definition.thermalBleedFraction" value="{{definition.thermalBleedFraction}}" style="width: 70px;" placeholder="0.00"></label>
             </div>
             <div class="sub-form-group">
               <span class="field-label">Protected sectors</span>
@@ -745,6 +779,8 @@
             <div class="trait-toggles-row">
               <label class="toggle-pill"><input type="checkbox" name="trait.nonLethal" {{#if definition.traitState.nonLethal}}checked{{/if}}> Non-lethal</label>
               <label class="toggle-pill"><input type="checkbox" name="trait.vicious" {{#if definition.traitState.vicious}}checked{{/if}}> Vicious</label>
+              <label class="toggle-pill"><input type="checkbox" name="trait.unreliable" {{#if definition.traitState.unreliable}}checked{{/if}}> Unreliable (Jam)</label>
+              <label class="toggle-pill"><input type="checkbox" name="trait.incendiaryBackfire" {{#if definition.traitState.incendiaryBackfire}}checked{{/if}}> Incendiary Backfire</label>
             </div>
 
             {{!-- Shield Bypass Group --}}
